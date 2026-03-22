@@ -267,6 +267,7 @@ const WriterEngine = () => {
     setGenerating(true);
     setGeneratingId(sectionId);
     setStreamContent("");
+    setProgressMessage(`Writing ${section.title}…`);
 
     await supabase.from("sections").update({ status: "writing" }).eq("id", sectionId);
     setSections(prev => prev.map(s => s.id === sectionId ? { ...s, status: "writing" } : s));
