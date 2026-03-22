@@ -1,0 +1,1 @@
+ALTER TABLE public.sections ADD COLUMN IF NOT EXISTS a_plus_criteria text DEFAULT NULL;
