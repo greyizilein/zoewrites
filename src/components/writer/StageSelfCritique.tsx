@@ -16,7 +16,7 @@ const critiqueChecks = [
   "Argument quality: descriptive vs evaluative",
   "Citation audit & reference matching",
   "Framework application verification",
-  "Word count ±50 of target",
+  "Word count ±1% of target",
   "Banned AI phrase scan",
   "Formatting & heading audit",
   "Reference list completeness",
