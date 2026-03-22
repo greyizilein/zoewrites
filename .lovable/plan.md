@@ -1,36 +1,47 @@
 
 
-# Pipeline Verification Report
+# Export Verification + Dashboard Recent Assessments Widget
 
-## Word Count Enforcement — Verified ✓
+## Export-docx Verification (Already Correct)
 
-Three layers of enforcement are in place:
+The `export-docx/index.ts` is properly configured:
+- **Justified text**: Line 102 — `alignment: AlignmentType.JUSTIFIED` on all body paragraphs
+- **Heading hierarchy**: H1/H2/H3 styles with `outlineLevel: 0/1/2` (lines 436-444) and `parseContentLine` handles `#`, `##`, `###` markdown
+- **Table of Contents**: Line 288 — `headingStyleRange: "1-3"` with hyperlinks
+- **Submission details**: Lines 249-280 — title page includes name, student ID, institution, module, supervisor, date, company
+- **Font selection**: Lines 198-201 — accepts font parameter and applies it throughout
 
-1. **Post-stream truncation** (`WriterEngine.tsx` line 341-357): After streaming content from `section-generate` or `section-revise`, if word count exceeds `word_target * 1.01`, it truncates at sentence boundaries before saving.
+No changes needed to the export function.
 
-2. **Humanise hard cap** (`humanise/index.ts` line 237-244): After all AI passes, a final hard `wordCeiling = Math.ceil(word_target * 1.01)` truncation runs at sentence boundaries. The `capAfterPass` function also runs after every individual AI pass to prevent drift.
+## Dashboard Widget: Recent Assessments Summary
 
-3. **Post-humanise enforcement** (`WriterEngine.tsx` line 385-455): After humanisation, reads fresh content from DB and re-checks against `word_target * 1.01`. If still over, triggers a trim via `section-revise`.
+Add a "Recent Activity" widget between the word budget bar and the assessment grid that shows:
+- Last 5 assessments in a compact table/list format
+- Status badge (coloured dot + label)
+- Word count progress (current/target)
+- Completion percentage
+- Last updated timestamp
+- Quick-link to open each assessment
 
-The fix from the last edit (`content: finalContent` instead of `content: fullContent` on line 375) ensures the humanise function receives already-truncated content.
+### File to Change
 
-## Linear Flow — Verified ✓
+| File | Change |
+|------|--------|
+| `src/pages/Dashboard.tsx` | Add a "Recent Activity" summary widget after the word budget bar (line 209), showing the 5 most recent assessments in a compact card with status dots, word counts, and progress bars |
 
-- **Stages 3–9**: No `onBack` props passed. Components (`StageSelfCritique`, `StageRevise`, `StageEditProofread`, `StageFinalScan`, `StageSubmissionPrep`, `StageManualSubmission`) only have `onNext`.
-- **`handleTrimToTarget`**: Does not call `setStage()` — stays on stage 6.
-- **`handleApplyRevisions`**: Calls `setStage(5)` — forward only (Revise→Edit).
-- **`handleAcceptAll` / `handleDenyAll`**: No `setStage()` calls — stays on stage 6, user manually advances via `onNext`.
-- **Autopilot**: Moves forward sequentially (2→3→5→8).
-- **Chat actions**: All `setStage()` calls go to appropriate stages, none go backward relative to the current stage.
+### Widget Design
 
-## No Code Changes Needed
+A single card with a mini table:
+```
+Recent Activity
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+● Strategic Mgmt Report    1,245/2,500  50%  2h ago
+● Marketing Analysis       890/1,000    89%  1d ago  
+✓ Ethics Essay             1,500/1,500  100% 3d ago
+```
 
-The pipeline is correctly configured. To verify in practice:
-1. Create a new assessment with a brief
-2. Write all sections — check word counts after each section completes (should be within 1% of target)
-3. Advance through Critique → Revise → Edit → Slate → Scan → Submit
-4. Confirm no stage auto-navigates backward at any point
-5. In Writer Slate, use auto-trim and confirm it stays on stage 6
-
-This is a manual testing task — the code enforcement is solid at all three levels.
+- Coloured dot: terracotta (active), sage (complete)
+- Clicking a row navigates to the assessment
+- Shows up to 5 entries
+- Below the word budget bar, above the full card grid
 
