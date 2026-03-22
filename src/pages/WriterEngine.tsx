@@ -78,6 +78,8 @@ const WriterEngine = () => {
   const [autopilotRunning, setAutopilotRunning] = useState(false);
   const autopilotCancelRef = useRef(false);
 
+  const [imageVariants, setImageVariants] = useState<any[]>([]);
+  const [imagesSkipped, setImagesSkipped] = useState(false);
   const [assessmentImages, setAssessmentImages] = useState<any[]>([]);
 
   const [chatOpen, setChatOpen] = useState(false);
