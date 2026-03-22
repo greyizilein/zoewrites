@@ -431,14 +431,17 @@ serve(async (req) => {
 
     const doc = new Document({
       styles: {
-        default: { document: { run: { font: "Arial", size: 24 } } },
+        default: { document: { run: { font: docFont, size: docFontSizePt } } },
         paragraphStyles: [
           { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
-            run: { size: 28, bold: true, font: "Arial" },
+            run: { size: 28, bold: true, font: docFont },
             paragraph: { spacing: { before: 360, after: 200 }, outlineLevel: 0 } },
           { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
-            run: { size: 26, bold: true, font: "Arial" },
+            run: { size: 26, bold: true, font: docFont },
             paragraph: { spacing: { before: 240, after: 120 }, outlineLevel: 1 } },
+          { id: "Heading3", name: "Heading 3", basedOn: "Normal", next: "Normal", quickFormat: true,
+            run: { size: 24, bold: true, font: docFont },
+            paragraph: { spacing: { before: 200, after: 100 }, outlineLevel: 2 } },
         ]
       },
       sections: [{
