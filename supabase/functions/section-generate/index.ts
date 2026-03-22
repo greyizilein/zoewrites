@@ -7,16 +7,17 @@ const corsHeaders = {
 
 /** Infer citation density targets based on section title/type */
 function getCitationDensity(title: string): { min: number; recommended: number; max: number } {
+  // Target: 12 citations per 1000 words baseline
   const t = title.toLowerCase();
-  if (t.includes("literature") || t.includes("lit review") || t.includes("lit.")) return { min: 8, recommended: 12, max: 20 };
-  if (t.includes("introduction")) return { min: 3, recommended: 5, max: 8 };
-  if (t.includes("conclusion")) return { min: 2, recommended: 4, max: 7 };
-  if (t.includes("methodology") || t.includes("method")) return { min: 4, recommended: 7, max: 12 };
-  if (t.includes("discussion") || t.includes("analysis")) return { min: 5, recommended: 8, max: 15 };
-  if (t.includes("finding") || t.includes("result")) return { min: 3, recommended: 6, max: 10 };
-  if (t.includes("recommendation")) return { min: 2, recommended: 4, max: 8 };
-  // Default for body sections
-  return { min: 3, recommended: 6, max: 12 };
+  if (t.includes("literature") || t.includes("lit review") || t.includes("lit.")) return { min: 14, recommended: 18, max: 25 };
+  if (t.includes("introduction")) return { min: 6, recommended: 10, max: 14 };
+  if (t.includes("conclusion")) return { min: 4, recommended: 8, max: 12 };
+  if (t.includes("methodology") || t.includes("method")) return { min: 8, recommended: 12, max: 18 };
+  if (t.includes("discussion") || t.includes("analysis")) return { min: 10, recommended: 14, max: 20 };
+  if (t.includes("finding") || t.includes("result")) return { min: 8, recommended: 12, max: 16 };
+  if (t.includes("recommendation")) return { min: 6, recommended: 10, max: 14 };
+  // Default: 12 per 1000 words
+  return { min: 8, recommended: 12, max: 18 };
 }
 
 /** Get academic level depth multiplier and expectations */
