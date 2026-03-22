@@ -202,11 +202,11 @@ const Dashboard = () => {
                 initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
                 animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                 transition={{ duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                className="p-4 rounded-xl border border-border bg-card"
+                className="p-3 sm:p-4 rounded-xl border border-border bg-card"
               >
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">{kpi.label}</p>
-                <p className={`text-xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
-                <p className="text-[11px] text-muted-foreground">{kpi.sub}</p>
+                <p className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{kpi.label}</p>
+                <p className={`text-base sm:text-xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground">{kpi.sub}</p>
               </motion.div>
             ))}
           </div>
