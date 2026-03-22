@@ -9,7 +9,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { content, feedback, word_target, section_title, model, settings } = await req.json();
+    const { content, feedback, word_target, section_title, model, settings, brief_text, topic } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
@@ -30,10 +30,14 @@ serve(async (req) => {
             role: "system",
             content: `You are ZOE — an elite academic AI writer built by writers, for students who can't afford one. You write at A+/First-Class standard. Revise the section based on feedback while maintaining A+ quality.
 
+${topic ? `SUBJECT — CRITICAL: This assessment is specifically about "${topic}". You MUST write exclusively about this subject. Do NOT substitute or default to a different organisation, company, or topic.` : ""}
+${brief_text ? `ORIGINAL BRIEF (ground all content in this — follow company names, requirements, and specified frameworks exactly):\n${brief_text.slice(0, 2000)}` : ""}
+
 REVISION RULES:
 - Keep word count at ${word_target} words (±1%)
 - Preserve citation style and academic tone
 - Include in-text citations but do NOT include a reference list at the end — references will be compiled separately
+- Apply ALL feedback points precisely. Once an issue is fixed, do not reintroduce it.
 - ${firstPerson ? 'First person is allowed where appropriate' : 'Strictly third-person voice'}
 - Hedging intensity: ${hedging}
 - Never use banned AI phrases: "utilise", "multifaceted", "furthermore", "it is worth noting", "delve into", "shed light on", "robust framework", "comprehensive analysis", "nuanced understanding", "tapestry", "in the realm of"
@@ -43,7 +47,7 @@ REVISION RULES:
           },
           {
             role: "user",
-            content: `Section: ${section_title}\nWord target: ${word_target}\n\nCurrent content:\n${content}\n\nFeedback:\n${feedback}\n\nRevise the section now. Do NOT append a reference list.`
+            content: `Section: ${section_title}\nWord target: ${word_target}\n\nCurrent content:\n${content}\n\nFeedback to apply:\n${feedback}\n\nRevise the section now. Apply every feedback point. Do NOT append a reference list.`
           },
         ],
         stream: true,
