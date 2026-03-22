@@ -464,41 +464,38 @@ const WriterEngine = () => {
     }
   };
 
-  // ─── STAGE 4: Edit & Proofread ───
+  // ─── STAGE 4: Edit & Proofread (per-section) ───
   const handleEditProofread = async () => {
-    const allContent = sections.filter(s => s.content).map(s => `## ${s.title}\n${s.content}`).join("\n\n");
-    if (!allContent) { toast({ title: "No content", variant: "destructive" }); return; }
+    const contentSections = sections.filter(s => s.content);
+    if (contentSections.length === 0) { toast({ title: "No content", variant: "destructive" }); return; }
 
     try {
-      const { data, error } = await supabase.functions.invoke("edit-proofread", {
-        body: { content: allContent, model: selectedModel },
-      });
-      if (error) throw error;
-      setEditReport(data);
+      const diffs: EditDiff[] = [];
+      let totalCorrections = 0;
 
-      // Build diffs instead of auto-applying
-      if (data?.corrected_content) {
-        const correctedSections = data.corrected_content.split(/^## /m).filter(Boolean);
-        const diffs: EditDiff[] = [];
-        for (const cs of correctedSections) {
-          const titleEnd = cs.indexOf("\n");
-          const title = cs.slice(0, titleEnd).trim();
-          const content = cs.slice(titleEnd + 1).trim();
-          const section = sections.find(s => s.title === title);
-          if (section && section.content) {
-            diffs.push({
-              sectionId: section.id,
-              sectionTitle: section.title,
-              original: section.content,
-              corrected: content,
-              accepted: null,
-            });
-          }
+      for (const section of contentSections) {
+        const { data, error } = await supabase.functions.invoke("edit-proofread", {
+          body: { content: section.content, model: selectedModel },
+        });
+        if (error) throw error;
+
+        const corrected = data?.corrected_content || section.content;
+        totalCorrections += data?.corrections_count || 0;
+
+        if (corrected !== section.content) {
+          diffs.push({
+            sectionId: section.id,
+            sectionTitle: section.title,
+            original: section.content!,
+            corrected,
+            accepted: null,
+          });
         }
-        setEditDiffs(diffs);
       }
 
-      return data;
+      setEditReport({ corrections_count: totalCorrections, summary: `${totalCorrections} corrections across ${diffs.length} sections` });
+      setEditDiffs(diffs);
+      return { corrections_count: totalCorrections };
     } catch (e: any) {
       toast({ title: "Edit failed", description: e.message, variant: "destructive" });
       throw e;
