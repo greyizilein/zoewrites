@@ -200,7 +200,7 @@ const Dashboard = () => {
           {/* KPI strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-8">
             {[
-              { label: "Words Left", value: formatCompact(wordsLeft), sub: `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
+              { label: "Words Left", value: isUnlimited ? "∞" : formatCompact(wordsLeft), sub: isUnlimited ? "unlimited" : `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
               { label: "Assessments", value: assessments.length, sub: `${completedCount} done`, color: "text-muted-blue" },
               { label: "Written", value: formatCompact(totalWordsWritten), sub: "total", color: "text-sage" },
               { label: "Avg. Done", value: `${avgCompletion}%`, sub: "across all", color: "text-dusty-purple" },
