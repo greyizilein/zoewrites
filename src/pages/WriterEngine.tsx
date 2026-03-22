@@ -1033,7 +1033,16 @@ const WriterEngine = () => {
                   onRunCritique={handleQualityCheck}
                   qualityReport={qualityReport}
                   totalWords={totalWords} totalTarget={totalTarget}
-                  onBack={() => setStage(2)} onNext={() => setStage(4)}
+                  onBack={() => setStage(2)}
+                  onNext={() => {
+                    // Auto-feed critique issues into revision feedback
+                    const issues = qualityReport?.report?.issues || [];
+                    if (issues.length > 0) {
+                      const feedback = issues.map((i: any) => `[${i.severity}] ${i.description} → ${i.suggestion}`).join("\n");
+                      setRevisionFeedback(feedback);
+                    }
+                    setStage(4);
+                  }}
                 />
               )}
               {stage === 4 && (
