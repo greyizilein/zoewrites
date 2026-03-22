@@ -6,6 +6,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const VARIANT_PROMPTS = [
+  (title: string, context: string) =>
+    `Create a professional academic DIAGRAM for the section "${title}". Show relationships, processes, or hierarchies as a clean labelled diagram. Context: ${context}. Use a clean white background with professional colours. No text paragraphs — only a visual diagram.`,
+  (title: string, context: string) =>
+    `Create a professional academic CHART or TABLE visualisation for the section "${title}". Show data comparisons, distributions, or categorisations as a chart, graph, or structured table. Context: ${context}. Use a clean white background with professional colours. No text paragraphs — only a visual chart/table.`,
+];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -34,12 +41,12 @@ serve(async (req) => {
     let figureNumber = 1;
 
     for (const section of sections) {
-      // Generate one image per section that has content
       if (!section.content) continue;
-      const figureRefs = [{ ref: `Figure ${figureNumber}` }]; // Always generate at least one per section
+      const context = (section.content || "").slice(0, 500);
 
-      for (const ref of figureRefs) {
-        const prompt = `Create a professional academic diagram or figure for the following context. The figure should be clean, labeled, and suitable for an academic paper. Section: "${section.title}". Content context: ${(section.content || "").slice(0, 500)}. The figure should illustrate key concepts, relationships, or data mentioned in this section. Use a clean white background with professional colors.`;
+      // Generate 2 variants per section
+      for (let vi = 0; vi < VARIANT_PROMPTS.length; vi++) {
+        const prompt = VARIANT_PROMPTS[vi](section.title, context);
 
         try {
           const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -59,24 +66,22 @@ serve(async (req) => {
             const data = await resp.json();
             const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
             if (imageUrl) {
-              // Store metadata
-              const { data: imgRecord } = await supabase.from("assessment_images").insert({
+              generatedImages.push({
                 section_id: section.id,
+                section_title: section.title,
                 figure_number: figureNumber,
-                caption: `Figure ${figureNumber}: Illustration for ${section.title}`,
+                variant: vi + 1,
+                caption: `Figure ${figureNumber}: ${vi === 0 ? "Diagram" : "Chart"} for ${section.title}`,
                 prompt,
                 url: imageUrl,
-                image_type: "diagram",
-              }).select().single();
-
-              if (imgRecord) {
-                generatedImages.push(imgRecord);
-                figureNumber++;
-              }
+                image_type: vi === 0 ? "diagram" : "chart",
+                selected: false,
+              });
+              figureNumber++;
             }
           }
         } catch (imgErr) {
-          console.error(`Image generation failed for section ${section.title}:`, imgErr);
+          console.error(`Image generation failed for section ${section.title} variant ${vi + 1}:`, imgErr);
         }
 
         // Rate limit protection
