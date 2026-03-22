@@ -1104,7 +1104,7 @@ const WriterEngine = () => {
                 <StageRevise
                   onApplyRevisions={handleApplyRevisions}
                   isProcessing={isProcessing}
-                  onBack={() => setStage(3)} onNext={() => setStage(5)}
+                  onNext={() => setStage(5)}
                   initialFeedback={revisionFeedback}
                 />
               )}
