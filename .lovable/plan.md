@@ -1,74 +1,23 @@
+# Fix Dashboard KPI Cards — Final Cleanup
 
-# Fix Dashboard KPI Cards to Match Mobile Reference
+## What the MHT shows is wrong
 
-## What’s wrong now
+The uploaded MHT reveals the dashboard rendering on a 448px mobile viewport. The issues:
 
-From the current `Dashboard.tsx` and your screenshots, the KPI cards are oversized because the mobile layout uses `aspect-square` with centered content. That makes each tile too tall, too empty, and visually unlike your reference. The current version also still feels like stretched blocks rather than tight, deliberate dashboard cards.
+1. **"2B" and "of 2B"** — The "Words Left" card shows "2B" because the unlimited tier has a 2-billion word limit. This is meaningless to the user. For unlimited tiers, this card should show "∞" or "Unlimited" instead of a giant formatted number.
+2. **Word Budget bar shows "0 / 2B"** — Same problem. For unlimited tiers, hide the budget bar entirely or show "Unlimited" instead of a nonsensical progress bar stuck at 0%.
+3. **Cards are correctly sized at `h-[88px]**` in a 2×2 grid — this matches the approved plan. The layout structure is actually working. The visual "nonsense" is the **data display**, not the card sizing.
 
 ## Plan
 
-### 1. Rebuild the KPI strip as fixed-size compact tiles on mobile
-In `src/pages/Dashboard.tsx`:
+### `src/pages/Dashboard.tsx`
 
-- Remove the current mobile `aspect-square` approach
-- Use a strict 2-column mobile grid with **equal fixed tile heights**
-- Set every KPI tile to the **same exact mobile height** so none grow taller than the others
-- Keep them fully interactive on both mobile and desktop
+1. **Handle unlimited tier in KPI cards**: When `wordLimit >= 1_000_000_000` (effectively unlimited):
+  - "Words Left" card → show "∞" as value, "unlimited" as subtitle
+  - Hide or simplify the Word Budget progress bar — show "Unlimited Plan" with no progress bar
+2. **Keep card sizing as-is** — `h-[88px] sm:h-[100px]` with the 2×2 grid is correct per the approved plan
 
-Implementation direction:
-- Mobile: `grid-cols-2` with compact fixed-height cards
-- Desktop: `sm:grid-cols-4` with the same visual style but slightly more breathing room
-- Add `w-full` so each card fills its grid cell cleanly
 
-### 2. Make the cards visually match the reference more closely
-Still in `src/pages/Dashboard.tsx`:
-
-- Replace the current “large empty center” layout with a tighter stack:
-  - top: label
-  - middle: value
-  - bottom: short subtitle
-- Reduce vertical whitespace
-- Keep rounded corners, subtle border, and hover/tap feedback
-- Make the card body feel denser and more intentional, not like a giant blank square
-
-### 3. Enforce identical sizing for all four KPI cards
-The key fix is consistency:
-
-- All KPI cards should share one sizing class
-- No card should resize based on content length
-- Long values should stay compact via `formatCompact(...)`
-- Text should be centered and clamped to avoid stretching the tile
-
-### 4. Keep interaction on both mobile and desktop
-For all KPI cards:
-
-- Mobile: tap feedback
-- Desktop: hover lift/shadow
-- Optional next step after styling: make each KPI card clickable to filter/open related dashboard sections
-
-### 5. Tighten surrounding spacing so the section looks balanced
-Also in `src/pages/Dashboard.tsx`:
-
-- Reduce the gap between the welcome block and KPI strip on mobile
-- Slightly tighten grid gaps so the 2×2 card group reads as one compact unit
-- Keep desktop spacing more open
-
-## File to change
-
-| File | Change |
-|------|--------|
-| `src/pages/Dashboard.tsx` | Replace the current oversized KPI card styling with fixed-height, equal-size, compact interactive tiles for mobile and balanced cards for desktop |
-
-## Expected result
-
-On mobile:
-- 4 KPI cards in a neat 2×2 layout
-- all cards exactly the same size
-- no giant square/blank cards
-- no stretched rectangular blocks
-- compact, polished, touch-friendly tiles closer to your screenshot reference
-
-On desktop:
-- same visual system
-- interactive hover states
-- balanced 4-card row without oversized empty space
+| File                      | Change                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `src/pages/Dashboard.tsx` | Handle unlimited tier display in KPI cards and word budget bar — show "∞" / "Unlimited" instead of "2B" |
