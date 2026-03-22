@@ -32,6 +32,13 @@ const statusStyles: Record<string, string> = {
   complete: "bg-sage/10 text-sage border-sage/20",
 };
 
+const formatCompact = (n: number): string => {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1).replace(/\.0$/, "")}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (n >= 10_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return n.toLocaleString();
+};
+
 const Dashboard = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -190,23 +197,25 @@ const Dashboard = () => {
           </motion.div>
 
           {/* KPI strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6 sm:mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-3 mb-4 sm:mb-8">
             {[
-              { label: "Words Left", value: wordsLeft.toLocaleString(), sub: `of ${wordLimit.toLocaleString()}`, color: "text-terracotta" },
-              { label: "Assessments", value: assessments.length, sub: `${completedCount} complete`, color: "text-muted-blue" },
-              { label: "Words Written", value: totalWordsWritten.toLocaleString(), sub: "total", color: "text-sage" },
-              { label: "Avg. Completion", value: `${avgCompletion}%`, sub: "across all", color: "text-dusty-purple" },
+              { label: "Words Left", value: formatCompact(wordsLeft), fullSub: `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
+              { label: "Assessments", value: assessments.length, fullSub: `${completedCount} done`, color: "text-muted-blue" },
+              { label: "Written", value: formatCompact(totalWordsWritten), fullSub: "total", color: "text-sage" },
+              { label: "Avg. Done", value: `${avgCompletion}%`, fullSub: "across all", color: "text-dusty-purple" },
             ].map((kpi, i) => (
               <motion.div
                 key={kpi.label}
-                initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
+                initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
                 animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                 transition={{ duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                className="p-3 sm:p-4 rounded-xl border border-border bg-card"
+                className="flex items-center justify-between sm:flex-col sm:items-start p-2 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card"
               >
-                <p className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{kpi.label}</p>
-                <p className={`text-base sm:text-xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
-                <p className="text-[10px] sm:text-[11px] text-muted-foreground">{kpi.sub}</p>
+                <div className="sm:mb-0.5">
+                  <p className="text-[8px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider leading-tight">{kpi.label}</p>
+                  <p className="text-[9px] sm:text-[11px] text-muted-foreground leading-tight sm:mt-0.5 hidden sm:block">{kpi.fullSub}</p>
+                </div>
+                <p className={`text-sm sm:text-xl font-bold tabular-nums ${kpi.color} sm:mt-auto`}>{kpi.value}</p>
               </motion.div>
             ))}
           </div>
@@ -216,16 +225,16 @@ const Dashboard = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.25 }}
-            className="p-3 sm:p-4 rounded-xl border border-border bg-card mb-6 sm:mb-8"
+            className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8"
           >
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-[13px] font-semibold">Word Budget</span>
-              <span className="font-mono text-[12px] text-muted-foreground">{wordsUsed.toLocaleString()} / {wordLimit.toLocaleString()} used</span>
+            <div className="flex justify-between items-center mb-1.5 sm:mb-2">
+              <span className="text-[11px] sm:text-[13px] font-semibold">Word Budget</span>
+              <span className="font-mono text-[10px] sm:text-[12px] text-muted-foreground">{formatCompact(wordsUsed)} / {formatCompact(wordLimit)}</span>
             </div>
-            <Progress value={wordUsagePercent} className="h-2" />
-            <div className="flex justify-between mt-1.5 text-[11px] text-muted-foreground">
-              <span>{wordUsagePercent}% used</span>
-              <span className="capitalize">{profile?.tier} tier</span>
+            <Progress value={wordUsagePercent} className="h-1.5 sm:h-2" />
+            <div className="flex justify-between mt-1 sm:mt-1.5 text-[9px] sm:text-[11px] text-muted-foreground">
+              <span>{wordUsagePercent}%</span>
+              <span className="capitalize">{profile?.tier}</span>
             </div>
           </motion.div>
 
@@ -235,9 +244,9 @@ const Dashboard = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.3 }}
-              className="p-4 rounded-xl border border-border bg-card mb-8"
+              className="p-3 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8"
             >
-              <h2 className="text-[13px] font-semibold mb-3">Recent Activity</h2>
+              <h2 className="text-[11px] sm:text-[13px] font-semibold mb-2 sm:mb-3">Recent Activity</h2>
               <div className="space-y-0.5">
                 {assessments.slice(0, 5).map((a) => {
                   const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
@@ -246,15 +255,15 @@ const Dashboard = () => {
                     <Link
                       key={a.id}
                       to={`/assessment/${a.id}`}
-                      className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted/50 transition-colors group"
+                      className="flex items-center gap-2 sm:gap-3 px-1.5 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-muted/50 transition-colors group"
                     >
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${done ? "bg-sage" : "bg-terracotta"}`} />
-                      <span className="text-sm font-medium text-foreground truncate flex-1 min-w-0">{a.title}</span>
-                      <span className="text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
+                      <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full flex-shrink-0 ${done ? "bg-sage" : "bg-terracotta"}`} />
+                      <span className="text-xs sm:text-sm font-medium text-foreground truncate flex-1 min-w-0">{a.title}</span>
+                      <span className="hidden sm:inline text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
                         {a.word_current.toLocaleString()}/{a.word_target.toLocaleString()}
                       </span>
-                      <span className="text-[11px] tabular-nums text-muted-foreground w-8 text-right">{pct}%</span>
-                      <span className="text-[11px] text-muted-foreground w-12 text-right">{getTimeAgo(a.updated_at)}</span>
+                      <span className="text-[10px] sm:text-[11px] tabular-nums text-muted-foreground w-7 sm:w-8 text-right">{pct}%</span>
+                      <span className="text-[10px] sm:text-[11px] text-muted-foreground w-10 sm:w-12 text-right">{getTimeAgo(a.updated_at)}</span>
                     </Link>
                   );
                 })}
