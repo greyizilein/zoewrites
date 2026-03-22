@@ -1115,7 +1115,7 @@ const WriterEngine = () => {
                   onAcceptEdits={handleAcceptEdits}
                   onDenyEdits={handleDenyEdits}
                   editReport={editReport}
-                  onBack={() => setStage(4)} onNext={() => setStage(6)}
+                  onNext={() => setStage(6)}
                 />
               )}
               {stage === 6 && (
