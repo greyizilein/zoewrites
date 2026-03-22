@@ -35,6 +35,7 @@ const Analytics = () => {
   const [statusData, setStatusData] = useState<any[]>([]);
   const [typeData, setTypeData] = useState<any[]>([]);
   const [velocityData, setVelocityData] = useState<any[]>([]);
+  const [completionTrendData, setCompletionTrendData] = useState<any[]>([]);
   const [totals, setTotals] = useState({
     words: 0, assessments: 0, completed: 0, active: 0,
     avgTurnaround: 0, totalCitations: 0, completionRate: 0,
@@ -148,6 +149,23 @@ const Analytics = () => {
       });
       setVelocityData(velData.slice(-30));
 
+      // Completion trend — running avg completion % by date
+      const sorted = [...filtered].sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime());
+      const trendMap: Record<string, { totalPct: number; count: number }> = {};
+      sorted.forEach(a => {
+        const day = a.updated_at.slice(0, 10);
+        const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
+        if (!trendMap[day]) trendMap[day] = { totalPct: 0, count: 0 };
+        trendMap[day].totalPct += pct;
+        trendMap[day].count++;
+      });
+      let runningTotal = 0;
+      let runningCount = 0;
+      setCompletionTrendData(Object.entries(trendMap).map(([date, { totalPct, count }]) => {
+        runningTotal += totalPct;
+        runningCount += count;
+        return { date: date.slice(5), avg: Math.round(runningTotal / runningCount) };
+      }));
       setLoading(false);
     };
     load();
@@ -271,6 +289,25 @@ const Analytics = () => {
                 <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
                 <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))" }} />
                 <Area type="monotone" dataKey="velocity" stroke="hsl(212, 38%, 43%)" fill="hsl(212, 38%, 43%)" fillOpacity={0.1} strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </motion.div>
+
+          {/* Completion trend */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.37 }}
+            className="p-5 rounded-xl border border-border bg-card"
+          >
+            <h3 className="text-sm font-semibold text-foreground mb-4">Completion Trend</h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={completionTrendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" domain={[0, 100]} unit="%" />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))" }} formatter={(v: number) => [`${v}%`, "Avg Completion"]} />
+                <Area type="monotone" dataKey="avg" stroke="hsl(153, 16%, 42%)" fill="hsl(153, 16%, 42%)" fillOpacity={0.12} strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </motion.div>
