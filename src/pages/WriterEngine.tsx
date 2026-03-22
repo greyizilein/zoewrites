@@ -468,6 +468,8 @@ const WriterEngine = () => {
   const handleApplyRevisions = async (feedback: string) => {
     if (!feedback.trim()) return;
     setIsProcessing(true);
+    // Snapshot sections before revisions for Writer Slate comparison
+    setPriorSections(sections.map(s => ({ ...s })));
     try {
       for (const s of sections.filter(s => s.content)) {
         await streamSection(s.id, true, feedback);
@@ -481,12 +483,31 @@ const WriterEngine = () => {
   };
 
   // ─── STAGE 6: Writer Slate actions ───
-  const handleAcceptAll = () => {
+  const handleAcceptAll = async () => {
+    // Keep current sections — just confirm
     toast({ title: "All changes accepted" });
   };
 
-  const handleDenyAll = () => {
+  const handleDenyAll = async () => {
+    if (priorSections.length === 0) { toast({ title: "No prior version to revert to" }); return; }
+    for (const prior of priorSections) {
+      if (prior.content) {
+        await supabase.from("sections").update({ content: prior.content, word_current: prior.word_current }).eq("id", prior.id);
+      }
+    }
+    setSections(priorSections.map(s => ({ ...s })));
     toast({ title: "All changes denied — reverted to previous version" });
+  };
+
+  const handleAcceptSection = (_sectionId: string) => {
+    // Current content is already the accepted version — no-op on data
+  };
+
+  const handleDenySection = async (sectionId: string) => {
+    const prior = priorSections.find(p => p.id === sectionId);
+    if (!prior || !prior.content) return;
+    await supabase.from("sections").update({ content: prior.content, word_current: prior.word_current }).eq("id", sectionId);
+    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: prior.content!, word_current: prior.word_current } : s));
   };
 
   const handleTrimToTarget = async () => {
