@@ -208,6 +208,39 @@ const Dashboard = () => {
             </div>
           </motion.div>
 
+          {/* Recent Activity */}
+          {assessments.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="p-4 rounded-xl border border-border bg-card mb-8"
+            >
+              <h2 className="text-[13px] font-semibold mb-3">Recent Activity</h2>
+              <div className="space-y-0.5">
+                {assessments.slice(0, 5).map((a) => {
+                  const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
+                  const done = a.status === "complete";
+                  return (
+                    <Link
+                      key={a.id}
+                      to={`/assessment/${a.id}`}
+                      className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-muted/50 transition-colors group"
+                    >
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${done ? "bg-sage" : "bg-terracotta"}`} />
+                      <span className="text-sm font-medium text-foreground truncate flex-1 min-w-0">{a.title}</span>
+                      <span className="text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
+                        {a.word_current.toLocaleString()}/{a.word_target.toLocaleString()}
+                      </span>
+                      <span className="text-[11px] tabular-nums text-muted-foreground w-8 text-right">{pct}%</span>
+                      <span className="text-[11px] text-muted-foreground w-12 text-right">{getTimeAgo(a.updated_at)}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+
           {assessments.length === 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 14 }}
