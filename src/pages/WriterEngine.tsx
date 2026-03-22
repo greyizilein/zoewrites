@@ -367,7 +367,7 @@ const WriterEngine = () => {
 
       // Auto-humanise
       if (settings.humanisation === "High" || settings.humanisation === "Maximum") {
-        toast({ title: "Auto-humanising…", description: section.title });
+        setProgressMessage(`Humanising ${section.title}…`);
         try {
           const { data: hData, error: hErr } = await supabase.functions.invoke("humanise", {
             body: { content: finalContent, word_target: section.word_target, mode: "full", model: selectedModel, voice_perspective: settings.firstPerson ? "first" : "third" },
