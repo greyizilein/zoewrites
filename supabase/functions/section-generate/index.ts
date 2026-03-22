@@ -148,7 +148,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { section, execution_plan, prior_sections_summary, citation_style, academic_level, model, settings } = await req.json();
+    const { section, execution_plan, prior_sections_summary, citation_style, academic_level, model, settings, brief_text, topic } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
@@ -274,6 +274,12 @@ ${section.a_plus_criteria || "Critical analysis, evidence-based argumentation, w
 
 ─── NON-NEGOTIABLE CONSTRAINTS ───
 ${section.constraints || "No bullet points. Every claim cited. Word count ±1%."}
+
+SUBJECT / COMPANY / TOPIC — CRITICAL:
+${topic ? `The assessment is specifically about: ${topic}. You MUST write exclusively about this subject. Do NOT substitute or default to a different organisation, company, or topic.` : "Use the subject identified in the brief below."}
+
+ORIGINAL BRIEF (ground ALL content in this — company names, data, requirements, and frameworks specified here must be followed exactly):
+${brief_text ? brief_text.slice(0, 3000) : "See execution plan for context."}
 
 ASSESSMENT CONTEXT:
 ${execution_plan ? JSON.stringify(execution_plan) : "Full assessment plan not provided"}

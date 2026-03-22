@@ -9,17 +9,11 @@ import ReactMarkdown from "react-markdown";
 import WriterSidebar from "@/components/writer/WriterSidebar";
 import StageBriefIntake from "@/components/writer/StageBriefIntake";
 import StageExecutionTable from "@/components/writer/StageExecutionTable";
-import StageWriteHumanise from "@/components/writer/StageWriteHumanise";
-import StageSelfCritique from "@/components/writer/StageSelfCritique";
-import StageEditProofread from "@/components/writer/StageEditProofread";
-import StageRevise from "@/components/writer/StageRevise";
-import StageWriterSlate from "@/components/writer/StageWriterSlate";
-import StageFinalScan from "@/components/writer/StageFinalScan";
+import StageWrite, { AutoPhase } from "@/components/writer/StageWrite";
+import StageReview from "@/components/writer/StageReview";
 import StageSubmissionPrep, { SubmissionDetails } from "@/components/writer/StageSubmissionPrep";
-import StageManualSubmission from "@/components/writer/StageManualSubmission";
 import DraggableChatFab from "@/components/writer/DraggableChatFab";
 import ProgressBanner from "@/components/writer/ProgressBanner";
-import { EditDiff } from "@/components/writer/StageEditProofread";
 import { Section, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 import { readContentStream } from "@/lib/sseStream";
 import { countWords, truncateToWordCeiling } from "@/lib/wordCount";
@@ -61,11 +55,7 @@ const WriterEngine = () => {
   const [executionPlan, setExecutionPlan] = useState<any>(null);
   const [settings, setSettings] = useState<WriterSettings>({ ...defaultSettings });
   const [qualityReport, setQualityReport] = useState<any>(null);
-  const [editReport, setEditReport] = useState<any>(null);
-  const [scanReport, setScanReport] = useState<any>(null);
-  const [revisionFeedback, setRevisionFeedback] = useState<string>("");
-  const [editDiffs, setEditDiffs] = useState<EditDiff[]>([]);
-  const [priorSections, setPriorSections] = useState<Section[]>([]);
+  const [autoPhase, setAutoPhase] = useState<AutoPhase>(null);
   const [progressMessage, setProgressMessage] = useState("");
   const [submissionDetails, setSubmissionDetails] = useState<SubmissionDetails | undefined>();
   const [selectedFont, setSelectedFont] = useState("Calibri 12pt");
@@ -108,9 +98,9 @@ const WriterEngine = () => {
         setBriefText(aData.brief_text || "");
         if (sData && sData.length > 0) {
           const allComplete = sData.every(s => s.status === "complete");
-          setStage(allComplete ? 3 : 2);
+          setStage(allComplete ? 2 : 1);
         } else if (aData.execution_plan) {
-          setStage(1);
+          setStage(0); // show plan review
         }
       }
       setSections((sData || []).map((s: any) => ({ ...s, suggested_frameworks: Array.isArray(s.suggested_frameworks) ? s.suggested_frameworks : [] })));
@@ -255,8 +245,8 @@ const WriterEngine = () => {
       if (sErr) throw sErr;
       setSections((newSections || []).map((s: any) => ({ ...s, suggested_frameworks: Array.isArray(s.suggested_frameworks) ? s.suggested_frameworks : [] })));
 
-      setStage(2);
-      toast({ title: "Plan confirmed" });
+      setStage(1);
+      toast({ title: "Plan confirmed — start writing" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
@@ -277,7 +267,12 @@ const WriterEngine = () => {
     const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ content, feedback, word_target: wordTarget, section_title: sectionTitle, model: selectedModel, settings }),
+      body: JSON.stringify({
+        content, feedback, word_target: wordTarget, section_title: sectionTitle,
+        model: selectedModel, settings,
+        brief_text: assessment?.brief_text || briefText || "",
+        topic: settings.topic || "",
+      }),
     });
     if (!trimResp.ok || !trimResp.body) return null;
     const result = await readContentStream(trimResp.body);
@@ -300,9 +295,16 @@ const WriterEngine = () => {
     const priorSections = sections.filter(s => s.sort_order < section.sort_order && s.content);
     const priorSummary = priorSections.map(s => `${s.title}: ${(s.content || "").slice(0, 200)}...`).join("\n");
 
+    const briefContext = assessment?.brief_text || briefText || "";
+    const topicContext = settings.topic || "";
+
     const endpoint = isRevision ? "section-revise" : "section-generate";
     const body = isRevision
-      ? { content: section.content, feedback, word_target: section.word_target, section_title: section.title, model: selectedModel, settings }
+      ? {
+          content: section.content, feedback, word_target: section.word_target,
+          section_title: section.title, model: selectedModel, settings,
+          brief_text: briefContext, topic: topicContext,
+        }
       : {
           section: {
             title: section.title, word_target: section.word_target, framework: section.framework,
@@ -316,6 +318,7 @@ const WriterEngine = () => {
           citation_style: settings.citationStyle || "Harvard",
           academic_level: settings.level || "Postgraduate L7",
           model: selectedModel, settings,
+          brief_text: briefContext, topic: topicContext,
         };
 
     try {
@@ -443,113 +446,59 @@ const WriterEngine = () => {
     }
   };
 
-  // ─── STAGE 4: Edit & Proofread (per-section) ───
-  const handleEditProofread = async () => {
-    const contentSections = sections.filter(s => s.content);
-    if (contentSections.length === 0) { toast({ title: "No content", variant: "destructive" }); return; }
-
-    try {
-      const diffs: EditDiff[] = [];
-      let totalCorrections = 0;
-
-      for (const section of contentSections) {
-        const { data, error } = await supabase.functions.invoke("edit-proofread", {
-          body: { content: section.content, model: selectedModel },
-        });
-        if (error) throw error;
-
-        const corrected = data?.corrected_content || section.content;
-        totalCorrections += data?.corrections_count || 0;
-
-        if (corrected !== section.content) {
-          diffs.push({
-            sectionId: section.id,
-            sectionTitle: section.title,
-            original: section.content!,
-            corrected,
-            accepted: null,
-          });
-        }
-      }
-
-      setEditReport({ corrections_count: totalCorrections, summary: `${totalCorrections} corrections across ${diffs.length} sections` });
-      setEditDiffs(diffs);
-      return { corrections_count: totalCorrections };
-    } catch (e: any) {
-      toast({ title: "Edit failed", description: e.message, variant: "destructive" });
-      throw e;
-    }
-  };
-
-  const handleAcceptEdits = async (sectionIds: string[]) => {
-    for (const sid of sectionIds) {
-      const diff = editDiffs.find(d => d.sectionId === sid);
-      if (!diff) continue;
-      const wc = diff.corrected.split(/\s+/).filter(Boolean).length;
-      await supabase.from("sections").update({ content: diff.corrected, word_current: wc }).eq("id", sid);
-      setSections(prev => prev.map(s => s.id === sid ? { ...s, content: diff.corrected, word_current: wc } : s));
-    }
-    setEditDiffs(prev => prev.map(d => sectionIds.includes(d.sectionId) ? { ...d, accepted: true } : d));
-    toast({ title: `${sectionIds.length} edit(s) accepted` });
-  };
-
-  const handleDenyEdits = (sectionIds: string[]) => {
-    setEditDiffs(prev => prev.map(d => sectionIds.includes(d.sectionId) ? { ...d, accepted: false } : d));
-    toast({ title: `${sectionIds.length} edit(s) denied` });
-  };
-
-  // ─── STAGE 4: Apply revisions (was stage 5) ───
-  const handleApplyRevisions = async (feedback: string) => {
+  // ─── Review: Apply feedback to a single section ───
+  const handleApplySectionFeedback = async (sectionId: string, feedback: string) => {
     if (!feedback.trim()) return;
     setIsProcessing(true);
-    // Snapshot sections before revisions for Writer Slate comparison
-    setPriorSections(sections.map(s => ({ ...s })));
     try {
-      for (const s of sections.filter(s => s.content)) {
-        await streamSection(s.id, true, feedback);
-      }
-      toast({ title: "Revisions applied" });
-      setStage(5); // advance to Edit & Proofread
+      await streamSection(sectionId, true, feedback);
+      toast({ title: "Section revised" });
     } catch (e: any) {
       toast({ title: "Revision failed", description: e.message, variant: "destructive" });
     }
     setIsProcessing(false);
   };
 
-  // ─── STAGE 6: Writer Slate actions ───
-  const handleAcceptAll = async () => {
-    // Update assessment word count in DB
-    const newTotal = sections.reduce((a, s) => a + s.word_current, 0);
-    if (assessment?.id) {
-      await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
-    }
-    setPriorSections([]); // Clear prior — changes are now canonical
-    toast({ title: "All changes accepted" });
-  };
-
-  const handleDenyAll = async () => {
-    if (priorSections.length === 0) { toast({ title: "No prior version to revert to" }); return; }
-    for (const prior of priorSections) {
-      if (prior.content) {
-        await supabase.from("sections").update({ content: prior.content, word_current: prior.word_current }).eq("id", prior.id);
+  // ─── Review: Fix all issues from quality report ───
+  const handleFixAllIssues = async () => {
+    const issues = qualityReport?.report?.issues || [];
+    if (issues.length === 0) { toast({ title: "No issues to fix" }); return; }
+    const feedback = issues
+      .map((i: any) => `[${i.severity?.toUpperCase()}] ${i.description}${i.suggestion ? ` — ${i.suggestion}` : ""}`)
+      .join("\n");
+    setIsProcessing(true);
+    try {
+      for (const s of sections.filter(s => s.content)) {
+        await streamSection(s.id, true, feedback);
       }
+      toast({ title: "Issues applied to all sections", description: "Run Re-scan to verify." });
+    } catch (e: any) {
+      toast({ title: "Fix failed", description: e.message, variant: "destructive" });
     }
-    setSections(priorSections.map(s => ({ ...s })));
-    toast({ title: "All changes denied — reverted to previous version" });
+    setIsProcessing(false);
   };
 
-  const handleAcceptSection = (_sectionId: string) => {
-    // Current content is already the accepted version — no-op on data
+  // ─── Review: Edit & proofread (auto-applied silently) ───
+  const handleEditProofreadSilent = async () => {
+    const contentSections = sections.filter(s => s.content);
+    if (contentSections.length === 0) return;
+    try {
+      for (const section of contentSections) {
+        const { data, error } = await supabase.functions.invoke("edit-proofread", {
+          body: { content: section.content, model: selectedModel },
+        });
+        if (error || !data?.corrected_content) continue;
+        const corrected = data.corrected_content;
+        if (corrected !== section.content) {
+          const wc = countWords(corrected);
+          await supabase.from("sections").update({ content: corrected, word_current: wc }).eq("id", section.id);
+          setSections(prev => prev.map(s => s.id === section.id ? { ...s, content: corrected, word_current: wc } : s));
+        }
+      }
+    } catch { /* best-effort */ }
   };
 
-  const handleDenySection = async (sectionId: string) => {
-    const prior = priorSections.find(p => p.id === sectionId);
-    if (!prior || !prior.content) return;
-    await supabase.from("sections").update({ content: prior.content, word_current: prior.word_current }).eq("id", sectionId);
-    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: prior.content!, word_current: prior.word_current } : s));
-  };
-
-  // Dedicated trim function for Writer Slate — trim only, no humanise, no backward nav
+  // ─── Trim helper ─────────────────────────────────────────────────────────────
   const handleTrimToTarget = async (trimTargets?: Record<string, number>) => {
     setIsProcessing(true);
 
@@ -596,11 +545,9 @@ const WriterEngine = () => {
     toast({ title: "Word count trimmed" });
   };
 
-  // ─── STAGE 7: Final Scan ───
-  const handleFinalScan = async () => {
-    // Reuse quality-pass for final scan
+  // ─── Review: Run scan (alias for quality check) ───
+  const handleRunScan = async () => {
     const data = await handleQualityCheck();
-    setScanReport(data);
     return data;
   };
 
@@ -739,21 +686,6 @@ const WriterEngine = () => {
     setIsProcessing(false);
   };
 
-  // ─── STAGE 9: Manual corrections ───
-  const handleManualCorrections = async (corrections: string) => {
-    if (!corrections.trim()) return;
-    setIsProcessing(true);
-    try {
-      for (const s of sections.filter(s => s.content)) {
-        await streamSection(s.id, true, corrections);
-      }
-      toast({ title: "Corrections applied" });
-    } catch (e: any) {
-      toast({ title: "Corrections failed", description: e.message, variant: "destructive" });
-    }
-    setIsProcessing(false);
-  };
-
   // ─── AUTOPILOT ───
   const handleAutopilot = async () => {
     if (autopilotRunning) { autopilotCancelRef.current = true; return; }
@@ -761,38 +693,35 @@ const WriterEngine = () => {
     setAutopilotRunning(true);
 
     try {
-      toast({ title: "Autopilot: Writing…" });
+      // Phase 1: Write all pending sections
+      setAutoPhase("writing");
       const pending = sections.filter(s => s.status === "pending" || !s.content);
       for (const s of pending) {
         if (autopilotCancelRef.current) break;
         await streamSection(s.id);
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 800));
       }
-      if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
+      if (autopilotCancelRef.current) { setAutopilotRunning(false); setAutoPhase(null); return; }
 
-      toast({ title: "Autopilot: Self-critique…" });
-      setStage(3);
+      // Phase 2: Quality check (silent)
+      setAutoPhase("quality");
       await handleQualityCheck();
-      if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
+      if (autopilotCancelRef.current) { setAutopilotRunning(false); setAutoPhase(null); return; }
 
-      toast({ title: "Autopilot: Edit & proofread…" });
-      setStage(5);
-      await handleEditProofread();
-      if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
+      // Phase 3: Edit & proofread (auto-apply silently)
+      setAutoPhase("editing");
+      await handleEditProofreadSilent();
+      if (autopilotCancelRef.current) { setAutopilotRunning(false); setAutoPhase(null); return; }
 
-      if (settings.autoImages) {
-        toast({ title: "Autopilot: Generating figures…" });
-        await handleGenerateImages();
-      }
-
-      toast({ title: "Autopilot: Exporting…" });
-      setStage(8);
-      await handleExport();
-      toast({ title: "🎉 Autopilot complete!" });
+      // Advance to Review — user reviews before any export
+      setAutoPhase(null);
+      setStage(2);
+      toast({ title: "Auto complete — review your draft", description: "Fix any issues before exporting." });
     } catch (e: any) {
-      toast({ title: "Autopilot error", description: e.message, variant: "destructive" });
+      toast({ title: "Auto error", description: e.message, variant: "destructive" });
     } finally {
       setAutopilotRunning(false);
+      setAutoPhase(null);
     }
   };
 
@@ -815,16 +744,15 @@ const WriterEngine = () => {
     handleAnalyseBrief,
     handleWriteAll,
     handleQualityCheck,
-    handleEditProofread,
+    handleEditProofread: handleEditProofreadSilent,
     handleGenerateImages,
     handleExport,
   });
 
   const canAdvance = (targetStage: number) => {
     if (targetStage <= stage) return true;
-    if (targetStage === 1 && !executionPlan) return false;
-    if (targetStage === 2 && sections.length === 0) return false;
-    if (targetStage >= 3 && !sections.some(s => s.content)) return false;
+    if (targetStage === 1 && sections.length === 0) return false;
+    if (targetStage >= 2 && !sections.some(s => s.content)) return false;
     return true;
   };
 
@@ -917,7 +845,8 @@ const WriterEngine = () => {
             <ProgressBanner message={progressMessage} active={!!progressMessage} />
             <div className="px-3.5 sm:px-6 md:px-14 py-5 sm:py-7 md:py-10">
             <div className="max-w-[820px] mx-auto">
-              {stage === 0 && (
+              {/* Stage 0: Brief — intake form, then plan review inline */}
+              {stage === 0 && !executionPlan && (
                 <StageBriefIntake
                   settings={settings} onSettingsChange={setSettings}
                   briefText={briefText} onBriefTextChange={setBriefText}
@@ -927,82 +856,47 @@ const WriterEngine = () => {
                   onAnalyse={handleAnalyseBrief} isProcessing={isProcessing}
                 />
               )}
-              {stage === 1 && (
+              {stage === 0 && executionPlan && (
                 <StageExecutionTable
                   plan={executionPlan} onPlanChange={setExecutionPlan}
-                  settings={settings} onBack={() => setStage(0)}
+                  settings={settings} onBack={() => setExecutionPlan(null)}
                   onConfirm={handleConfirmPlan} isProcessing={isProcessing}
                 />
               )}
-              {stage === 2 && (
-                <StageWriteHumanise
+
+              {/* Stage 1: Write */}
+              {stage === 1 && (
+                <StageWrite
                   sections={sections}
                   onGenerate={(id) => streamSection(id)}
                   onWriteAll={handleWriteAll}
                   onAutopilot={handleAutopilot}
-                  onGenerateImages={handleGenerateImages}
                   autopilotRunning={autopilotRunning}
+                  autoPhase={autoPhase}
                   generating={generating} generatingId={generatingId}
                   streamContent={streamContent} writingAll={writingAll}
-                  onBack={() => setStage(1)} onNext={() => setStage(3)}
-                  settings={settings} onSettingsChange={setSettings}
-                  imageVariants={imageVariants}
-                  onSelectImage={handleSelectImage}
-                  imagesSkipped={imagesSkipped}
-                  onSkipImages={() => setImagesSkipped(true)}
+                  onBack={() => { setExecutionPlan(executionPlan); setStage(0); }}
+                  onNext={() => setStage(2)}
+                  settings={settings}
                 />
               )}
-              {stage === 3 && (
-                <StageSelfCritique
-                  onRunCritique={handleQualityCheck}
+
+              {/* Stage 2: Review */}
+              {stage === 2 && (
+                <StageReview
+                  sections={sections}
                   qualityReport={qualityReport}
-                  totalWords={totalWords} totalTarget={totalTarget}
-                  onNext={() => {
-                    const issues = qualityReport?.report?.issues || [];
-                    if (issues.length > 0) {
-                      const feedback = issues.map((i: any) => `[${i.severity}] ${i.description} → ${i.suggestion}`).join("\n");
-                      setRevisionFeedback(feedback);
-                    }
-                    setStage(4);
-                  }}
-                />
-              )}
-              {stage === 4 && (
-                <StageRevise
-                  onApplyRevisions={handleApplyRevisions}
                   isProcessing={isProcessing}
-                  onNext={() => setStage(5)}
-                  initialFeedback={revisionFeedback}
+                  onRunScan={handleRunScan}
+                  onFixAllIssues={handleFixAllIssues}
+                  onApplySectionFeedback={handleApplySectionFeedback}
+                  onBack={() => setStage(1)}
+                  onNext={() => setStage(3)}
                 />
               )}
-              {stage === 5 && (
-                <StageEditProofread
-                  onRunEdit={handleEditProofread}
-                  editDiffs={editDiffs}
-                  onAcceptEdits={handleAcceptEdits}
-                  onDenyEdits={handleDenyEdits}
-                  editReport={editReport}
-                  onNext={() => setStage(6)}
-                />
-              )}
-              {stage === 6 && (
-                <StageWriterSlate
-                  sections={sections} priorSections={priorSections} totalTarget={totalTarget}
-                  onAcceptAll={handleAcceptAll} onDenyAll={handleDenyAll}
-                  onAcceptSection={handleAcceptSection} onDenySection={handleDenySection}
-                  onTrimToTarget={handleTrimToTarget}
-                  onNext={() => setStage(7)}
-                  isProcessing={isProcessing}
-                />
-              )}
-              {stage === 7 && (
-                <StageFinalScan
-                  onRunScan={handleFinalScan}
-                  scanReport={scanReport}
-                  onNext={() => setStage(8)}
-                />
-              )}
-              {stage === 8 && (
+
+              {/* Stage 3: Export */}
+              {stage === 3 && (
                 <StageSubmissionPrep
                   assessmentTitle={assessment?.title || "Assessment"}
                   totalWords={totalWords}
@@ -1010,16 +904,8 @@ const WriterEngine = () => {
                   onDownloadImages={handleDownloadImagesZip}
                   hasImages={assessmentImages.length > 0}
                   isProcessing={isProcessing}
-                  onNext={() => setStage(9)}
+                  onNext={() => {}}
                   sections={sections}
-                />
-              )}
-              {stage === 9 && (
-                <StageManualSubmission
-                  onApplyCorrections={handleManualCorrections}
-                  onReExport={handleExport}
-                  isProcessing={isProcessing}
-                  assessmentTitle={assessment?.title || "Assessment"}
                 />
               )}
             </div>
