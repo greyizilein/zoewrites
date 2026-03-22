@@ -149,6 +149,23 @@ const Analytics = () => {
       });
       setVelocityData(velData.slice(-30));
 
+      // Completion trend — running avg completion % by date
+      const sorted = [...filtered].sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime());
+      const trendMap: Record<string, { totalPct: number; count: number }> = {};
+      sorted.forEach(a => {
+        const day = a.updated_at.slice(0, 10);
+        const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
+        if (!trendMap[day]) trendMap[day] = { totalPct: 0, count: 0 };
+        trendMap[day].totalPct += pct;
+        trendMap[day].count++;
+      });
+      let runningTotal = 0;
+      let runningCount = 0;
+      setCompletionTrendData(Object.entries(trendMap).map(([date, { totalPct, count }]) => {
+        runningTotal += totalPct;
+        runningCount += count;
+        return { date: date.slice(5), avg: Math.round(runningTotal / runningCount) };
+      }));
       setLoading(false);
     };
     load();
