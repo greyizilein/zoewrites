@@ -352,24 +352,21 @@ const WriterEngine = () => {
         } catch { /* optional */ }
       }
 
-      // Word count enforcement: auto-trim/expand if outside ±1% of target
+      // Word count enforcement: auto-trim if over 1% of target (reads fresh from DB)
       {
-        const latestSection = sections.find(s => s.id === sectionId);
-        const currentContent = latestSection?.content || fullContent;
+        const latestData = await supabase.from("sections").select("content, word_current").eq("id", sectionId).single();
+        const currentContent = latestData.data?.content || fullContent;
         const currentWc = currentContent.split(/\s+/).filter(Boolean).length;
-        const floor = section.word_target;
         const ceiling = Math.ceil(section.word_target * 1.01);
-        if (currentWc < floor || currentWc > ceiling) {
-          const trimFeedback = currentWc > ceiling
-            ? `Trim this section to exactly ${section.word_target} words. Remove redundant phrases, tighten prose. Do NOT add new content.`
-            : `Expand this section to exactly ${section.word_target} words. Add depth and analysis where appropriate.`;
+        if (currentWc > ceiling) {
+          const trimFeedback = `Trim this section to exactly ${section.word_target} words. Remove redundant phrases, tighten prose. Do NOT add new content.`;
           try {
-            toast({ title: "Adjusting word count…", description: section.title });
-            const session = await supabase.auth.getSession();
-            const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+            toast({ title: "Trimming to target…", description: section.title });
+            const session2 = await supabase.auth.getSession();
+            const at2 = session2.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
             const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
               method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${at2}` },
               body: JSON.stringify({
                 content: currentContent, feedback: trimFeedback,
                 word_target: section.word_target, section_title: section.title,
@@ -519,7 +516,7 @@ const WriterEngine = () => {
     toast({ title: `${sectionIds.length} edit(s) denied` });
   };
 
-  // ─── STAGE 5: Apply revisions ───
+  // ─── STAGE 4: Apply revisions (was stage 5) ───
   const handleApplyRevisions = async (feedback: string) => {
     if (!feedback.trim()) return;
     setIsProcessing(true);
@@ -530,7 +527,7 @@ const WriterEngine = () => {
         await streamSection(s.id, true, feedback);
       }
       toast({ title: "Revisions applied" });
-      setStage(6); // advance to Writer Slate
+      setStage(5); // advance to Edit & Proofread
     } catch (e: any) {
       toast({ title: "Revision failed", description: e.message, variant: "destructive" });
     }
@@ -570,17 +567,75 @@ const WriterEngine = () => {
     setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: prior.content!, word_current: prior.word_current } : s));
   };
 
-  const handleTrimToTarget = async () => {
+  // Dedicated trim function for Writer Slate — trim only, no humanise, no backward nav
+  const handleTrimToTarget = async (trimTargets?: Record<string, number>) => {
     setIsProcessing(true);
-    const diff = totalWords - totalTarget;
-    const feedback = diff > 0
-      ? `Trim exactly ${diff} words from the document while maintaining quality and flow. Remove redundant phrases and tighten prose.`
-      : `Expand the document by exactly ${Math.abs(diff)} words. Add depth, examples, or analysis where appropriate.`;
-    for (const s of sections.filter(s => s.content)) {
-      await streamSection(s.id, true, feedback);
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+    const contentSections = sections.filter(s => s.content);
+    const currentTotal = contentSections.reduce((a, s) => a + s.word_current, 0);
+    const excess = currentTotal - totalTarget;
+    if (excess <= 0) { setIsProcessing(false); toast({ title: "Already within target" }); return; }
+
+    for (const s of contentSections) {
+      // Calculate how many words to trim from this section
+      const customTrim = trimTargets?.[s.id];
+      const proportionalTrim = Math.ceil(excess * (s.word_current / currentTotal));
+      const wordsToRemove = customTrim ?? proportionalTrim;
+      if (wordsToRemove <= 0) continue;
+
+      const targetWc = Math.max(s.word_current - wordsToRemove, Math.floor(s.word_target * 0.95));
+      const trimFeedback = `Trim this section from ${s.word_current} to exactly ${targetWc} words. Remove redundant phrases and tighten prose. Do NOT add new content. Do NOT humanise. Preserve all citations exactly.`;
+
+      try {
+        const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({
+            content: s.content, feedback: trimFeedback,
+            word_target: targetWc, section_title: s.title,
+            model: selectedModel, settings,
+          }),
+        });
+        if (trimResp.ok && trimResp.body) {
+          const trimReader = trimResp.body.getReader();
+          const trimDecoder = new TextDecoder();
+          let trimBuffer = "";
+          let trimContent = "";
+          while (true) {
+            const { done: tDone, value: tValue } = await trimReader.read();
+            if (tDone) break;
+            trimBuffer += trimDecoder.decode(tValue, { stream: true });
+            let tIdx: number;
+            while ((tIdx = trimBuffer.indexOf("\n")) !== -1) {
+              let tLine = trimBuffer.slice(0, tIdx);
+              trimBuffer = trimBuffer.slice(tIdx + 1);
+              if (tLine.endsWith("\r")) tLine = tLine.slice(0, -1);
+              if (!tLine.startsWith("data: ")) continue;
+              const tJson = tLine.slice(6).trim();
+              if (tJson === "[DONE]") break;
+              try {
+                const tParsed = JSON.parse(tJson);
+                const tc = tParsed.choices?.[0]?.delta?.content;
+                if (tc) trimContent += tc;
+              } catch { /* partial */ }
+            }
+          }
+          if (trimContent) {
+            const trimWc = trimContent.split(/\s+/).filter(Boolean).length;
+            await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", s.id);
+            setSections(prev => prev.map(x => x.id === s.id ? { ...x, content: trimContent, word_current: trimWc } : x));
+          }
+        }
+      } catch { /* best-effort trim */ }
     }
+
+    // Check if within 5% — auto-accept if so
+    const newTotal = sections.reduce((a, s) => a + s.word_current, 0);
+    if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
     setIsProcessing(false);
-    toast({ title: "Word count adjusted" });
+    toast({ title: "Word count trimmed" });
   };
 
   // ─── STAGE 7: Final Scan ───
@@ -723,7 +778,7 @@ const WriterEngine = () => {
       if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
 
       toast({ title: "Autopilot: Edit & proofread…" });
-      setStage(4);
+      setStage(5);
       await handleEditProofread();
       if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
 
@@ -804,7 +859,7 @@ const WriterEngine = () => {
         const revSec = sections.find(s => s.title.toLowerCase().includes((args.section_title || "").toLowerCase()));
         if (revSec) {
           setChatMessages(prev => [...prev, { role: "assistant", content: `📝 Revising "${revSec.title}"…` }]);
-          setStage(5);
+          setStage(4);
           await streamSection(revSec.id, true, args.feedback);
         }
         break;
@@ -1043,26 +1098,26 @@ const WriterEngine = () => {
                       const feedback = issues.map((i: any) => `[${i.severity}] ${i.description} → ${i.suggestion}`).join("\n");
                       setRevisionFeedback(feedback);
                     }
-                    setStage(4);
+                    setStage(4); // → Revise
                   }}
                 />
               )}
               {stage === 4 && (
+                <StageRevise
+                  onApplyRevisions={handleApplyRevisions}
+                  isProcessing={isProcessing}
+                  onBack={() => setStage(3)} onNext={() => setStage(5)}
+                  initialFeedback={revisionFeedback}
+                />
+              )}
+              {stage === 5 && (
                 <StageEditProofread
                   onRunEdit={handleEditProofread}
                   editDiffs={editDiffs}
                   onAcceptEdits={handleAcceptEdits}
                   onDenyEdits={handleDenyEdits}
                   editReport={editReport}
-                  onBack={() => setStage(3)} onNext={() => setStage(5)}
-                />
-              )}
-              {stage === 5 && (
-                <StageRevise
-                  onApplyRevisions={handleApplyRevisions}
-                  isProcessing={isProcessing}
                   onBack={() => setStage(4)} onNext={() => setStage(6)}
-                  initialFeedback={revisionFeedback}
                 />
               )}
               {stage === 6 && (
@@ -1071,7 +1126,7 @@ const WriterEngine = () => {
                   onAcceptAll={handleAcceptAll} onDenyAll={handleDenyAll}
                   onAcceptSection={handleAcceptSection} onDenySection={handleDenySection}
                   onTrimToTarget={handleTrimToTarget}
-                  onBack={() => setStage(5)} onNext={() => setStage(7)}
+                  onNext={() => setStage(7)}
                   isProcessing={isProcessing}
                 />
               )}

@@ -16,7 +16,7 @@ const critiqueChecks = [
   "Argument quality: descriptive vs evaluative",
   "Citation audit & reference matching",
   "Framework application verification",
-  "Word count ±50 of target",
+  "Word count ±1% of target",
   "Banned AI phrase scan",
   "Formatting & heading audit",
   "Reference list completeness",
@@ -53,6 +53,7 @@ export default function StageSelfCritique({ onRunCritique, qualityReport, totalW
     <div className="max-w-[560px] mx-auto">
       <div className="mb-6 text-center">
         <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 4 of 10</p>
+
         <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Self-Critique</h1>
         <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Read-only quality report against A+ criteria.</p>
       </div>
@@ -128,7 +129,7 @@ export default function StageSelfCritique({ onRunCritique, qualityReport, totalW
         </div>
       )}
 
-      <StickyFooter leftLabel="← Write" onLeft={onBack} rightLabel="Edit & Proofread →" onRight={onNext} />
+      <StickyFooter leftLabel="← Write" onLeft={onBack} rightLabel="Revise →" onRight={onNext} />
     </div>
   );
 }

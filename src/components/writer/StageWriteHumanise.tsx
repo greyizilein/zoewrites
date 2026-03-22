@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Check, Zap, ChevronDown, Sparkles, ImagePlus } from "lucide-react";
+import { Loader2, Check, Zap, ChevronDown, Sparkles, ImagePlus, Image } from "lucide-react";
 import PersonalisePanel from "./PersonalisePanel";
 import StickyFooter from "./StickyFooter";
 import { Section, WriterSettings, aiModels } from "./types";
@@ -21,22 +21,52 @@ interface Props {
   onSettingsChange: (s: WriterSettings) => void;
 }
 
+const IMAGE_SUGGESTIONS: Record<string, string[]> = {
+  "analysis": ["SWOT matrix diagram", "Porter's Five Forces chart", "PESTLE analysis table", "Comparison bar chart"],
+  "introduction": ["Conceptual framework diagram", "Research context infographic"],
+  "literature": ["Literature mapping diagram", "Thematic analysis chart", "Timeline of key studies"],
+  "methodology": ["Research design flowchart", "Data collection process diagram", "Sampling framework"],
+  "findings": ["Results summary table", "Data visualization chart", "Comparative analysis graph"],
+  "discussion": ["Theoretical framework diagram", "Key findings comparison table"],
+  "conclusion": ["Summary infographic", "Recommendations matrix"],
+  "default": ["Summary table", "Conceptual diagram", "Comparison chart"],
+};
+
+function getSuggestedImages(title: string): string[] {
+  const lower = title.toLowerCase();
+  for (const [key, suggestions] of Object.entries(IMAGE_SUGGESTIONS)) {
+    if (lower.includes(key)) return suggestions;
+  }
+  return IMAGE_SUGGESTIONS["default"];
+}
+
 export default function StageWriteHumanise({
   sections, onGenerate, onWriteAll, onAutopilot, onGenerateImages,
   autopilotRunning, generating, generatingId, streamContent, writingAll,
   onBack, onNext, settings, onSettingsChange,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showImagePanel, setShowImagePanel] = useState(false);
+  const [selectedImageSections, setSelectedImageSections] = useState<Set<string>>(new Set());
 
   const totalWords = sections.reduce((a, s) => a + s.word_current, 0);
   const totalTarget = sections.reduce((a, s) => a + s.word_target, 0);
   const completedCount = sections.filter(s => s.status === "complete").length;
+  const allComplete = completedCount === sections.length && sections.length > 0;
   const progress = totalTarget > 0 ? Math.round((totalWords / totalTarget) * 100) : 0;
 
   const statusDot = (status: string) => {
     if (status === "complete") return "bg-sage";
     if (status === "writing") return "bg-terracotta animate-pulse shadow-[0_0_5px_hsl(18,50%,53%,0.4)]";
     return "bg-border";
+  };
+
+  const toggleImageSection = (id: string) => {
+    setSelectedImageSections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   return (
@@ -75,7 +105,7 @@ export default function StageWriteHumanise({
           <span>{completedCount} / {sections.length} sections</span>
           <div className="flex gap-2">
             {onGenerateImages && completedCount > 0 && (
-              <button onClick={onGenerateImages} className="text-dusty-purple font-medium hover:underline disabled:opacity-50 flex items-center gap-1">
+              <button onClick={() => setShowImagePanel(!showImagePanel)} className="text-dusty-purple font-medium hover:underline disabled:opacity-50 flex items-center gap-1">
                 <ImagePlus size={11} /> Images
               </button>
             )}
@@ -85,6 +115,51 @@ export default function StageWriteHumanise({
           </div>
         </div>
       </div>
+
+      {/* Image Suggestions Panel */}
+      {showImagePanel && allComplete && onGenerateImages && (
+        <div className="border border-dusty-purple/20 bg-dusty-purple/5 rounded-xl p-3.5 mb-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Image size={14} className="text-dusty-purple" />
+            <span className="text-[13px] font-semibold">Image Suggestions</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mb-3">Select sections where you'd like ZOE to generate figures:</p>
+          <div className="space-y-2 mb-3">
+            {sections.filter(s => s.content).map(s => {
+              const suggestions = getSuggestedImages(s.title);
+              const isSelected = selectedImageSections.has(s.id);
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => toggleImageSection(s.id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${
+                    isSelected ? "border-dusty-purple/40 bg-dusty-purple/10" : "border-border bg-card hover:bg-muted/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                      isSelected ? "bg-dusty-purple border-dusty-purple" : "border-border"
+                    }`}>
+                      {isSelected && <Check size={10} className="text-white" />}
+                    </div>
+                    <span className="text-[12px] font-medium flex-1 truncate">{s.title}</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 ml-6">
+                    Suggested: {suggestions.slice(0, 2).join(", ")}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            onClick={onGenerateImages}
+            disabled={selectedImageSections.size === 0}
+            className="w-full py-2 bg-dusty-purple text-white rounded-lg text-[12px] font-bold hover:bg-dusty-purple/90 transition-all active:scale-[0.97] disabled:opacity-50"
+          >
+            Generate Images ({selectedImageSections.size} sections)
+          </button>
+        </div>
+      )}
 
       <PersonalisePanel
         title="Personalise Writing"
