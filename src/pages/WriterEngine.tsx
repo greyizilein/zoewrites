@@ -728,6 +728,7 @@ const WriterEngine = () => {
       toast({ title: "Export failed", description: e.message, variant: "destructive" });
     }
     setIsProcessing(false);
+    setProgressMessage("");
   };
 
   // ─── Image Generation ───
