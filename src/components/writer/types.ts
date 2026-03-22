@@ -89,7 +89,7 @@ export const aiModels = [
   { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", desc: "Next-gen reasoning" },
 ];
 
-export const stageLabels = ["Brief", "Plan", "Write", "Critique", "Revise", "Submit"];
+export const stageLabels = ["Brief", "Plan", "Write", "Critique", "Edit", "Revise", "Slate", "Scan", "Submit", "Manual"];
 
 export const defaultSettings: WriterSettings = {
   type: "",

@@ -1,0 +1,88 @@
+import { useState, useCallback, useEffect } from "react";
+import { Upload, File, X } from "lucide-react";
+import StickyFooter from "./StickyFooter";
+
+interface Props {
+  onApplyRevisions: (feedback: string) => void;
+  isProcessing: boolean;
+  onBack: () => void;
+  onNext: () => void;
+  initialFeedback?: string;
+}
+
+export default function StageRevise({ onApplyRevisions, isProcessing, onBack, onNext, initialFeedback }: Props) {
+  const [feedbackText, setFeedbackText] = useState("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [autoApplied, setAutoApplied] = useState(false);
+
+  useEffect(() => {
+    if (initialFeedback && !autoApplied) {
+      setFeedbackText(initialFeedback);
+      setAutoApplied(true);
+    }
+  }, [initialFeedback, autoApplied]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) setUploadedFile(file);
+  }, []);
+
+  return (
+    <div>
+      <div className="mb-6">
+        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 6 of 10</p>
+        <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Revise</h1>
+        <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Provide feedback or corrections. ZOE applies them and advances to the Writer Slate.</p>
+      </div>
+
+      {initialFeedback && (
+        <div className="bg-terracotta/5 border border-terracotta/20 rounded-[10px] px-3.5 py-3 mb-4">
+          <p className="text-[12px] font-semibold text-terracotta mb-0.5">🔧 Auto-loaded from previous stages</p>
+          <p className="text-[11px] text-muted-foreground">Issues have been pre-filled. Click "Apply Revisions" to fix them.</p>
+        </div>
+      )}
+
+      {/* Upload area */}
+      <div
+        onDragOver={e => e.preventDefault()}
+        onDrop={handleDrop}
+        className="relative border-2 border-dashed border-border rounded-[10px] p-6 text-center hover:border-terracotta/30 transition-colors cursor-pointer mb-4"
+      >
+        {uploadedFile ? (
+          <div className="flex items-center justify-center gap-3">
+            <File size={18} className="text-terracotta" />
+            <span className="text-[13px] font-medium">{uploadedFile.name}</span>
+            <button onClick={() => setUploadedFile(null)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
+          </div>
+        ) : (
+          <>
+            <Upload size={20} className="mx-auto text-muted-foreground mb-1" />
+            <p className="text-[13px] font-medium mb-0.5">Drop feedback file</p>
+            <p className="text-[11px] text-muted-foreground">PDF, DOCX, or image</p>
+            <input type="file" onChange={e => { if (e.target.files?.[0]) setUploadedFile(e.target.files[0]); }} className="absolute inset-0 opacity-0 cursor-pointer" />
+          </>
+        )}
+      </div>
+
+      {/* Feedback text */}
+      <textarea
+        value={feedbackText}
+        onChange={e => setFeedbackText(e.target.value)}
+        rows={6}
+        placeholder="Type or paste your corrections and feedback here…"
+        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-[14px] resize-y focus:outline-none focus:ring-1 focus:ring-terracotta/30 mb-4"
+      />
+
+      <button
+        onClick={() => onApplyRevisions(feedbackText)}
+        disabled={isProcessing || (!feedbackText.trim() && !uploadedFile)}
+        className="w-full py-3 bg-terracotta text-white rounded-[10px] font-bold text-[14px] hover:bg-terracotta/90 transition-all active:scale-[0.97] disabled:opacity-50"
+      >
+        {isProcessing ? "Applying…" : "Apply Revisions → Writer Slate"}
+      </button>
+
+      <StickyFooter leftLabel="← Edit" onLeft={onBack} rightLabel="Writer Slate →" onRight={onNext} />
+    </div>
+  );
+}
