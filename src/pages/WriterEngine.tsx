@@ -1196,6 +1196,7 @@ const WriterEngine = () => {
                 />
               )}
             </div>
+            </div>
           </div>
 
           {/* Chat panel */}
