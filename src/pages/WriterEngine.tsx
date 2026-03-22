@@ -405,21 +405,33 @@ const WriterEngine = () => {
   }, [sections, assessment, executionPlan, settings, selectedModel, toast]);
 
   const handleWriteAll = async () => {
-    const pending = sections.filter(s => s.status === "pending" || !s.content);
-    if (pending.length === 0) { toast({ title: "All sections already written" }); return; }
+    if (sections.length === 0) {
+      toast({ title: "No sections yet", description: "Confirm your plan first.", variant: "destructive" });
+      return;
+    }
+    // Use content length as truth — status can be stale
+    const pending = sections.filter(s => !s.content || s.content.trim().length < 50);
+    if (pending.length === 0) {
+      toast({ title: "All sections already written", description: "Go to Review or rewrite individual sections." });
+      return;
+    }
     setWritingAll(true);
     for (const s of pending) {
       await streamSection(s.id);
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 800));
     }
     setWritingAll(false);
     toast({ title: "All sections complete!" });
   };
 
-  // ─── STAGE 3: Quality check ───
+  // ─── Quality check (used by Review stage) ───
   const handleQualityCheck = async () => {
-    const allContent = sections.filter(s => s.content).map(s => `## ${s.title}\n${s.content}`).join("\n\n");
-    if (!allContent) { toast({ title: "No content to check", variant: "destructive" }); return; }
+    const contentSections = sections.filter(s => s.content && s.content.trim().length > 50);
+    if (contentSections.length === 0) {
+      toast({ title: "No content to scan", description: "Write your sections first.", variant: "destructive" });
+      return null;
+    }
+    const allContent = contentSections.map(s => `## ${s.title}\n${s.content}`).join("\n\n");
 
     const briefData = assessment?.execution_plan || executionPlan;
     const parsedBrief = briefData ? {
@@ -693,9 +705,13 @@ const WriterEngine = () => {
     setAutopilotRunning(true);
 
     try {
-      // Phase 1: Write all pending sections
+      // Phase 1: Write all sections without substantial content
       setAutoPhase("writing");
-      const pending = sections.filter(s => s.status === "pending" || !s.content);
+      if (sections.length === 0) {
+        toast({ title: "No sections to write", description: "Confirm your plan first.", variant: "destructive" });
+        setAutopilotRunning(false); setAutoPhase(null); return;
+      }
+      const pending = sections.filter(s => !s.content || s.content.trim().length < 50);
       for (const s of pending) {
         if (autopilotCancelRef.current) break;
         await streamSection(s.id);
@@ -772,8 +788,6 @@ const WriterEngine = () => {
     );
   }
 
-  const maxStage = stageLabels.length - 1;
-
   return (
     <div className="flex h-screen h-[100dvh] overflow-hidden bg-background">
       {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-[199] md:hidden" onClick={() => setSidebarOpen(false)} />}
@@ -794,45 +808,46 @@ const WriterEngine = () => {
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Topbar */}
-        <div className="h-12 border-b border-border flex items-center justify-between px-3 md:px-5 gap-1.5 flex-shrink-0 bg-card">
-          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden flex-1">
-            <button onClick={() => setSidebarOpen(true)} className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-muted transition-colors flex-shrink-0 md:hidden">
+        <div className="h-12 border-b border-border flex items-center justify-between px-3 md:px-4 gap-2 flex-shrink-0 bg-card">
+          {/* Left: hamburger + back arrow */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button onClick={() => setSidebarOpen(true)} className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-muted transition-colors md:hidden">
               <Menu size={16} />
             </button>
-            <div className="flex items-center gap-[3px]">
-              <button onClick={() => stage > 0 && handleStageChange(stage - 1)} disabled={stage === 0} className="w-7 h-7 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-all disabled:opacity-30 flex-shrink-0">
-                <ChevronLeft size={13} />
-              </button>
-              <button onClick={() => stage < maxStage && handleStageChange(stage + 1)} disabled={stage === maxStage} className="w-7 h-7 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-all disabled:opacity-30 flex-shrink-0">
-                <ChevronRight size={13} />
-              </button>
-            </div>
+            <button
+              onClick={() => stage > 0 && handleStageChange(stage - 1)}
+              disabled={stage === 0}
+              className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-muted transition-all disabled:opacity-30"
+            >
+              <ChevronLeft size={14} />
+            </button>
           </div>
 
-          {/* Stage pills — hidden on mobile */}
-          <div className="hidden sm:flex items-center gap-[3px] md:gap-[5px] overflow-x-auto flex-shrink-0 scrollbar-hide">
+          {/* Centre: step indicator — always visible, compact */}
+          <div className="flex items-center gap-1 flex-1 justify-center overflow-hidden">
             {stageLabels.map((label, i) => (
               <button
                 key={i}
                 onClick={() => handleStageChange(i)}
-                className={`flex items-center gap-1 px-1.5 sm:px-2 py-[3px] rounded-full text-[11px] font-medium transition-all border whitespace-nowrap flex-shrink-0 ${
-                  i === stage ? "bg-foreground text-background border-foreground" :
-                  i < stage ? "bg-sage/15 text-sage border-sage/20" :
-                  "border-transparent hover:bg-muted"
+                className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold transition-all whitespace-nowrap ${
+                  i === stage
+                    ? "bg-terracotta text-white"
+                    : i < stage
+                      ? "text-sage"
+                      : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <span className={`w-[15px] h-[15px] rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${
-                  i === stage ? "bg-background/20 text-background" :
-                  i < stage ? "bg-sage text-white" : "bg-border text-muted-foreground"
-                }`}>{i + 1}</span>
-                <span className="hidden md:inline">{label}</span>
+                {i < stage && <span className="text-[9px]">✓</span>}
+                <span className="hidden sm:inline">{label}</span>
+                <span className="sm:hidden">{i + 1}</span>
               </button>
             ))}
           </div>
 
+          {/* Right: ZOE chat button */}
           <button
             onClick={() => setChatOpen(!chatOpen)}
-            className={`ml-1.5 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all flex-shrink-0 ${
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all flex-shrink-0 ${
               chatOpen ? "bg-terracotta text-white" : "border border-border hover:bg-muted"
             }`}
           >
