@@ -245,25 +245,40 @@ serve(async (req) => {
     const safeTitle = (assessment.title || "Assessment").replace(/[^a-zA-Z0-9\s-_]/g, "").replace(/\s+/g, "_");
     const filename = `${safeTitle}_FINAL.docx`;
 
-    // Build title page
+    // Build title page with submission details
+    const sd = submission_details || {};
     const titlePageChildren = [
       new Paragraph({ spacing: { before: 4000 }, children: [] }),
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: 400 },
-        children: [new TextRun({ text: assessment.title, bold: true, size: 52, font: "Arial" })],
+        children: [new TextRun({ text: assessment.title, bold: true, size: 52, font: docFont })],
       }),
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: 200 },
-        children: [new TextRun({ text: assessment.type || "Assessment", size: 28, font: "Arial", color: "666666" })],
+        children: [new TextRun({ text: assessment.type || "Assessment", size: 28, font: docFont, color: "666666" })],
       }),
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }), size: 22, font: "Arial", color: "999999" })],
-      }),
-      new Paragraph({ children: [new PageBreak()] }),
     ];
+    // Add submission details to title page
+    const detailLines = [
+      sd.fullName && `By: ${sd.fullName}`,
+      sd.studentId && `Student ID: ${sd.studentId}`,
+      sd.institution,
+      sd.moduleName && sd.moduleCode ? `${sd.moduleName} (${sd.moduleCode})` : sd.moduleName || sd.moduleCode,
+      sd.supervisor && `Supervisor: ${sd.supervisor}`,
+      sd.academicYear && `Academic Year: ${sd.academicYear}`,
+      sd.company && `Organisation: ${sd.company}`,
+      sd.submissionDate ? new Date(sd.submissionDate).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }) : new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }),
+    ].filter(Boolean);
+    for (const line of detailLines) {
+      titlePageChildren.push(new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 100 },
+        children: [new TextRun({ text: line as string, size: 24, font: docFont, color: "555555" })],
+      }));
+    }
+    titlePageChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
     const tocChildren = [
       new Paragraph({
