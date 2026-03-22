@@ -195,7 +195,7 @@ ${frameworkRules}
 
 WRITING RULES:
 1. Write EXACTLY ${section.word_target} words (±1% tolerance: ${Math.floor(section.word_target * 0.99)}–${Math.ceil(section.word_target * 1.01)} words)
-2. Use ${citation_style || "Harvard"} citation style with real, verifiable academic sources
+2. Use ${citation_style || "Harvard"} citation style with real, verifiable academic sources. IMPORTANT: In Harvard style, use "and" NOT "&" for multiple authors (e.g., "Smith and Jones, 2020" not "Smith & Jones, 2020").
 3. Academic level: ${academic_level || "Undergraduate"}
 4. Use the framework "${section.framework || "none specified"}" where applicable — apply it COMPLETELY and IN-DEPTH following the framework rules above
 5. Meet these A+ criteria: ${section.a_plus_criteria || "Critical analysis, evidence-based, well-structured"}
