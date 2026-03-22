@@ -15,9 +15,10 @@ import StageEditProofread from "@/components/writer/StageEditProofread";
 import StageRevise from "@/components/writer/StageRevise";
 import StageWriterSlate from "@/components/writer/StageWriterSlate";
 import StageFinalScan from "@/components/writer/StageFinalScan";
-import StageSubmissionPrep from "@/components/writer/StageSubmissionPrep";
+import StageSubmissionPrep, { SubmissionDetails } from "@/components/writer/StageSubmissionPrep";
 import StageManualSubmission from "@/components/writer/StageManualSubmission";
 import DraggableChatFab from "@/components/writer/DraggableChatFab";
+import ProgressBanner from "@/components/writer/ProgressBanner";
 import { EditDiff } from "@/components/writer/StageEditProofread";
 import { Section, Recommendation, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 
