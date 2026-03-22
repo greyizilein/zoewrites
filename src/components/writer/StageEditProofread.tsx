@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Check, X } from "lucide-react";
 import StickyFooter from "./StickyFooter";
 import ChecklistAnimation from "./ChecklistAnimation";
@@ -8,7 +8,7 @@ export interface EditDiff {
   sectionTitle: string;
   original: string;
   corrected: string;
-  accepted: boolean | null; // null = pending
+  accepted: boolean | null;
 }
 
 interface Props {
@@ -17,7 +17,6 @@ interface Props {
   onAcceptEdits: (sectionIds: string[]) => void;
   onDenyEdits: (sectionIds: string[]) => void;
   editReport: any;
-  onBack: () => void;
   onNext: () => void;
 }
 
@@ -31,7 +30,48 @@ const editChecks = [
   "Passive voice optimisation",
 ];
 
-export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits, onDenyEdits, editReport, onBack, onNext }: Props) {
+// Simple word-level diff
+function wordDiff(original: string, corrected: string) {
+  const origWords = original.split(/\s+/);
+  const corrWords = corrected.split(/\s+/);
+  const result: { text: string; type: "same" | "added" | "removed" }[] = [];
+
+  let i = 0, j = 0;
+  while (i < origWords.length && j < corrWords.length) {
+    if (origWords[i] === corrWords[j]) {
+      result.push({ text: origWords[i], type: "same" });
+      i++; j++;
+    } else {
+      // Look ahead to find match
+      let foundInCorr = corrWords.indexOf(origWords[i], j);
+      let foundInOrig = origWords.indexOf(corrWords[j], i);
+
+      if (foundInCorr !== -1 && (foundInOrig === -1 || foundInCorr - j <= foundInOrig - i)) {
+        // Words were added in corrected
+        while (j < foundInCorr) {
+          result.push({ text: corrWords[j], type: "added" });
+          j++;
+        }
+      } else if (foundInOrig !== -1) {
+        // Words were removed from original
+        while (i < foundInOrig) {
+          result.push({ text: origWords[i], type: "removed" });
+          i++;
+        }
+      } else {
+        result.push({ text: origWords[i], type: "removed" });
+        result.push({ text: corrWords[j], type: "added" });
+        i++; j++;
+      }
+    }
+  }
+  while (i < origWords.length) { result.push({ text: origWords[i], type: "removed" }); i++; }
+  while (j < corrWords.length) { result.push({ text: corrWords[j], type: "added" }); j++; }
+
+  return result;
+}
+
+export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits, onDenyEdits, editReport, onNext }: Props) {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(!!editReport);
   const [error, setError] = useState<string | null>(null);
@@ -90,14 +130,12 @@ export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits
         </div>
       )}
 
-      {/* Per-section diff review */}
       {done && editDiffs.length > 0 && (
         <div className="space-y-3 animate-in fade-in slide-in-from-bottom-3 duration-300">
           <div className="bg-sage/10 border border-sage/20 rounded-[10px] px-3.5 py-3">
             <span className="text-[13px] text-sage font-medium">✓ Edit pass complete — {corrections} corrections found</span>
           </div>
 
-          {/* Accept All / Deny All */}
           {pendingDiffs.length > 0 && (
             <div className="flex gap-2">
               <button
@@ -115,62 +153,9 @@ export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits
             </div>
           )}
 
-          {/* Per-section diffs */}
-          {editDiffs.map((diff) => {
-            const origWc = diff.original.split(/\s+/).filter(Boolean).length;
-            const corrWc = diff.corrected.split(/\s+/).filter(Boolean).length;
-            const wcDiff = corrWc - origWc;
-
-            return (
-              <div key={diff.sectionId} className="border border-border rounded-xl overflow-hidden bg-card">
-                <div className="px-3.5 py-2.5 bg-muted/50 flex items-center justify-between">
-                  <span className="text-[13px] font-semibold truncate">{diff.sectionTitle}</span>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {origWc}→{corrWc}w
-                      {wcDiff !== 0 && (
-                        <span className={wcDiff > 0 ? "text-sage ml-1" : "text-terracotta ml-1"}>
-                          ({wcDiff > 0 ? "+" : ""}{wcDiff})
-                        </span>
-                      )}
-                    </span>
-                    {diff.accepted === null ? (
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => onAcceptEdits([diff.sectionId])}
-                          className="w-7 h-7 rounded-md bg-sage/15 text-sage flex items-center justify-center hover:bg-sage/25 transition-colors active:scale-95"
-                          title="Accept"
-                        >
-                          <Check size={13} />
-                        </button>
-                        <button
-                          onClick={() => onDenyEdits([diff.sectionId])}
-                          className="w-7 h-7 rounded-md bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 transition-colors active:scale-95"
-                          title="Deny"
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
-                        diff.accepted ? "bg-sage/15 text-sage" : "bg-destructive/10 text-destructive"
-                      }`}>
-                        {diff.accepted ? "Accepted" : "Denied"}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {diff.accepted === null && (
-                  <div className="px-3.5 py-3 border-t border-border max-h-[200px] overflow-y-auto">
-                    <p className="text-[12px] text-muted-foreground mb-1.5 font-medium">Preview of corrected version:</p>
-                    <p className="text-[13px] leading-[1.7] text-foreground/80 whitespace-pre-wrap">
-                      {diff.corrected.slice(0, 500)}{diff.corrected.length > 500 ? "…" : ""}
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {editDiffs.map((diff) => (
+            <DiffCard key={diff.sectionId} diff={diff} onAccept={() => onAcceptEdits([diff.sectionId])} onDeny={() => onDenyEdits([diff.sectionId])} />
+          ))}
 
           {allResolved && (
             <div className="bg-sage/10 border border-sage/20 rounded-[10px] px-3.5 py-3 text-center">
@@ -180,7 +165,6 @@ export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits
         </div>
       )}
 
-      {/* Legacy: no diffs (e.g. no changes found) */}
       {done && editDiffs.length === 0 && (
         <div className="space-y-3 animate-in fade-in slide-in-from-bottom-3 duration-300">
           <div className="bg-sage/10 border border-sage/20 rounded-[10px] px-3.5 py-3">
@@ -194,7 +178,62 @@ export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits
         </div>
       )}
 
-      <StickyFooter leftLabel="← Revise" onLeft={onBack} rightLabel="Writer Slate →" onRight={onNext} />
+      <StickyFooter rightLabel="Writer Slate →" onRight={onNext} />
+    </div>
+  );
+}
+
+function DiffCard({ diff, onAccept, onDeny }: { diff: EditDiff; onAccept: () => void; onDeny: () => void }) {
+  const diffResult = useMemo(() => wordDiff(diff.original, diff.corrected).slice(0, 200), [diff.original, diff.corrected]);
+  const origWc = diff.original.split(/\s+/).filter(Boolean).length;
+  const corrWc = diff.corrected.split(/\s+/).filter(Boolean).length;
+  const wcDiff = corrWc - origWc;
+
+  return (
+    <div className="border border-border rounded-xl overflow-hidden bg-card">
+      <div className="px-3.5 py-2.5 bg-muted/50 flex items-center justify-between">
+        <span className="text-[13px] font-semibold truncate">{diff.sectionTitle}</span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {origWc}→{corrWc}w
+            {wcDiff !== 0 && (
+              <span className={wcDiff > 0 ? "text-sage ml-1" : "text-terracotta ml-1"}>
+                ({wcDiff > 0 ? "+" : ""}{wcDiff})
+              </span>
+            )}
+          </span>
+          {diff.accepted === null ? (
+            <div className="flex gap-1">
+              <button onClick={onAccept} className="w-7 h-7 rounded-md bg-sage/15 text-sage flex items-center justify-center hover:bg-sage/25 transition-colors active:scale-95" title="Accept">
+                <Check size={13} />
+              </button>
+              <button onClick={onDeny} className="w-7 h-7 rounded-md bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 transition-colors active:scale-95" title="Deny">
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${diff.accepted ? "bg-sage/15 text-sage" : "bg-destructive/10 text-destructive"}`}>
+              {diff.accepted ? "Accepted" : "Denied"}
+            </span>
+          )}
+        </div>
+      </div>
+      {diff.accepted === null && (
+        <div className="px-3.5 py-3 border-t border-border max-h-[200px] overflow-y-auto">
+          <p className="text-[12px] text-muted-foreground mb-1.5 font-medium">Changes:</p>
+          <p className="text-[13px] leading-[1.7] whitespace-pre-wrap">
+            {diffResult.map((d, i) => (
+              <span key={i} className={
+                d.type === "added" ? "bg-sage/20 text-sage-foreground" :
+                d.type === "removed" ? "bg-destructive/15 text-destructive line-through" : ""
+              }>
+                {d.text}{" "}
+              </span>
+            ))}
+            {diffResult.length >= 200 && <span className="text-muted-foreground">…</span>}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

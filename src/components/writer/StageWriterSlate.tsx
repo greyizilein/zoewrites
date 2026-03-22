@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, X, ChevronDown, AlertTriangle, Loader2 } from "lucide-react";
+import { Check, X, AlertTriangle, Loader2 } from "lucide-react";
 import StickyFooter from "./StickyFooter";
 import ChecklistAnimation from "./ChecklistAnimation";
 import { Section } from "./types";
@@ -30,7 +30,6 @@ const denyChecklist = [
 ];
 
 export default function StageWriterSlate({ sections, priorSections, totalTarget, onAcceptAll, onDenyAll, onAcceptSection, onDenySection, onTrimToTarget, onNext, isProcessing }: Props) {
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [resolvedSections, setResolvedSections] = useState<Record<string, "accepted" | "denied">>({});
   const [animating, setAnimating] = useState<"accept" | "deny" | null>(null);
   const [animDone, setAnimDone] = useState(false);
@@ -39,12 +38,11 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
   const totalWords = sections.reduce((a, s) => a + s.word_current, 0);
   const diff = totalWords - totalTarget;
   const diffLabel = diff > 0 ? `+${diff}` : `${diff}`;
-  const isOverTarget = diff > 0;
-  const overFivePercent = diff > totalTarget * 0.05;
   const overOnePercent = Math.abs(diff) > totalTarget * 0.01;
+  const isOverTarget = diff > 0;
   const hasPrior = priorSections.length > 0;
 
-  // Auto-advance after animation completes
+  // Auto-advance after animation
   useEffect(() => {
     if (animDone) {
       const timer = setTimeout(() => {
@@ -56,27 +54,12 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
     }
   }, [animDone, onNext]);
 
-  // Auto-accept if within 5% of target after trim
+  // Auto-accept if within 1% after trim
   useEffect(() => {
-    if (!isProcessing && totalWords > 0 && !animating) {
-      const withinFivePercent = diff <= totalTarget * 0.05 && diff >= 0;
-      const withinOnePercent = Math.abs(diff) <= totalTarget * 0.01;
-      if (withinOnePercent && Object.keys(resolvedSections).length === 0) {
-        // Auto-accept and advance
-        handleAcceptAll();
-      }
+    if (!isProcessing && totalWords > 0 && !animating && Math.abs(diff) <= totalTarget * 0.01 && Object.keys(resolvedSections).length === 0) {
+      handleAcceptAll();
     }
   }, [isProcessing, totalWords]);
-
-  const handleAcceptSection = (sectionId: string) => {
-    onAcceptSection(sectionId);
-    setResolvedSections(prev => ({ ...prev, [sectionId]: "accepted" }));
-  };
-
-  const handleDenySection = (sectionId: string) => {
-    onDenySection(sectionId);
-    setResolvedSections(prev => ({ ...prev, [sectionId]: "denied" }));
-  };
 
   const handleAcceptAll = async () => {
     setAnimating("accept");
@@ -105,7 +88,6 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
 
   const pendingCount = sections.filter(s => !resolvedSections[s.id]).length;
 
-  // If animating, show the checklist
   if (animating) {
     return (
       <div>
@@ -114,11 +96,7 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
           <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Writer Slate</h1>
         </div>
         <div className="border border-border rounded-xl p-4 mb-4">
-          <ChecklistAnimation
-            items={animating === "accept" ? acceptChecklist : denyChecklist}
-            running={!animDone}
-            onComplete={() => setAnimDone(true)}
-          />
+          <ChecklistAnimation items={animating === "accept" ? acceptChecklist : denyChecklist} running={!animDone} onComplete={() => setAnimDone(true)} />
         </div>
         {animDone && (
           <div className="bg-sage/10 border border-sage/20 rounded-[10px] px-3.5 py-3 text-center animate-in fade-in duration-300">
@@ -136,7 +114,7 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
       <div className="mb-6">
         <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 7 of 10</p>
         <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Writer Slate</h1>
-        <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Review & trim word count. Accept or deny changes. This stage can only trim — never add words.</p>
+        <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Full document view. Trim word count to target. Accept or deny changes.</p>
       </div>
 
       {/* Word count bar */}
@@ -148,27 +126,17 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
           </div>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[12px] font-semibold">{totalWords.toLocaleString()} / {totalTarget.toLocaleString()}</span>
-            <span className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded ${
-              Math.abs(diff) <= totalTarget * 0.01 ? "bg-sage/15 text-sage" : "bg-terracotta/15 text-terracotta"
-            }`}>{diffLabel}</span>
+            <span className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded ${!overOnePercent ? "bg-sage/15 text-sage" : "bg-terracotta/15 text-terracotta"}`}>{diffLabel}</span>
           </div>
         </div>
         <div className="h-1 bg-border rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all duration-500 ${
-            Math.abs(diff) <= totalTarget * 0.01 ? "bg-sage" : "bg-terracotta"
-          }`} style={{ width: `${Math.min((totalWords / totalTarget) * 100, 100)}%` }} />
+          <div className={`h-full rounded-full transition-all duration-500 ${!overOnePercent ? "bg-sage" : "bg-terracotta"}`} style={{ width: `${Math.min((totalWords / totalTarget) * 100, 100)}%` }} />
         </div>
         {isOverTarget && overOnePercent && (
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-[11px] text-terracotta font-medium">
-              {diff} words over target ({(diff / totalTarget * 100).toFixed(1)}%)
-            </span>
-            <button
-              onClick={handleTrim}
-              disabled={isProcessing}
-              className="text-[11px] text-white bg-terracotta px-2.5 py-1 rounded-md font-medium hover:bg-terracotta/90 disabled:opacity-50 active:scale-95 transition-all"
-            >
-              {isProcessing ? <Loader2 size={11} className="animate-spin" /> : `Auto-trim →`}
+            <span className="text-[11px] text-terracotta font-medium">{diff} words over ({(diff / totalTarget * 100).toFixed(1)}%)</span>
+            <button onClick={handleTrim} disabled={isProcessing} className="text-[11px] text-white bg-terracotta px-2.5 py-1 rounded-md font-medium hover:bg-terracotta/90 disabled:opacity-50 active:scale-95 transition-all">
+              {isProcessing ? <Loader2 size={11} className="animate-spin" /> : "Auto-trim →"}
             </button>
           </div>
         )}
@@ -177,18 +145,10 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
       {/* Accept/Deny all */}
       {pendingCount > 0 && (
         <div className="flex gap-2 mb-4">
-          <button
-            onClick={handleAcceptAll}
-            disabled={isProcessing}
-            className="flex-1 py-2.5 bg-sage text-white rounded-lg font-bold text-[13px] hover:bg-sage/80 transition-colors active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-1.5"
-          >
+          <button onClick={handleAcceptAll} disabled={isProcessing} className="flex-1 py-2.5 bg-sage text-white rounded-lg font-bold text-[13px] hover:bg-sage/80 transition-colors active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-1.5">
             <Check size={14} /> Accept All ({pendingCount})
           </button>
-          <button
-            onClick={handleDenyAll}
-            disabled={isProcessing || !hasPrior}
-            className="flex-1 py-2.5 bg-muted border border-border text-foreground rounded-lg font-bold text-[13px] hover:bg-muted/80 transition-colors active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-1.5"
-          >
+          <button onClick={handleDenyAll} disabled={isProcessing || !hasPrior} className="flex-1 py-2.5 bg-muted border border-border text-foreground rounded-lg font-bold text-[13px] hover:bg-muted/80 transition-colors active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-1.5">
             <X size={14} /> Deny All
           </button>
         </div>
@@ -200,85 +160,79 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
         </div>
       )}
 
-      {/* Full document board */}
-      <div className="space-y-3">
-        {sections.map((s) => {
-          const isExpanded = expandedSection === s.id;
-          const prior = priorSections.find(p => p.id === s.id);
-          const priorWc = prior?.word_current || 0;
-          const wcChange = hasPrior ? s.word_current - priorWc : 0;
-          const status = resolvedSections[s.id];
-          const sectionOverTarget = s.word_current > Math.ceil(s.word_target * 1.01);
-
-          return (
-            <div key={s.id} className={`border rounded-xl overflow-hidden bg-card ${
-              status === "accepted" ? "border-sage/30" :
-              status === "denied" ? "border-destructive/30" :
-              "border-border"
-            }`}>
-              <button
-                onClick={() => setExpandedSection(isExpanded ? null : s.id)}
-                className="w-full px-3.5 py-3 bg-muted/50 flex items-center gap-2 hover:bg-muted/80 transition-colors"
-              >
-                <span className="flex-1 text-[13px] sm:text-[14px] font-semibold text-left truncate">{s.title}</span>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <span className={`font-mono text-[11px] ${sectionOverTarget ? "text-terracotta font-bold" : "text-muted-foreground"}`}>{s.word_current}/{s.word_target}w</span>
-                  {hasPrior && wcChange !== 0 && (
-                    <span className={`font-mono text-[10px] font-bold ${wcChange > 0 ? "text-terracotta" : "text-sage"}`}>
-                      {wcChange > 0 ? "+" : ""}{wcChange}
-                    </span>
-                  )}
-                  {status ? (
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                      status === "accepted" ? "bg-sage/15 text-sage" : "bg-destructive/10 text-destructive"
-                    }`}>
-                      {status === "accepted" ? "✓" : "✗"}
-                    </span>
-                  ) : (
-                    <div className="flex gap-0.5" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => handleAcceptSection(s.id)} className="w-6 h-6 rounded bg-sage/15 text-sage flex items-center justify-center hover:bg-sage/25 active:scale-95">
-                        <Check size={11} />
-                      </button>
-                      <button onClick={() => handleDenySection(s.id)} disabled={!hasPrior} className="w-6 h-6 rounded bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 active:scale-95 disabled:opacity-30">
-                        <X size={11} />
-                      </button>
-                    </div>
-                  )}
-                  <ChevronDown size={14} className={`text-muted-foreground transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""}`} />
-                </div>
-              </button>
-              {isExpanded && (
-                <div className="px-3.5 py-3 border-t border-border">
-                  {/* Per-section trim input */}
-                  {sectionOverTarget && (
-                    <div className="flex items-center gap-2 mb-2 bg-terracotta/5 border border-terracotta/15 rounded-lg px-2.5 py-1.5">
-                      <span className="text-[11px] text-terracotta font-medium flex-shrink-0">Remove</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max={s.word_current}
-                        value={trimInputs[s.id] || ""}
-                        onChange={e => setTrimInputs(prev => ({ ...prev, [s.id]: e.target.value }))}
-                        placeholder={String(s.word_current - s.word_target)}
-                        className="w-16 bg-background border border-border rounded px-1.5 py-0.5 text-[12px] font-mono text-center focus:outline-none focus:ring-1 focus:ring-terracotta/30"
-                        onClick={e => e.stopPropagation()}
-                      />
-                      <span className="text-[11px] text-muted-foreground">words from this section</span>
-                    </div>
-                  )}
-                  {s.content && (
-                    <div className="text-[14px] leading-[1.8] text-foreground/85 whitespace-pre-wrap max-h-[500px] overflow-y-auto">
-                      {s.content}
-                    </div>
-                  )}
-                </div>
-              )}
+      {/* Per-section trim inputs */}
+      {isOverTarget && overOnePercent && (
+        <div className="border border-border rounded-[10px] p-3 mb-4 space-y-2">
+          <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Custom trim per section</p>
+          {sections.filter(s => s.word_current > Math.ceil(s.word_target * 1.01)).map(s => (
+            <div key={s.id} className="flex items-center gap-2 bg-terracotta/5 border border-terracotta/15 rounded-lg px-2.5 py-1.5">
+              <span className="text-[11px] font-medium truncate flex-1">{s.title}</span>
+              <span className="text-[10px] text-muted-foreground font-mono">{s.word_current}/{s.word_target}w</span>
+              <input
+                type="number"
+                min="0"
+                max={s.word_current}
+                value={trimInputs[s.id] || ""}
+                onChange={e => setTrimInputs(prev => ({ ...prev, [s.id]: e.target.value }))}
+                placeholder={String(s.word_current - s.word_target)}
+                className="w-14 bg-background border border-border rounded px-1.5 py-0.5 text-[11px] font-mono text-center focus:outline-none focus:ring-1 focus:ring-terracotta/30"
+              />
+              <span className="text-[10px] text-muted-foreground">remove</span>
             </div>
-          );
-        })}
+          ))}
+        </div>
+      )}
+
+      {/* Full continuous document */}
+      <div className="border border-border rounded-xl bg-card overflow-hidden">
+        <div className="px-4 sm:px-6 py-4 sm:py-6 max-h-[60vh] overflow-y-auto">
+          {sections.map((s, idx) => {
+            const prior = priorSections.find(p => p.id === s.id);
+            const wcChange = hasPrior && prior ? s.word_current - prior.word_current : 0;
+            const status = resolvedSections[s.id];
+
+            return (
+              <div key={s.id} className={idx > 0 ? "mt-6 pt-6 border-t border-border/50" : ""}>
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-[15px] sm:text-[17px] font-bold">{s.title}</h2>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className={`font-mono text-[10px] ${s.word_current > Math.ceil(s.word_target * 1.01) ? "text-terracotta font-bold" : "text-muted-foreground"}`}>
+                      {s.word_current}/{s.word_target}w
+                    </span>
+                    {hasPrior && wcChange !== 0 && (
+                      <span className={`font-mono text-[9px] font-bold ${wcChange > 0 ? "text-terracotta" : "text-sage"}`}>
+                        {wcChange > 0 ? "+" : ""}{wcChange}
+                      </span>
+                    )}
+                    {!status && (
+                      <div className="flex gap-0.5">
+                        <button onClick={() => { onAcceptSection(s.id); setResolvedSections(prev => ({ ...prev, [s.id]: "accepted" })); }} className="w-5 h-5 rounded bg-sage/15 text-sage flex items-center justify-center hover:bg-sage/25 active:scale-95">
+                          <Check size={10} />
+                        </button>
+                        <button onClick={() => { onDenySection(s.id); setResolvedSections(prev => ({ ...prev, [s.id]: "denied" })); }} disabled={!hasPrior} className="w-5 h-5 rounded bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 active:scale-95 disabled:opacity-30">
+                          <X size={10} />
+                        </button>
+                      </div>
+                    )}
+                    {status && (
+                      <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${status === "accepted" ? "bg-sage/15 text-sage" : "bg-destructive/10 text-destructive"}`}>
+                        {status === "accepted" ? "✓" : "✗"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {s.content && (
+                  <div className="text-[13px] sm:text-[14px] leading-[1.8] text-foreground/85 whitespace-pre-wrap">
+                    {s.content}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      <StickyFooter leftLabel="← Edit" onLeft={() => {}} rightLabel="Final Scan →" onRight={onNext} />
+      <StickyFooter rightLabel="Final Scan →" onRight={onNext} />
     </div>
   );
 }

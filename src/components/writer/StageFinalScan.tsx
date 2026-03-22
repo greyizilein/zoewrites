@@ -5,7 +5,6 @@ import ChecklistAnimation from "./ChecklistAnimation";
 interface Props {
   onRunScan: () => Promise<any>;
   scanReport: any;
-  onBack: () => void;
   onNext: () => void;
 }
 
@@ -19,7 +18,7 @@ const scanChecks = [
   "Appendix completeness",
 ];
 
-export default function StageFinalScan({ onRunScan, scanReport, onBack, onNext }: Props) {
+export default function StageFinalScan({ onRunScan, scanReport, onNext }: Props) {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(!!scanReport);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +95,7 @@ export default function StageFinalScan({ onRunScan, scanReport, onBack, onNext }
         </div>
       )}
 
-      <StickyFooter leftLabel="← Slate" onLeft={onBack} rightLabel="Submit →" onRight={onNext} />
+      <StickyFooter rightLabel="Submit →" onRight={onNext} />
     </div>
   );
 }

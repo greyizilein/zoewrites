@@ -330,9 +330,28 @@ const WriterEngine = () => {
         }
       }
 
-      const wordCount = fullContent.split(/\s+/).filter(Boolean).length;
-      await supabase.from("sections").update({ content: fullContent, word_current: wordCount, status: "complete" }).eq("id", sectionId);
-      setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: fullContent, word_current: wordCount, status: "complete" } : s));
+      // Hard word count cap: truncate at sentence boundaries if over 1% of target
+      let finalContent = fullContent;
+      const ceiling = Math.ceil(section.word_target * 1.01);
+      let wordCount = finalContent.split(/\s+/).filter(Boolean).length;
+      if (wordCount > ceiling) {
+        const sentences = finalContent.match(/[^.!?]+[.!?]+/g) || [finalContent];
+        let trimmed = "";
+        let wc = 0;
+        for (const sent of sentences) {
+          const sWc = sent.trim().split(/\s+/).filter(Boolean).length;
+          if (wc + sWc > ceiling) break;
+          trimmed += sent;
+          wc += sWc;
+        }
+        if (trimmed.trim()) {
+          finalContent = trimmed.trim();
+          wordCount = wc;
+        }
+      }
+
+      await supabase.from("sections").update({ content: finalContent, word_current: wordCount, status: "complete" }).eq("id", sectionId);
+      setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: finalContent, word_current: wordCount, status: "complete" } : s));
 
       const newTotal = sections.reduce((a, s) => a + (s.id === sectionId ? wordCount : s.word_current), 0);
       if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);

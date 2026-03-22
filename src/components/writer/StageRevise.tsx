@@ -5,28 +5,24 @@ import StickyFooter from "./StickyFooter";
 interface Props {
   onApplyRevisions: (feedback: string) => void;
   isProcessing: boolean;
-  onBack: () => void;
   onNext: () => void;
   initialFeedback?: string;
 }
 
-export default function StageRevise({ onApplyRevisions, isProcessing, onBack, onNext, initialFeedback }: Props) {
+export default function StageRevise({ onApplyRevisions, isProcessing, onNext, initialFeedback }: Props) {
   const [feedbackText, setFeedbackText] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const autoAppliedRef = useRef(false);
 
-  // Auto-populate feedback from critique issues
   useEffect(() => {
     if (initialFeedback && !autoAppliedRef.current) {
       setFeedbackText(initialFeedback);
     }
   }, [initialFeedback]);
 
-  // Auto-apply if initialFeedback is provided (from critique pipeline)
   useEffect(() => {
     if (initialFeedback && !autoAppliedRef.current && !isProcessing) {
       autoAppliedRef.current = true;
-      // Small delay so user sees the pre-filled feedback before it runs
       const timer = setTimeout(() => {
         onApplyRevisions(initialFeedback);
       }, 800);
@@ -62,7 +58,6 @@ export default function StageRevise({ onApplyRevisions, isProcessing, onBack, on
         </div>
       )}
 
-      {/* Upload area */}
       <div
         onDragOver={e => e.preventDefault()}
         onDrop={handleDrop}
@@ -84,7 +79,6 @@ export default function StageRevise({ onApplyRevisions, isProcessing, onBack, on
         )}
       </div>
 
-      {/* Feedback text */}
       <textarea
         value={feedbackText}
         onChange={e => setFeedbackText(e.target.value)}
@@ -101,7 +95,7 @@ export default function StageRevise({ onApplyRevisions, isProcessing, onBack, on
         {isProcessing ? "Applying…" : "Apply Revisions → Edit & Proofread"}
       </button>
 
-      <StickyFooter leftLabel="← Critique" onLeft={onBack} rightLabel="Edit & Proofread →" onRight={onNext} />
+      <StickyFooter rightLabel="Edit & Proofread →" onRight={onNext} />
     </div>
   );
 }
