@@ -34,9 +34,9 @@ serve(async (req) => {
     let figureNumber = 1;
 
     for (const section of sections) {
-      // Check if section content references figures
-      const figureRefs = (section.content || "").match(/Figure\s+\d+[:\s]/gi) || [];
-      if (figureRefs.length === 0) continue;
+      // Generate one image per section that has content
+      if (!section.content) continue;
+      const figureRefs = [{ ref: `Figure ${figureNumber}` }]; // Always generate at least one per section
 
       for (const ref of figureRefs) {
         const prompt = `Create a professional academic diagram or figure for the following context. The figure should be clean, labeled, and suitable for an academic paper. Section: "${section.title}". Content context: ${(section.content || "").slice(0, 500)}. The figure should illustrate key concepts, relationships, or data mentioned in this section. Use a clean white background with professional colors.`;

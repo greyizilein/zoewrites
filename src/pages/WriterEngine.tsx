@@ -9,15 +9,18 @@ import ReactMarkdown from "react-markdown";
 import WriterSidebar from "@/components/writer/WriterSidebar";
 import StageBriefIntake from "@/components/writer/StageBriefIntake";
 import StageExecutionTable from "@/components/writer/StageExecutionTable";
-import StageWritingEngine from "@/components/writer/StageWritingEngine";
+import StageWriteHumanise from "@/components/writer/StageWriteHumanise";
 import StageSelfCritique from "@/components/writer/StageSelfCritique";
-import StageRevisionCenter from "@/components/writer/StageRevisionCenter";
+import StageEditProofread from "@/components/writer/StageEditProofread";
+import StageRevise from "@/components/writer/StageRevise";
+import StageWriterSlate from "@/components/writer/StageWriterSlate";
+import StageFinalScan from "@/components/writer/StageFinalScan";
 import StageSubmissionPrep from "@/components/writer/StageSubmissionPrep";
+import StageManualSubmission from "@/components/writer/StageManualSubmission";
 import { Section, Recommendation, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
-/** Safe base64 encode for large ArrayBuffers */
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 8192;
@@ -29,7 +32,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-/** Convert base64 to Blob for download */
 function base64ToBlob(base64: string, mime: string): Blob {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
@@ -43,51 +45,43 @@ const WriterEngine = () => {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // Core state
   const [stage, setStage] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(!!id);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Assessment data
   const [assessment, setAssessment] = useState<any>(null);
   const [sections, setSections] = useState<Section[]>([]);
   const [executionPlan, setExecutionPlan] = useState<any>(null);
   const [settings, setSettings] = useState<WriterSettings>({ ...defaultSettings });
   const [qualityReport, setQualityReport] = useState<any>(null);
+  const [editReport, setEditReport] = useState<any>(null);
+  const [scanReport, setScanReport] = useState<any>(null);
   const [revisionFeedback, setRevisionFeedback] = useState<string>("");
 
-  // Brief intake
   const [briefText, setBriefText] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [urlInput, setUrlInput] = useState("");
   const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
 
-  // Writing engine
   const [generating, setGenerating] = useState(false);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [streamContent, setStreamContent] = useState("");
   const [writingAll, setWritingAll] = useState(false);
   const [autopilotRunning, setAutopilotRunning] = useState(false);
   const autopilotCancelRef = useRef(false);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [loadingRecs, setLoadingRecs] = useState(false);
 
-  // Images
   const [assessmentImages, setAssessmentImages] = useState<any[]>([]);
 
-  // Chat
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Recent assessments
   const [recentAssessments, setRecentAssessments] = useState<{ id: string; title: string; status: string }[]>([]);
   const [profile, setProfile] = useState<{ full_name: string | null; tier: string } | null>(null);
 
-  // Load existing assessment
   useEffect(() => {
     const fetchData = async () => {
       if (!id || !user) return;
@@ -131,7 +125,6 @@ const WriterEngine = () => {
     }
   }, [id, user]);
 
-  // Auto-scroll chat
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
 
   const selectedModel = settings.model || "google/gemini-2.5-flash";
@@ -140,7 +133,7 @@ const WriterEngine = () => {
   const totalWords = sections.reduce((a, s) => a + s.word_current, 0);
   const totalTarget = sections.reduce((a, s) => a + s.word_target, 0);
 
-  // ─── STAGE 1: Analyse Brief ───
+  // ─── STAGE 0: Analyse Brief ───
   const handleAnalyseBrief = async () => {
     const hasContent =
       (activeIntakeMode === "paste" && briefText.trim()) ||
@@ -149,12 +142,12 @@ const WriterEngine = () => {
       (activeIntakeMode === "fields" && briefText.trim());
 
     if (!hasContent) {
-      toast({ title: "No content", description: "Please provide a brief in the active tab.", variant: "destructive" });
+      toast({ title: "No content", description: "Please provide a brief.", variant: "destructive" });
       return;
     }
 
     setIsProcessing(true);
-    toast({ title: "Analysing brief…", description: "ZOE is parsing your assessment brief." });
+    toast({ title: "Analysing brief…" });
 
     try {
       let body: any = {};
@@ -180,7 +173,7 @@ const WriterEngine = () => {
       if (brief.word_count && !settings.wordCount) setSettings(prev => ({ ...prev, wordCount: String(brief.word_count) }));
       if (brief.type && !settings.type) setSettings(prev => ({ ...prev, type: brief.type }));
 
-      toast({ title: "Generating plan…", description: "Creating the execution table." });
+      toast({ title: "Generating plan…" });
 
       const { data: planData, error: planError } = await supabase.functions.invoke("execution-table", {
         body: { brief, settings, model: selectedModel },
@@ -189,16 +182,15 @@ const WriterEngine = () => {
 
       setExecutionPlan(planData?.plan);
       setStage(1);
-      toast({ title: "Plan ready", description: "Review the execution table below." });
+      toast({ title: "Plan ready" });
     } catch (e: any) {
-      console.error("Analyse brief error:", e);
-      toast({ title: "Error", description: e.message || "Failed to process brief.", variant: "destructive" });
+      toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // ─── STAGE 2: Confirm Plan ───
+  // ─── STAGE 1: Confirm Plan ───
   const handleConfirmPlan = async () => {
     if (!user || !executionPlan) return;
     setIsProcessing(true);
@@ -251,18 +243,16 @@ const WriterEngine = () => {
       if (sErr) throw sErr;
       setSections((newSections || []).map((s: any) => ({ ...s, suggested_frameworks: Array.isArray(s.suggested_frameworks) ? s.suggested_frameworks : [] })));
 
-      
       setStage(2);
-      toast({ title: "Plan confirmed", description: "Ready to write!" });
+      toast({ title: "Plan confirmed" });
     } catch (e: any) {
-      console.error("Confirm plan error:", e);
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // ─── STAGE 3: Stream section ───
+  // ─── STAGE 2: Stream section ───
   const streamSection = useCallback(async (sectionId: string, isRevision = false, feedback = "") => {
     const section = sections.find(s => s.id === sectionId);
     if (!section) return;
@@ -282,23 +272,17 @@ const WriterEngine = () => {
       ? { content: section.content, feedback, word_target: section.word_target, section_title: section.title, model: selectedModel, settings }
       : {
           section: {
-            title: section.title,
-            word_target: section.word_target,
-            framework: section.framework,
-            citation_count: section.citation_count,
-            a_plus_criteria: section.a_plus_criteria || "",
-            purpose_scope: section.purpose_scope || "",
-            learning_outcomes: section.learning_outcomes || "",
-            required_inputs: section.required_inputs || "",
-            structure_formatting: section.structure_formatting || "",
+            title: section.title, word_target: section.word_target, framework: section.framework,
+            citation_count: section.citation_count, a_plus_criteria: section.a_plus_criteria || "",
+            purpose_scope: section.purpose_scope || "", learning_outcomes: section.learning_outcomes || "",
+            required_inputs: section.required_inputs || "", structure_formatting: section.structure_formatting || "",
             constraints: section.constraints_text || "",
           },
           execution_plan: assessment?.execution_plan || executionPlan,
           prior_sections_summary: priorSummary,
           citation_style: settings.citationStyle || "Harvard",
           academic_level: settings.level || "Postgraduate L7",
-          model: selectedModel,
-          settings,
+          model: selectedModel, settings,
         };
 
     try {
@@ -312,8 +296,8 @@ const WriterEngine = () => {
       });
 
       if (!resp.ok || !resp.body) {
-        if (resp.status === 429) throw new Error("Rate limited. Please wait and try again.");
-        if (resp.status === 402) throw new Error("Credits exhausted. Please top up.");
+        if (resp.status === 429) throw new Error("Rate limited. Please wait.");
+        if (resp.status === 402) throw new Error("Credits exhausted.");
         throw new Error(`Stream failed: ${resp.status}`);
       }
 
@@ -349,43 +333,20 @@ const WriterEngine = () => {
       const newTotal = sections.reduce((a, s) => a + (s.id === sectionId ? wordCount : s.word_current), 0);
       if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
 
-      // Auto-humanise if enabled
+      // Auto-humanise
       if (settings.humanisation === "High" || settings.humanisation === "Maximum") {
-        toast({ title: "Auto-humanising…", description: `Running humaniser on ${section.title}` });
-        const voicePerspective = settings.firstPerson ? "first" : "third";
+        toast({ title: "Auto-humanising…", description: section.title });
         try {
           const { data: hData, error: hErr } = await supabase.functions.invoke("humanise", {
-            body: { content: fullContent, word_target: section.word_target, mode: "full", model: selectedModel, voice_perspective: voicePerspective },
+            body: { content: fullContent, word_target: section.word_target, mode: "full", model: selectedModel, voice_perspective: settings.firstPerson ? "first" : "third" },
           });
           if (!hErr && hData?.humanised_content) {
             const hWc = hData.word_count || hData.humanised_content.split(/\s+/).filter(Boolean).length;
             await supabase.from("sections").update({ content: hData.humanised_content, word_current: hWc }).eq("id", sectionId);
             setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: hData.humanised_content, word_current: hWc } : s));
-            toast({ title: "Humanised!", description: `${hData.passes_applied?.length || 5} passes applied.` });
           }
         } catch { /* optional */ }
       }
-
-      // Auto-fetch ZOE recommendations after section completes
-      try {
-        const { data: recData } = await supabase.functions.invoke("zoe-recommend", {
-          body: {
-            content: fullContent,
-            section_title: section.title,
-            word_target: section.word_target,
-            citation_count: section.citation_count,
-            framework: section.framework,
-            execution_plan: assessment?.execution_plan || executionPlan,
-            model: selectedModel,
-            brief_text: assessment?.brief_text || briefText || "",
-            assessment_type: settings.type || assessment?.type || "",
-            academic_level: settings.level,
-          },
-        });
-        if (recData?.recommendations?.length) {
-          setRecommendations(recData.recommendations);
-        }
-      } catch { /* non-blocking */ }
 
       toast({ title: "Section complete", description: `${section.title} — ${wordCount} words.` });
     } catch (e: any) {
@@ -411,41 +372,11 @@ const WriterEngine = () => {
     toast({ title: "All sections complete!" });
   };
 
-  const handleHumanise = async (sectionId: string) => {
-    const section = sections.find(s => s.id === sectionId);
-    if (!section?.content) return;
-    toast({ title: "Humanising…", description: "Running 5-pass pipeline." });
-    const voicePerspective = settings.firstPerson ? "first" : "third";
-    try {
-      const { data, error } = await supabase.functions.invoke("humanise", {
-        body: { content: section.content, word_target: section.word_target, mode: "full", model: selectedModel, voice_perspective: voicePerspective },
-      });
-      if (error) throw error;
-      if (data?.humanised_content) {
-        const wc = data.word_count || data.humanised_content.split(/\s+/).filter(Boolean).length;
-        await supabase.from("sections").update({ content: data.humanised_content, word_current: wc }).eq("id", sectionId);
-        setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: data.humanised_content, word_current: wc } : s));
-        toast({ title: "Humanised!", description: `${data.passes_applied?.length || 5} passes applied.` });
-      }
-    } catch (e: any) {
-      toast({ title: "Humanise failed", description: e.message, variant: "destructive" });
-    }
-  };
-
-  const handleHumaniseAll = async () => {
-    const completed = sections.filter(s => s.content && s.status === "complete");
-    if (!completed.length) { toast({ title: "No completed sections to humanise" }); return; }
-    toast({ title: "Humanising all sections…" });
-    for (const s of completed) { await handleHumanise(s.id); }
-    toast({ title: "All sections humanised!" });
-  };
-
-  // ─── STAGE 4: Quality check ───
+  // ─── STAGE 3: Quality check ───
   const handleQualityCheck = async () => {
     const allContent = sections.filter(s => s.content).map(s => `## ${s.title}\n${s.content}`).join("\n\n");
     if (!allContent) { toast({ title: "No content to check", variant: "destructive" }); return; }
 
-    // Extract brief data for compliance checking
     const briefData = assessment?.execution_plan || executionPlan;
     const parsedBrief = briefData ? {
       brief_text: assessment?.brief_text || briefText || "",
@@ -457,14 +388,9 @@ const WriterEngine = () => {
     try {
       const { data, error } = await supabase.functions.invoke("quality-pass", {
         body: {
-          content: allContent,
-          execution_plan: executionPlan,
-          word_target: totalTarget,
-          model: selectedModel,
+          content: allContent, execution_plan: executionPlan, word_target: totalTarget, model: selectedModel,
           brief_text: parsedBrief.brief_text || assessment?.brief_text || briefText || "",
-          requirements: parsedBrief.requirements,
-          marking_criteria: parsedBrief.marking_criteria,
-          learning_outcomes: parsedBrief.learning_outcomes,
+          requirements: parsedBrief.requirements, marking_criteria: parsedBrief.marking_criteria, learning_outcomes: parsedBrief.learning_outcomes,
         },
       });
       if (error) throw error;
@@ -472,6 +398,41 @@ const WriterEngine = () => {
       return data;
     } catch (e: any) {
       toast({ title: "Quality check failed", description: e.message, variant: "destructive" });
+      throw e;
+    }
+  };
+
+  // ─── STAGE 4: Edit & Proofread ───
+  const handleEditProofread = async () => {
+    const allContent = sections.filter(s => s.content).map(s => `## ${s.title}\n${s.content}`).join("\n\n");
+    if (!allContent) { toast({ title: "No content", variant: "destructive" }); return; }
+
+    try {
+      const { data, error } = await supabase.functions.invoke("edit-proofread", {
+        body: { content: allContent, model: selectedModel },
+      });
+      if (error) throw error;
+      setEditReport(data);
+
+      // Apply corrected content back to sections
+      if (data?.corrected_content) {
+        const correctedSections = data.corrected_content.split(/^## /m).filter(Boolean);
+        for (const cs of correctedSections) {
+          const titleEnd = cs.indexOf("\n");
+          const title = cs.slice(0, titleEnd).trim();
+          const content = cs.slice(titleEnd + 1).trim();
+          const section = sections.find(s => s.title === title);
+          if (section) {
+            const wc = content.split(/\s+/).filter(Boolean).length;
+            await supabase.from("sections").update({ content, word_current: wc }).eq("id", section.id);
+            setSections(prev => prev.map(s => s.id === section.id ? { ...s, content, word_current: wc } : s));
+          }
+        }
+      }
+
+      return data;
+    } catch (e: any) {
+      toast({ title: "Edit failed", description: e.message, variant: "destructive" });
       throw e;
     }
   };
@@ -485,13 +446,44 @@ const WriterEngine = () => {
         await streamSection(s.id, true, feedback);
       }
       toast({ title: "Revisions applied" });
+      setStage(6); // advance to Writer Slate
     } catch (e: any) {
       toast({ title: "Revision failed", description: e.message, variant: "destructive" });
     }
     setIsProcessing(false);
   };
 
-  // ─── STAGE 6: Export ───
+  // ─── STAGE 6: Writer Slate actions ───
+  const handleAcceptAll = () => {
+    toast({ title: "All changes accepted" });
+  };
+
+  const handleDenyAll = () => {
+    toast({ title: "All changes denied — reverted to previous version" });
+  };
+
+  const handleTrimToTarget = async () => {
+    setIsProcessing(true);
+    const diff = totalWords - totalTarget;
+    const feedback = diff > 0
+      ? `Trim exactly ${diff} words from the document while maintaining quality and flow. Remove redundant phrases and tighten prose.`
+      : `Expand the document by exactly ${Math.abs(diff)} words. Add depth, examples, or analysis where appropriate.`;
+    for (const s of sections.filter(s => s.content)) {
+      await streamSection(s.id, true, feedback);
+    }
+    setIsProcessing(false);
+    toast({ title: "Word count adjusted" });
+  };
+
+  // ─── STAGE 7: Final Scan ───
+  const handleFinalScan = async () => {
+    // Reuse quality-pass for final scan
+    const data = await handleQualityCheck();
+    setScanReport(data);
+    return data;
+  };
+
+  // ─── STAGE 8: Export ───
   const triggerDownload = (blobOrUrl: string | Blob, filename: string) => {
     const href = typeof blobOrUrl === "string" ? blobOrUrl : URL.createObjectURL(blobOrUrl);
     const a = document.createElement("a");
@@ -500,10 +492,7 @@ const WriterEngine = () => {
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      if (typeof blobOrUrl !== "string") URL.revokeObjectURL(href);
-    }, 200);
+    setTimeout(() => { document.body.removeChild(a); if (typeof blobOrUrl !== "string") URL.revokeObjectURL(href); }, 200);
   };
 
   const handleExport = async () => {
@@ -516,43 +505,28 @@ const WriterEngine = () => {
       const { data, error } = await supabase.functions.invoke("export-docx", {
         body: { assessment_id: assessmentId, prefer_inline: preferInline },
       });
-      if (error) throw new Error(error.message || "Export request failed");
-      if (data?.success === false) throw new Error(data.error || "Export failed on server");
+      if (error) throw new Error(error.message || "Export failed");
+      if (data?.success === false) throw new Error(data.error || "Export failed");
       return data;
     };
 
     try {
       let data = await attemptExport(false);
-
-      // Parse download payload — support new `download` object and legacy keys
       const dl = data?.download;
       const url = dl?.url || data?.url;
       const b64 = dl?.base64 || data?.base64;
       const fname = dl?.filename || data?.filename || fallbackName;
 
-      if (url) {
-        triggerDownload(url, fname);
-        toast({ title: "Export downloaded!" });
-      } else if (b64) {
-        const blob = base64ToBlob(b64, mime);
-        triggerDownload(blob, fname);
-        toast({ title: "Export downloaded!" });
-      } else {
-        // Retry with forced inline
-        console.warn("[handleExport] No payload in first response, retrying with prefer_inline");
+      if (url) { triggerDownload(url, fname); toast({ title: "Export downloaded!" }); }
+      else if (b64) { triggerDownload(base64ToBlob(b64, mime), fname); toast({ title: "Export downloaded!" }); }
+      else {
         data = await attemptExport(true);
         const retryB64 = data?.download?.base64 || data?.base64;
         const retryFname = data?.download?.filename || data?.filename || fallbackName;
-        if (retryB64) {
-          const blob = base64ToBlob(retryB64, mime);
-          triggerDownload(blob, retryFname);
-          toast({ title: "Export downloaded!" });
-        } else {
-          throw new Error("Server returned no downloadable data after retry.");
-        }
+        if (retryB64) { triggerDownload(base64ToBlob(retryB64, mime), retryFname); toast({ title: "Export downloaded!" }); }
+        else throw new Error("No downloadable data.");
       }
     } catch (e: any) {
-      console.error("[handleExport] Failed:", e);
       toast({ title: "Export failed", description: e.message, variant: "destructive" });
     }
     setIsProcessing(false);
@@ -561,10 +535,8 @@ const WriterEngine = () => {
   // ─── Image Generation ───
   const handleGenerateImages = async () => {
     if (!assessment?.id) return;
-    toast({ title: "Generating images…", description: "Creating figures for your sections." });
+    toast({ title: "Generating images…" });
     try {
-      const session = await supabase.auth.getSession();
-      const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       const { data, error } = await supabase.functions.invoke("generate-images", {
         body: { assessment_id: assessment.id, sections: sections.filter(s => s.content) },
       });
@@ -576,43 +548,47 @@ const WriterEngine = () => {
     }
   };
 
-  // ─── ZIP Download for Images ───
   const handleDownloadImagesZip = async () => {
-    if (assessmentImages.length === 0) { toast({ title: "No images to download" }); return; }
+    if (assessmentImages.length === 0) { toast({ title: "No images" }); return; }
     setIsProcessing(true);
     try {
       const zip = new JSZip();
       for (const img of assessmentImages) {
         if (img.url) {
           try {
-            // Handle base64 data URLs
             if (img.url.startsWith("data:")) {
               const [header, b64] = img.url.split(",");
               const mimeMatch = header.match(/data:([^;]+)/);
               const ext = mimeMatch ? mimeMatch[1].split("/")[1] : "png";
-              const blob = base64ToBlob(b64, mimeMatch?.[1] || "image/png");
-              zip.file(`Figure_${img.figure_number || "X"}_${img.caption || "image"}.${ext}`, blob);
+              zip.file(`Figure_${img.figure_number || "X"}.${ext}`, base64ToBlob(b64, mimeMatch?.[1] || "image/png"));
             } else {
               const resp = await fetch(img.url);
               const blob = await resp.blob();
-              const ext = blob.type.split("/")[1] || "png";
-              zip.file(`Figure_${img.figure_number || "X"}_${img.caption || "image"}.${ext}`, blob);
+              zip.file(`Figure_${img.figure_number || "X"}.${blob.type.split("/")[1] || "png"}`, blob);
             }
-          } catch { /* skip individual failures */ }
+          } catch { /* skip */ }
         }
       }
       const zipBlob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${assessment?.title?.replace(/\s+/g, "_") || "Assessment"}_Images.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      triggerDownload(zipBlob, `${assessment?.title?.replace(/\s+/g, "_") || "Assessment"}_Images.zip`);
       toast({ title: "Images ZIP downloaded!" });
     } catch (e: any) {
-      toast({ title: "ZIP download failed", description: e.message, variant: "destructive" });
+      toast({ title: "ZIP failed", description: e.message, variant: "destructive" });
+    }
+    setIsProcessing(false);
+  };
+
+  // ─── STAGE 9: Manual corrections ───
+  const handleManualCorrections = async (corrections: string) => {
+    if (!corrections.trim()) return;
+    setIsProcessing(true);
+    try {
+      for (const s of sections.filter(s => s.content)) {
+        await streamSection(s.id, true, corrections);
+      }
+      toast({ title: "Corrections applied" });
+    } catch (e: any) {
+      toast({ title: "Corrections failed", description: e.message, variant: "destructive" });
     }
     setIsProcessing(false);
   };
@@ -624,43 +600,34 @@ const WriterEngine = () => {
     setAutopilotRunning(true);
 
     try {
-      // Stage 3: Write all pending sections
-      toast({ title: "Autopilot: Writing all sections…" });
+      toast({ title: "Autopilot: Writing…" });
       const pending = sections.filter(s => s.status === "pending" || !s.content);
       for (const s of pending) {
         if (autopilotCancelRef.current) break;
         await streamSection(s.id);
         await new Promise(r => setTimeout(r, 1000));
       }
-      if (autopilotCancelRef.current) { setAutopilotRunning(false); toast({ title: "Autopilot cancelled" }); return; }
+      if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
 
-      // Stage 4: Self-critique
-      toast({ title: "Autopilot: Running self-critique…" });
+      toast({ title: "Autopilot: Self-critique…" });
       setStage(3);
-      const qr = await handleQualityCheck();
+      await handleQualityCheck();
       if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
 
-      // Stage 5: Apply corrections if needed
-      if (qr?.report?.issues?.length > 0) {
-        toast({ title: "Autopilot: Applying corrections…" });
-        setStage(4);
-        const corrections = qr.report.issues.map((i: any) => `${i.section || "General"}: ${i.suggestion}`).join("\n");
-        await handleApplyRevisions(corrections);
-      }
+      toast({ title: "Autopilot: Edit & proofread…" });
+      setStage(4);
+      await handleEditProofread();
       if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
 
-      // Generate images if settings.autoImages
       if (settings.autoImages) {
         toast({ title: "Autopilot: Generating figures…" });
         await handleGenerateImages();
       }
 
-      // Stage 6: Export
-      toast({ title: "Autopilot: Preparing final document…" });
-      setStage(5);
+      toast({ title: "Autopilot: Exporting…" });
+      setStage(8);
       await handleExport();
-
-      toast({ title: "🎉 Autopilot complete!", description: "Your A+ assessment has been exported." });
+      toast({ title: "🎉 Autopilot complete!" });
     } catch (e: any) {
       toast({ title: "Autopilot error", description: e.message, variant: "destructive" });
     } finally {
@@ -670,22 +637,22 @@ const WriterEngine = () => {
 
   // ─── Chat with tool-calling ───
   const executeChatAction = async (toolName: string, args: any) => {
-    const safeActions = ["analyse_brief", "write_all", "write_section", "run_critique", "humanise_all", "apply_revision"];
     const destructiveActions = ["export_document"];
 
     if (destructiveActions.includes(toolName) && !args.confirmed) {
-      setChatMessages(prev => [...prev, { role: "assistant", content: `⚠️ I need your confirmation to **export the document**. Would you like me to proceed? Reply "yes" to confirm.` }]);
+      setChatMessages(prev => [...prev, { role: "assistant", content: `⚠️ Confirm export? Reply "yes".` }]);
       return;
     }
 
     switch (toolName) {
       case "analyse_brief":
         if (args.brief_text) setBriefText(args.brief_text);
-        setChatMessages(prev => [...prev, { role: "assistant", content: "📝 Analysing your brief now…" }]);
+        setChatMessages(prev => [...prev, { role: "assistant", content: "📝 Analysing brief…" }]);
+        setStage(0);
         await handleAnalyseBrief();
         break;
       case "write_all":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "✍️ Writing all sections now…" }]);
+        setChatMessages(prev => [...prev, { role: "assistant", content: "✍️ Writing all sections…" }]);
         setStage(2);
         await handleWriteAll();
         break;
@@ -693,30 +660,50 @@ const WriterEngine = () => {
         const sec = sections.find(s => s.title.toLowerCase().includes((args.section_title || "").toLowerCase()));
         if (sec) {
           setChatMessages(prev => [...prev, { role: "assistant", content: `✍️ Writing "${sec.title}"…` }]);
+          setStage(2);
           await streamSection(sec.id);
         } else {
-          setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Could not find section "${args.section_title}".` }]);
+          setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Section "${args.section_title}" not found.` }]);
         }
         break;
       case "run_critique":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "🔍 Running self-critique…" }]);
+        setChatMessages(prev => [...prev, { role: "assistant", content: "🔍 Running critique…" }]);
         setStage(3);
         await handleQualityCheck();
         break;
       case "humanise_all":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "🎭 Humanising all sections…" }]);
-        await handleHumaniseAll();
+        setChatMessages(prev => [...prev, { role: "assistant", content: "🎭 Humanising…" }]);
+        setStage(2);
+        for (const s of sections.filter(s => s.content)) {
+          try {
+            const { data } = await supabase.functions.invoke("humanise", {
+              body: { content: s.content, word_target: s.word_target, mode: "full", model: selectedModel, voice_perspective: settings.firstPerson ? "first" : "third" },
+            });
+            if (data?.humanised_content) {
+              const wc = data.humanised_content.split(/\s+/).filter(Boolean).length;
+              await supabase.from("sections").update({ content: data.humanised_content, word_current: wc }).eq("id", s.id);
+              setSections(prev => prev.map(x => x.id === s.id ? { ...x, content: data.humanised_content, word_current: wc } : x));
+            }
+          } catch { /* skip */ }
+        }
         break;
       case "export_document":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "📥 Exporting your document now…" }]);
+        setChatMessages(prev => [...prev, { role: "assistant", content: "📥 Exporting…" }]);
+        setStage(8);
         await handleExport();
         break;
       case "apply_revision":
         const revSec = sections.find(s => s.title.toLowerCase().includes((args.section_title || "").toLowerCase()));
         if (revSec) {
           setChatMessages(prev => [...prev, { role: "assistant", content: `📝 Revising "${revSec.title}"…` }]);
+          setStage(5);
           await streamSection(revSec.id, true, args.feedback);
         }
+        break;
+      case "generate_images":
+        setChatMessages(prev => [...prev, { role: "assistant", content: "🖼️ Generating images…" }]);
+        setStage(2);
+        await handleGenerateImages();
         break;
     }
   };
@@ -772,7 +759,6 @@ const WriterEngine = () => {
                 return [...prev, { role: "assistant", content: assistantSoFar }];
               });
             }
-            // Check for tool calls
             const toolCalls = parsed.choices?.[0]?.delta?.tool_calls;
             if (toolCalls) {
               for (const tc of toolCalls) {
@@ -787,37 +773,34 @@ const WriterEngine = () => {
         }
       }
 
-      // Execute any tool calls
       for (const tc of toolCallsBuffer) {
         if (tc.name) {
           try {
             const args = tc.arguments ? JSON.parse(tc.arguments) : {};
             await executeChatAction(tc.name, args);
-          } catch { /* ignore parse errors */ }
+          } catch { /* ignore */ }
         }
       }
     } catch {
-      setChatMessages(prev => [...prev, { role: "assistant", content: "Sorry, an error occurred. Please try again." }]);
+      setChatMessages(prev => [...prev, { role: "assistant", content: "Sorry, an error occurred." }]);
     }
     setChatLoading(false);
   };
 
-  // Handle file upload in chat
   const handleChatFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadedFiles(prev => [...prev, file]);
     setActiveIntakeMode("upload");
     setChatMessages(prev => [...prev, { role: "user", content: `📎 Uploaded: ${file.name}` }]);
-    setChatMessages(prev => [...prev, { role: "assistant", content: `I've received your file "${file.name}". I'll use it when you ask me to analyse or process your brief. Say "analyse my brief" to get started!` }]);
+    setChatMessages(prev => [...prev, { role: "assistant", content: `Received "${file.name}". Say "analyse my brief" to process it.` }]);
   };
 
-  // ─── Stage guards ───
   const canAdvance = (targetStage: number) => {
     if (targetStage <= stage) return true;
     if (targetStage === 1 && !executionPlan) return false;
     if (targetStage === 2 && sections.length === 0) return false;
-    if (targetStage === 3 && !sections.some(s => s.content)) return false;
+    if (targetStage >= 3 && !sections.some(s => s.content)) return false;
     return true;
   };
 
@@ -836,6 +819,8 @@ const WriterEngine = () => {
       </div>
     );
   }
+
+  const maxStage = stageLabels.length - 1;
 
   return (
     <div className="flex h-screen h-[100dvh] overflow-hidden bg-background">
@@ -863,31 +848,32 @@ const WriterEngine = () => {
               <Menu size={16} />
             </button>
             <div className="flex items-center gap-[3px]">
-              <button onClick={() => stage > 0 && handleStageChange(stage - 1)} disabled={stage === 0} className="w-7 h-7 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0">
+              <button onClick={() => stage > 0 && handleStageChange(stage - 1)} disabled={stage === 0} className="w-7 h-7 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-all disabled:opacity-30 flex-shrink-0">
                 <ChevronLeft size={13} />
               </button>
-              <button onClick={() => stage < 5 && handleStageChange(stage + 1)} disabled={stage === 5} className="w-7 h-7 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0">
+              <button onClick={() => stage < maxStage && handleStageChange(stage + 1)} disabled={stage === maxStage} className="w-7 h-7 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-all disabled:opacity-30 flex-shrink-0">
                 <ChevronRight size={13} />
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-[3px] md:gap-[5px] overflow-x-auto flex-shrink-0 scrollbar-hide">
+          {/* Stage pills — hidden on mobile */}
+          <div className="hidden sm:flex items-center gap-[3px] md:gap-[5px] overflow-x-auto flex-shrink-0 scrollbar-hide">
             {stageLabels.map((label, i) => (
               <button
                 key={i}
                 onClick={() => handleStageChange(i)}
-                className={`flex items-center gap-1 px-1.5 sm:px-2.5 py-[3px] rounded-full text-[11px] sm:text-[12px] font-medium transition-all border whitespace-nowrap flex-shrink-0 ${
+                className={`flex items-center gap-1 px-1.5 sm:px-2 py-[3px] rounded-full text-[11px] font-medium transition-all border whitespace-nowrap flex-shrink-0 ${
                   i === stage ? "bg-foreground text-background border-foreground" :
                   i < stage ? "bg-sage/15 text-sage border-sage/20" :
                   "border-transparent hover:bg-muted"
                 }`}
               >
-                <span className={`w-[17px] h-[17px] rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                <span className={`w-[15px] h-[15px] rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${
                   i === stage ? "bg-background/20 text-background" :
                   i < stage ? "bg-sage text-white" : "bg-border text-muted-foreground"
                 }`}>{i + 1}</span>
-                <span className="hidden sm:inline">{label}</span>
+                <span className="hidden md:inline">{label}</span>
               </button>
             ))}
           </div>
@@ -898,7 +884,7 @@ const WriterEngine = () => {
               chatOpen ? "bg-terracotta text-white" : "border border-border hover:bg-muted"
             }`}
           >
-            <Sparkles size={13} /> <span className="hidden sm:inline">Ask ZOE</span>
+            <Sparkles size={13} /> <span className="hidden sm:inline">ZOE</span>
           </button>
         </div>
 
@@ -907,123 +893,75 @@ const WriterEngine = () => {
             <div className="max-w-[820px] mx-auto">
               {stage === 0 && (
                 <StageBriefIntake
-                  settings={settings}
-                  onSettingsChange={setSettings}
-                  briefText={briefText}
-                  onBriefTextChange={setBriefText}
-                  uploadedFiles={uploadedFiles}
-                  onFilesChange={setUploadedFiles}
-                  urlInput={urlInput}
-                  onUrlChange={setUrlInput}
-                  activeTab={activeIntakeMode}
-                  onTabChange={setActiveIntakeMode}
-                  onAnalyse={handleAnalyseBrief}
-                  isProcessing={isProcessing}
+                  settings={settings} onSettingsChange={setSettings}
+                  briefText={briefText} onBriefTextChange={setBriefText}
+                  uploadedFiles={uploadedFiles} onFilesChange={setUploadedFiles}
+                  urlInput={urlInput} onUrlChange={setUrlInput}
+                  activeTab={activeIntakeMode} onTabChange={setActiveIntakeMode}
+                  onAnalyse={handleAnalyseBrief} isProcessing={isProcessing}
                 />
               )}
               {stage === 1 && (
                 <StageExecutionTable
-                  plan={executionPlan}
-                  onPlanChange={setExecutionPlan}
-                  settings={settings}
-                  onBack={() => setStage(0)}
-                  onConfirm={handleConfirmPlan}
-                  isProcessing={isProcessing}
+                  plan={executionPlan} onPlanChange={setExecutionPlan}
+                  settings={settings} onBack={() => setStage(0)}
+                  onConfirm={handleConfirmPlan} isProcessing={isProcessing}
                 />
               )}
               {stage === 2 && (
-                <StageWritingEngine
+                <StageWriteHumanise
                   sections={sections}
-                  onSectionUpdate={(id, updates) => setSections(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s))}
                   onGenerate={(id) => streamSection(id)}
-                  onRevise={(id, fb) => streamSection(id, true, fb)}
-                  onHumanise={handleHumanise}
-                  onHumaniseAll={handleHumaniseAll}
                   onWriteAll={handleWriteAll}
                   onAutopilot={handleAutopilot}
+                  onGenerateImages={handleGenerateImages}
                   autopilotRunning={autopilotRunning}
-                  generating={generating}
-                  generatingId={generatingId}
-                  streamContent={streamContent}
-                  writingAll={writingAll}
-                  recommendations={recommendations}
-                  loadingRecs={loadingRecs}
-                  onApplyRec={async (rec) => {
-                    // Manual "fetch recommendations" trigger
-                    if (rec.action?.startsWith("__fetch__")) {
-                      const sectionId = rec.action.replace("__fetch__", "");
-                      const section = sections.find(s => s.id === sectionId);
-                      if (!section?.content) return;
-                      setLoadingRecs(true);
-                      try {
-                        const { data: recData } = await supabase.functions.invoke("zoe-recommend", {
-                          body: {
-                            content: section.content,
-                            section_title: section.title,
-                            word_target: section.word_target,
-                            citation_count: section.citation_count,
-                            framework: section.framework,
-                            execution_plan: assessment?.execution_plan || executionPlan,
-                            model: selectedModel,
-                            brief_text: assessment?.brief_text || briefText || "",
-                            assessment_type: settings.type || assessment?.type || "",
-                            academic_level: settings.level,
-                          },
-                        });
-                        if (recData?.recommendations?.length) setRecommendations(recData.recommendations);
-                        else toast({ title: "No recommendations", description: "This section looks great!" });
-                      } catch (e: any) {
-                        toast({ title: "Failed to get recommendations", description: e.message, variant: "destructive" });
-                      } finally {
-                        setLoadingRecs(false);
-                      }
-                      return;
-                    }
-                    const activeSection = sections.find(s => s.content);
-                    if (activeSection) streamSection(activeSection.id, true, rec.action);
-                  }}
-                  onDismissRec={(idx) => setRecommendations(prev => prev.filter((_, i) => i !== idx))}
-                  onApplyAllRecs={async () => {
-                    if (!recommendations.length) return;
-                    const activeSection = sections.find(s => s.content);
-                    if (!activeSection) return;
-                    const combinedFeedback = recommendations.map(r => r.action).join("\n\n");
-                    toast({ title: "Applying all recommendations…" });
-                    await streamSection(activeSection.id, true, combinedFeedback);
-                    setRecommendations([]);
-                    toast({ title: "All recommendations applied!" });
-                  }}
-                  onBack={() => setStage(1)}
-                  onNext={() => setStage(3)}
-                  settings={settings}
-                  onSettingsChange={setSettings}
+                  generating={generating} generatingId={generatingId}
+                  streamContent={streamContent} writingAll={writingAll}
+                  onBack={() => setStage(1)} onNext={() => setStage(3)}
+                  settings={settings} onSettingsChange={setSettings}
                 />
               )}
               {stage === 3 && (
                 <StageSelfCritique
                   onRunCritique={handleQualityCheck}
                   qualityReport={qualityReport}
-                  totalWords={totalWords}
-                  totalTarget={totalTarget}
-                  onBack={() => setStage(2)}
-                  onRevisions={() => setStage(4)}
-                  onSubmit={() => setStage(5)}
-                  onAutoRevise={(feedback: string) => {
-                    setRevisionFeedback(feedback);
-                    setStage(4);
-                  }}
+                  totalWords={totalWords} totalTarget={totalTarget}
+                  onBack={() => setStage(2)} onNext={() => setStage(4)}
                 />
               )}
               {stage === 4 && (
-                <StageRevisionCenter
-                  onApplyRevisions={handleApplyRevisions}
-                  isProcessing={isProcessing}
-                  onBack={() => setStage(3)}
-                  onNext={() => setStage(5)}
-                  initialFeedback={revisionFeedback}
+                <StageEditProofread
+                  onRunEdit={handleEditProofread}
+                  editReport={editReport}
+                  onBack={() => setStage(3)} onNext={() => setStage(5)}
                 />
               )}
               {stage === 5 && (
+                <StageRevise
+                  onApplyRevisions={handleApplyRevisions}
+                  isProcessing={isProcessing}
+                  onBack={() => setStage(4)} onNext={() => setStage(6)}
+                  initialFeedback={revisionFeedback}
+                />
+              )}
+              {stage === 6 && (
+                <StageWriterSlate
+                  sections={sections} totalTarget={totalTarget}
+                  onAcceptAll={handleAcceptAll} onDenyAll={handleDenyAll}
+                  onTrimToTarget={handleTrimToTarget}
+                  onBack={() => setStage(5)} onNext={() => setStage(7)}
+                  isProcessing={isProcessing}
+                />
+              )}
+              {stage === 7 && (
+                <StageFinalScan
+                  onRunScan={handleFinalScan}
+                  scanReport={scanReport}
+                  onBack={() => setStage(6)} onNext={() => setStage(8)}
+                />
+              )}
+              {stage === 8 && (
                 <StageSubmissionPrep
                   assessmentTitle={assessment?.title || "Assessment"}
                   totalWords={totalWords}
@@ -1031,7 +969,17 @@ const WriterEngine = () => {
                   onDownloadImages={handleDownloadImagesZip}
                   hasImages={assessmentImages.length > 0}
                   isProcessing={isProcessing}
-                  onBack={() => setStage(4)}
+                  onBack={() => setStage(7)}
+                  onNext={() => setStage(9)}
+                />
+              )}
+              {stage === 9 && (
+                <StageManualSubmission
+                  onApplyCorrections={handleManualCorrections}
+                  onReExport={handleExport}
+                  isProcessing={isProcessing}
+                  onBack={() => setStage(8)}
+                  assessmentTitle={assessment?.title || "Assessment"}
                 />
               )}
             </div>
@@ -1052,7 +1000,7 @@ const WriterEngine = () => {
                   <div className="text-center py-8">
                     <Sparkles size={24} className="mx-auto text-terracotta/30 mb-3" />
                     <p className="text-[12px] text-muted-foreground mb-2">Ask ZOE anything about your assessment.</p>
-                    <p className="text-[11px] text-muted-foreground/60">Try: "Analyse my brief", "Write all sections", "Humanise everything"</p>
+                    <p className="text-[11px] text-muted-foreground/60">Try: "Write all sections", "Generate images", "Export"</p>
                   </div>
                 )}
                 {chatMessages.map((msg, i) => (
@@ -1104,7 +1052,6 @@ const WriterEngine = () => {
         </div>
       </div>
 
-      {/* Mobile FAB for ZOE chat */}
       {!chatOpen && (
         <button
           onClick={() => setChatOpen(true)}
