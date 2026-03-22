@@ -197,25 +197,23 @@ const Dashboard = () => {
           </motion.div>
 
           {/* KPI strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-3 mb-4 sm:mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-8">
             {[
-              { label: "Words Left", value: formatCompact(wordsLeft), fullSub: `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
-              { label: "Assessments", value: assessments.length, fullSub: `${completedCount} done`, color: "text-muted-blue" },
-              { label: "Written", value: formatCompact(totalWordsWritten), fullSub: "total", color: "text-sage" },
-              { label: "Avg. Done", value: `${avgCompletion}%`, fullSub: "across all", color: "text-dusty-purple" },
+              { label: "Words Left", value: formatCompact(wordsLeft), sub: `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
+              { label: "Assessments", value: assessments.length, sub: `${completedCount} done`, color: "text-muted-blue" },
+              { label: "Written", value: formatCompact(totalWordsWritten), sub: "total", color: "text-sage" },
+              { label: "Avg. Done", value: `${avgCompletion}%`, sub: "across all", color: "text-dusty-purple" },
             ].map((kpi, i) => (
               <motion.div
                 key={kpi.label}
                 initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
                 animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                 transition={{ duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                className="flex items-center justify-between sm:flex-col sm:items-start p-2 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card"
+                className="aspect-square sm:aspect-auto flex flex-col items-center justify-center p-3 sm:p-4 rounded-xl border border-border bg-card cursor-pointer hover:scale-[1.02] active:scale-[0.97] hover:shadow-md hover:border-foreground/10 transition-all duration-200"
               >
-                <div className="sm:mb-0.5">
-                  <p className="text-[8px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider leading-tight">{kpi.label}</p>
-                  <p className="text-[9px] sm:text-[11px] text-muted-foreground leading-tight sm:mt-0.5 hidden sm:block">{kpi.fullSub}</p>
-                </div>
-                <p className={`text-sm sm:text-xl font-bold tabular-nums ${kpi.color} sm:mt-auto`}>{kpi.value}</p>
+                <p className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">{kpi.label}</p>
+                <p className={`text-xl sm:text-2xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-0.5">{kpi.sub}</p>
               </motion.div>
             ))}
           </div>
