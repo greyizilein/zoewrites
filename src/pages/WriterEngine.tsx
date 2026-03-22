@@ -738,17 +738,46 @@ const WriterEngine = () => {
   // ─── Image Generation ───
   const handleGenerateImages = async () => {
     if (!assessment?.id) return;
-    toast({ title: "Generating images…" });
+    setProgressMessage("Generating images…");
     try {
       const { data, error } = await supabase.functions.invoke("generate-images", {
         body: { assessment_id: assessment.id, sections: sections.filter(s => s.content) },
       });
       if (error) throw error;
-      setAssessmentImages(data?.images || []);
-      toast({ title: `${data?.count || 0} images generated!` });
+      // Store as variants for user selection (not saved to DB yet)
+      setImageVariants(data?.images || []);
+      toast({ title: `${data?.count || 0} image variants generated!` });
     } catch (e: any) {
       toast({ title: "Image generation failed", description: e.message, variant: "destructive" });
     }
+    setProgressMessage("");
+  };
+
+  const handleSelectImage = async (variant: any) => {
+    // Toggle selection
+    setImageVariants(prev => prev.map(v =>
+      v.section_id === variant.section_id
+        ? { ...v, selected: v.variant === variant.variant }
+        : v
+    ));
+    // Save selected image to assessment_images table
+    try {
+      const { data: imgRecord } = await supabase.from("assessment_images").insert({
+        section_id: variant.section_id,
+        figure_number: variant.figure_number,
+        caption: variant.caption,
+        prompt: variant.prompt,
+        url: variant.url,
+        image_type: variant.image_type,
+      }).select().single();
+      if (imgRecord) {
+        setAssessmentImages(prev => {
+          // Remove any previous image for this section
+          const filtered = prev.filter(i => i.section_id !== variant.section_id);
+          return [...filtered, imgRecord];
+        });
+      }
+    } catch { /* best effort */ }
   };
 
   const handleDownloadImagesZip = async () => {
