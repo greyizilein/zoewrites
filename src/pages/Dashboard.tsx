@@ -85,6 +85,7 @@ const Dashboard = () => {
   const initials = userName.slice(0, 2).toUpperCase();
   const wordsUsed = profile?.words_used || 0;
   const wordLimit = profile?.word_limit || 500;
+  const isUnlimited = wordLimit >= 1_000_000_000;
   const wordsLeft = Math.max(0, wordLimit - wordsUsed);
   const wordUsagePercent = wordLimit > 0 ? Math.min(Math.round((wordsUsed / wordLimit) * 100), 100) : 0;
   const activeCount = assessments.filter(a => a.status !== "complete").length;
@@ -199,7 +200,7 @@ const Dashboard = () => {
           {/* KPI strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-8">
             {[
-              { label: "Words Left", value: formatCompact(wordsLeft), sub: `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
+              { label: "Words Left", value: isUnlimited ? "∞" : formatCompact(wordsLeft), sub: isUnlimited ? "unlimited" : `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
               { label: "Assessments", value: assessments.length, sub: `${completedCount} done`, color: "text-muted-blue" },
               { label: "Written", value: formatCompact(totalWordsWritten), sub: "total", color: "text-sage" },
               { label: "Avg. Done", value: `${avgCompletion}%`, sub: "across all", color: "text-dusty-purple" },
@@ -219,22 +220,34 @@ const Dashboard = () => {
           </div>
 
           {/* Word budget bar */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.25 }}
-            className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8"
-          >
-            <div className="flex justify-between items-center mb-1.5 sm:mb-2">
+          {isUnlimited ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+              className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8 flex items-center justify-between"
+            >
               <span className="text-[11px] sm:text-[13px] font-semibold">Word Budget</span>
-              <span className="font-mono text-[10px] sm:text-[12px] text-muted-foreground">{formatCompact(wordsUsed)} / {formatCompact(wordLimit)}</span>
-            </div>
-            <Progress value={wordUsagePercent} className="h-1.5 sm:h-2" />
-            <div className="flex justify-between mt-1 sm:mt-1.5 text-[9px] sm:text-[11px] text-muted-foreground">
-              <span>{wordUsagePercent}%</span>
-              <span className="capitalize">{profile?.tier}</span>
-            </div>
-          </motion.div>
+              <span className="text-[10px] sm:text-[12px] text-muted-foreground capitalize">Unlimited · {profile?.tier} plan</span>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+              className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8"
+            >
+              <div className="flex justify-between items-center mb-1.5 sm:mb-2">
+                <span className="text-[11px] sm:text-[13px] font-semibold">Word Budget</span>
+                <span className="font-mono text-[10px] sm:text-[12px] text-muted-foreground">{formatCompact(wordsUsed)} / {formatCompact(wordLimit)}</span>
+              </div>
+              <Progress value={wordUsagePercent} className="h-1.5 sm:h-2" />
+              <div className="flex justify-between mt-1 sm:mt-1.5 text-[9px] sm:text-[11px] text-muted-foreground">
+                <span>{wordUsagePercent}%</span>
+                <span className="capitalize">{profile?.tier}</span>
+              </div>
+            </motion.div>
+          )}
 
           {/* Recent Activity */}
           {assessments.length > 0 && (
