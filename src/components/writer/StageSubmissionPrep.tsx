@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import PersonalisePanel from "./PersonalisePanel";
 import StickyFooter from "./StickyFooter";
 import ChecklistAnimation from "./ChecklistAnimation";
@@ -48,9 +48,12 @@ export default function StageSubmissionPrep({ assessmentTitle, totalWords, onExp
     setDetails(prev => ({ ...prev, [field]: value }));
   };
 
-  const handlePrepare = () => {
-    setRunning(true);
-  };
+  // Auto-run preparation on mount
+  useEffect(() => {
+    if (!running && !done) {
+      setRunning(true);
+    }
+  }, []);
 
   return (
     <div>
@@ -58,6 +61,29 @@ export default function StageSubmissionPrep({ assessmentTitle, totalWords, onExp
         <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 9 of 10</p>
         <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Final Submission</h1>
         <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Fill your details and export the submission-ready document.</p>
+      </div>
+
+      {/* Download buttons — always visible at top */}
+      <div className="space-y-2.5 mb-5">
+        <div className="bg-sage/10 border border-sage/20 rounded-[10px] px-3.5 py-3">
+          <p className="text-[13px] text-sage font-semibold">✓ Submission-ready · {totalWords.toLocaleString()} words</p>
+        </div>
+        <button
+          onClick={onExport}
+          disabled={isProcessing}
+          className="w-full bg-foreground text-background rounded-[9px] py-3 flex items-center justify-center gap-2 text-[14px] font-bold hover:bg-foreground/90 transition-all active:scale-[0.97] disabled:opacity-50"
+        >
+          <Download size={16} /> Download .docx
+        </button>
+        {hasImages && onDownloadImages && (
+          <button
+            onClick={onDownloadImages}
+            disabled={isProcessing}
+            className="w-full bg-dusty-purple text-white rounded-[9px] py-3 flex items-center justify-center gap-2 text-[14px] font-bold hover:bg-dusty-purple/90 transition-all active:scale-[0.97] disabled:opacity-50"
+          >
+            <FileArchive size={16} /> Download Images (ZIP)
+          </button>
+        )}
       </div>
 
       <PersonalisePanel
@@ -110,31 +136,7 @@ export default function StageSubmissionPrep({ assessmentTitle, totalWords, onExp
         </div>
       </div>
 
-      {done && (
-        <div className="space-y-3 animate-in fade-in slide-in-from-bottom-3 duration-300">
-          <div className="bg-sage/10 border border-sage/20 rounded-[10px] px-3.5 py-3">
-            <p className="text-[13px] text-sage font-semibold">✓ Submission-ready · {totalWords.toLocaleString()} words</p>
-          </div>
-          <button
-            onClick={onExport}
-            disabled={isProcessing}
-            className="w-full bg-foreground text-background rounded-[9px] py-3 flex items-center justify-center gap-2 text-[14px] font-bold hover:bg-foreground/90 transition-all active:scale-[0.97] disabled:opacity-50"
-          >
-            <Download size={16} /> Download .docx
-          </button>
-          {hasImages && onDownloadImages && (
-            <button
-              onClick={onDownloadImages}
-              disabled={isProcessing}
-              className="w-full bg-dusty-purple text-white rounded-[9px] py-3 flex items-center justify-center gap-2 text-[14px] font-bold hover:bg-dusty-purple/90 transition-all active:scale-[0.97] disabled:opacity-50"
-            >
-              <FileArchive size={16} /> Download Images (ZIP)
-            </button>
-          )}
-        </div>
-      )}
-
-      <StickyFooter leftLabel="← Scan" onLeft={onBack} rightLabel="Prepare →" onRight={handlePrepare} rightDisabled={done} />
+      <StickyFooter leftLabel="← Scan" onLeft={onBack} rightLabel="Manual Submission →" onRight={onNext} />
     </div>
   );
 }

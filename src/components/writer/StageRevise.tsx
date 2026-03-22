@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { Upload, File, X } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Upload, File, X, Loader2 } from "lucide-react";
 import StickyFooter from "./StickyFooter";
 
 interface Props {
@@ -13,14 +13,26 @@ interface Props {
 export default function StageRevise({ onApplyRevisions, isProcessing, onBack, onNext, initialFeedback }: Props) {
   const [feedbackText, setFeedbackText] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [autoApplied, setAutoApplied] = useState(false);
+  const autoAppliedRef = useRef(false);
 
+  // Auto-populate feedback from critique issues
   useEffect(() => {
-    if (initialFeedback && !autoApplied) {
+    if (initialFeedback && !autoAppliedRef.current) {
       setFeedbackText(initialFeedback);
-      setAutoApplied(true);
     }
-  }, [initialFeedback, autoApplied]);
+  }, [initialFeedback]);
+
+  // Auto-apply if initialFeedback is provided (from critique pipeline)
+  useEffect(() => {
+    if (initialFeedback && !autoAppliedRef.current && !isProcessing) {
+      autoAppliedRef.current = true;
+      // Small delay so user sees the pre-filled feedback before it runs
+      const timer = setTimeout(() => {
+        onApplyRevisions(initialFeedback);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [initialFeedback, isProcessing, onApplyRevisions]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -39,7 +51,14 @@ export default function StageRevise({ onApplyRevisions, isProcessing, onBack, on
       {initialFeedback && (
         <div className="bg-terracotta/5 border border-terracotta/20 rounded-[10px] px-3.5 py-3 mb-4">
           <p className="text-[12px] font-semibold text-terracotta mb-0.5">🔧 Auto-loaded from previous stages</p>
-          <p className="text-[11px] text-muted-foreground">Issues have been pre-filled. Click "Apply Revisions" to fix them.</p>
+          <p className="text-[11px] text-muted-foreground">Issues have been pre-filled and are being auto-applied…</p>
+        </div>
+      )}
+
+      {isProcessing && (
+        <div className="flex items-center gap-2 bg-terracotta/10 border border-terracotta/20 rounded-[10px] px-3.5 py-3 mb-4 animate-pulse">
+          <Loader2 size={14} className="animate-spin text-terracotta" />
+          <span className="text-[13px] font-medium text-terracotta">Applying revisions to all sections…</span>
         </div>
       )}
 

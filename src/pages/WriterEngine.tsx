@@ -539,7 +539,12 @@ const WriterEngine = () => {
 
   // ─── STAGE 6: Writer Slate actions ───
   const handleAcceptAll = async () => {
-    // Keep current sections — just confirm
+    // Update assessment word count in DB
+    const newTotal = sections.reduce((a, s) => a + s.word_current, 0);
+    if (assessment?.id) {
+      await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
+    }
+    setPriorSections([]); // Clear prior — changes are now canonical
     toast({ title: "All changes accepted" });
   };
 
