@@ -18,6 +18,7 @@ import StageFinalScan from "@/components/writer/StageFinalScan";
 import StageSubmissionPrep from "@/components/writer/StageSubmissionPrep";
 import StageManualSubmission from "@/components/writer/StageManualSubmission";
 import DraggableChatFab from "@/components/writer/DraggableChatFab";
+import { EditDiff } from "@/components/writer/StageEditProofread";
 import { Section, Recommendation, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
