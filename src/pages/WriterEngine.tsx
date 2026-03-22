@@ -1132,7 +1132,7 @@ const WriterEngine = () => {
                 <StageFinalScan
                   onRunScan={handleFinalScan}
                   scanReport={scanReport}
-                  onBack={() => setStage(6)} onNext={() => setStage(8)}
+                  onNext={() => setStage(8)}
                 />
               )}
               {stage === 8 && (
