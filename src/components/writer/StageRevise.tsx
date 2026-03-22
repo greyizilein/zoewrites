@@ -43,9 +43,9 @@ export default function StageRevise({ onApplyRevisions, isProcessing, onBack, on
   return (
     <div>
       <div className="mb-6">
-        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 6 of 10</p>
+        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 5 of 10</p>
         <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Revise</h1>
-        <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Provide feedback or corrections. ZOE applies them and advances to the Writer Slate.</p>
+        <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Provide feedback or corrections. ZOE applies them and advances to Edit & Proofread.</p>
       </div>
 
       {initialFeedback && (
