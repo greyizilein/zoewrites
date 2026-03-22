@@ -361,7 +361,7 @@ const WriterEngine = () => {
         toast({ title: "Auto-humanising…", description: section.title });
         try {
           const { data: hData, error: hErr } = await supabase.functions.invoke("humanise", {
-            body: { content: fullContent, word_target: section.word_target, mode: "full", model: selectedModel, voice_perspective: settings.firstPerson ? "first" : "third" },
+            body: { content: finalContent, word_target: section.word_target, mode: "full", model: selectedModel, voice_perspective: settings.firstPerson ? "first" : "third" },
           });
           if (!hErr && hData?.humanised_content) {
             const hWc = hData.word_count || hData.humanised_content.split(/\s+/).filter(Boolean).length;
