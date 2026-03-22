@@ -51,6 +51,7 @@ function parseContentLine(line: string): Paragraph | null {
   const h3Match = trimmed.match(/^###\s+(.+)$/);
   if (h3Match) {
     return new Paragraph({
+      heading: HeadingLevel.HEADING_3,
       spacing: { before: 200, after: 100 },
       children: [new TextRun({ text: h3Match[1].replace(/\*+/g, ""), bold: true, size: 24, font: "Arial" })],
     });
