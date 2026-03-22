@@ -177,7 +177,7 @@ const Dashboard = () => {
               { label: "Words Left", value: wordsLeft.toLocaleString(), sub: `of ${wordLimit.toLocaleString()}`, color: "text-terracotta" },
               { label: "Assessments", value: assessments.length, sub: `${completedCount} complete`, color: "text-muted-blue" },
               { label: "Words Written", value: totalWordsWritten.toLocaleString(), sub: "total", color: "text-sage" },
-              { label: "Active", value: activeCount, sub: "in progress", color: "text-dusty-purple" },
+              { label: "Avg. Completion", value: `${avgCompletion}%`, sub: "across all", color: "text-dusty-purple" },
             ].map((kpi, i) => (
               <motion.div
                 key={kpi.label}
