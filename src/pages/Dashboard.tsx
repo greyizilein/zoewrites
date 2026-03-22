@@ -83,6 +83,9 @@ const Dashboard = () => {
   const activeCount = assessments.filter(a => a.status !== "complete").length;
   const completedCount = assessments.filter(a => a.status === "complete").length;
   const totalWordsWritten = assessments.reduce((a, b) => a + b.word_current, 0);
+  const avgCompletion = assessments.length > 0
+    ? Math.round(assessments.reduce((sum, a) => sum + (a.word_target > 0 ? (a.word_current / a.word_target) * 100 : 0), 0) / assessments.length)
+    : 0;
 
   if (loading) {
     return (
