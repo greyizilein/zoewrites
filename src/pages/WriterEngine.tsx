@@ -1053,12 +1053,7 @@ const WriterEngine = () => {
       </div>
 
       {!chatOpen && (
-        <button
-          onClick={() => setChatOpen(true)}
-          className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-terracotta text-white shadow-lg flex items-center justify-center hover:bg-terracotta/90 transition-all active:scale-[0.95] md:hidden"
-        >
-          <MessageCircle size={22} />
-        </button>
+        <DraggableChatFab onClick={() => setChatOpen(true)} />
       )}
     </div>
   );
