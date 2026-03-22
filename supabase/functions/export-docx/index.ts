@@ -191,8 +191,14 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { assessment_id, prefer_inline } = await req.json();
+    const { assessment_id, prefer_inline, submission_details, font: fontParam } = await req.json();
     if (!assessment_id) throw new Error("Missing assessment_id");
+
+    // Parse font parameter
+    const fontParts = (fontParam || "Calibri 12pt").split(" ");
+    const docFont = fontParts[0] || "Calibri";
+    const docFontSize = parseInt(fontParts[1]) || 12;
+    const docFontSizePt = docFontSize * 2; // half-points
 
     const authHeader = req.headers.get("authorization");
     const apiKey = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
