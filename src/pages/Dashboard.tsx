@@ -190,7 +190,7 @@ const Dashboard = () => {
           </motion.div>
 
           {/* KPI strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6 sm:mb-8">
             {[
               { label: "Words Left", value: wordsLeft.toLocaleString(), sub: `of ${wordLimit.toLocaleString()}`, color: "text-terracotta" },
               { label: "Assessments", value: assessments.length, sub: `${completedCount} complete`, color: "text-muted-blue" },
