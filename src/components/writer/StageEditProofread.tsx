@@ -194,7 +194,7 @@ export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits
         </div>
       )}
 
-      <StickyFooter leftLabel="← Critique" onLeft={onBack} rightLabel="Revise →" onRight={onNext} />
+      <StickyFooter leftLabel="← Revise" onLeft={onBack} rightLabel="Writer Slate →" onRight={onNext} />
     </div>
   );
 }

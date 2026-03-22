@@ -98,10 +98,10 @@ export default function StageRevise({ onApplyRevisions, isProcessing, onBack, on
         disabled={isProcessing || (!feedbackText.trim() && !uploadedFile)}
         className="w-full py-3 bg-terracotta text-white rounded-[10px] font-bold text-[14px] hover:bg-terracotta/90 transition-all active:scale-[0.97] disabled:opacity-50"
       >
-        {isProcessing ? "Applying…" : "Apply Revisions → Writer Slate"}
+        {isProcessing ? "Applying…" : "Apply Revisions → Edit & Proofread"}
       </button>
 
-      <StickyFooter leftLabel="← Edit" onLeft={onBack} rightLabel="Writer Slate →" onRight={onNext} />
+      <StickyFooter leftLabel="← Critique" onLeft={onBack} rightLabel="Edit & Proofread →" onRight={onNext} />
     </div>
   );
 }

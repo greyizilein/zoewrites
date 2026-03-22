@@ -124,7 +124,9 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    const aiModel = model || "google/gemini-2.5-flash";
+    // Always use Gemini for brief parsing (vision/file extraction) regardless of user's selected model
+    const hasVisionContent = (files && Array.isArray(files) && files.length > 0) || (file_base64 && file_type);
+    const aiModel = hasVisionContent ? "google/gemini-2.5-flash" : (model || "google/gemini-2.5-flash");
     const content: any[] = [];
 
     // Build file list (support both single legacy format and new multi-file format)

@@ -129,7 +129,7 @@ export default function StageSelfCritique({ onRunCritique, qualityReport, totalW
         </div>
       )}
 
-      <StickyFooter leftLabel="← Write" onLeft={onBack} rightLabel="Edit & Proofread →" onRight={onNext} />
+      <StickyFooter leftLabel="← Write" onLeft={onBack} rightLabel="Revise →" onRight={onNext} />
     </div>
   );
 }

@@ -183,6 +183,23 @@ Preserve all citations exactly. Do NOT add filler or padding. Every added senten
       passes.push("word-count-correction");
     }
 
+    // Hard word count cap — truncate at sentence boundaries if over ceiling
+    if (finalWordCount > wordCeiling) {
+      console.log(`[humanise] Hard cap: ${finalWordCount} > ${wordCeiling}, truncating at sentence boundaries`);
+      const sentences = processed.match(/[^.!?]+[.!?]+/g) || [processed];
+      let trimmed = "";
+      let wc = 0;
+      for (const s of sentences) {
+        const sWc = s.trim().split(/\s+/).filter(Boolean).length;
+        if (wc + sWc > wordCeiling) break;
+        trimmed += s;
+        wc += sWc;
+      }
+      processed = trimmed.trim();
+      finalWordCount = wc;
+      passes.push("hard-cap-trim");
+    }
+
     return new Response(JSON.stringify({
       success: true,
       humanised_content: processed,
