@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { File, X } from "lucide-react";
 import PersonalisePanel from "./PersonalisePanel";
 import StickyFooter from "./StickyFooter";
-import { WriterSettings, assessmentTypes, citationStyles, academicLevels, aiModels } from "./types";
+import { WriterSettings, assessmentTypes, citationStyles, academicLevels, aiModels, DATA_SOURCES, IMAGE_TYPES } from "./types";
 
 interface Props {
   settings: WriterSettings;
@@ -55,7 +55,7 @@ export default function StageBriefIntake({
   return (
     <div>
       <div className="mb-6">
-        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 1 of 6</p>
+        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 1 of 4</p>
         <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Brief Intake</h1>
         <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Upload or paste your assessment brief. ZOE reads any format.</p>
       </div>
@@ -289,6 +289,141 @@ export default function StageBriefIntake({
           onSettingsChange(updated);
         }}
       />
+
+      {/* Content & Quality Settings */}
+      <div className="border border-border rounded-xl overflow-hidden mb-3.5">
+        <div className="px-3.5 py-2.5 bg-muted/50 border-b border-border text-[12px] font-semibold text-foreground">
+          Content & Quality Settings
+        </div>
+        <div className="p-3.5 space-y-4">
+          {/* Citations */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Total Citations Override</label>
+              <p className="text-[10px] text-muted-foreground mb-1.5">Leave 0 for ZOE to auto-distribute per section</p>
+              <input
+                type="number"
+                min={0}
+                value={settings.totalCitations || ""}
+                onChange={e => updateSetting("totalCitations", parseInt(e.target.value) || 0)}
+                placeholder="e.g. 40"
+                className="w-32 bg-muted border border-border rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-terracotta/30"
+              />
+            </div>
+          </div>
+
+          {/* Images */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">Images</label>
+                <p className="text-[10px] text-muted-foreground">Figures embedded in the document</p>
+              </div>
+              <button
+                onClick={() => updateSetting("includeImages", !settings.includeImages)}
+                className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${settings.includeImages ? "bg-terracotta" : "bg-border"}`}
+              >
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings.includeImages ? "translate-x-5" : "translate-x-0.5"}`} />
+              </button>
+            </div>
+            {settings.includeImages && (
+              <div className="space-y-2.5 pl-1">
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] text-muted-foreground w-20 flex-shrink-0">Count</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={settings.imageCount || ""}
+                    onChange={e => updateSetting("imageCount", parseInt(e.target.value) || 0)}
+                    placeholder="0 = auto"
+                    className="w-24 bg-muted border border-border rounded-lg px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-terracotta/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-muted-foreground block mb-1.5">Types (select all that apply)</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {IMAGE_TYPES.map(t => {
+                      const selected = settings.imageTypes.includes(t);
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => updateSetting("imageTypes", selected ? settings.imageTypes.filter(x => x !== t) : [...settings.imageTypes, t])}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${selected ? "bg-terracotta text-white" : "border border-border text-muted-foreground hover:border-terracotta/40"}`}
+                        >
+                          {t}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tables */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">Tables</label>
+                <p className="text-[10px] text-muted-foreground">Formatted data tables in the document</p>
+              </div>
+              <button
+                onClick={() => updateSetting("includeTables", !settings.includeTables)}
+                className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${settings.includeTables ? "bg-terracotta" : "bg-border"}`}
+              >
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings.includeTables ? "translate-x-5" : "translate-x-0.5"}`} />
+              </button>
+            </div>
+            {settings.includeTables && (
+              <div className="pl-1 flex items-center gap-2">
+                <label className="text-[11px] text-muted-foreground w-20 flex-shrink-0">Count</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={settings.tableCount || ""}
+                  onChange={e => updateSetting("tableCount", parseInt(e.target.value) || 0)}
+                  placeholder="0 = auto"
+                  className="w-24 bg-muted border border-border rounded-lg px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-terracotta/30"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Statistical data */}
+          <div>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Statistical / Empirical Sources</label>
+            <p className="text-[10px] text-muted-foreground mb-1.5">Number of data-backed sources (e.g. Statista, Gartner)</p>
+            <input
+              type="number"
+              min={0}
+              value={settings.statisticalSourceCount || ""}
+              onChange={e => updateSetting("statisticalSourceCount", parseInt(e.target.value) || 0)}
+              placeholder="0 = auto"
+              className="w-32 bg-muted border border-border rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-terracotta/30"
+            />
+          </div>
+
+          {/* Preferred data sources */}
+          <div>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Preferred Data Sources</label>
+            <p className="text-[10px] text-muted-foreground mb-1.5">ZOE will prioritise these organisations for statistics & data</p>
+            <div className="flex flex-wrap gap-1.5">
+              {DATA_SOURCES.map(src => {
+                const selected = settings.preferredDataSources.includes(src);
+                return (
+                  <button
+                    key={src}
+                    onClick={() => updateSetting("preferredDataSources", selected ? settings.preferredDataSources.filter(x => x !== src) : [...settings.preferredDataSources, src])}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${selected ? "bg-terracotta text-white" : "border border-border text-muted-foreground hover:border-terracotta/40"}`}
+                  >
+                    {src}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <StickyFooter
         rightLabel="Analyse Brief →"

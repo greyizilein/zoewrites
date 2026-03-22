@@ -53,6 +53,15 @@ export interface WriterSettings {
   transitionStyle: string;
   paragraphLength: string;
   analysisDepth: string;
+  // Content & quality settings
+  totalCitations: number;
+  includeImages: boolean;
+  imageCount: number;
+  imageTypes: string[];
+  includeTables: boolean;
+  tableCount: number;
+  statisticalSourceCount: number;
+  preferredDataSources: string[];
 }
 
 export interface Recommendation {
@@ -92,6 +101,12 @@ export const aiModels = [
 
 export const stageLabels = ["Brief", "Write", "Review", "Export"];
 
+export const DATA_SOURCES = [
+  "Statista", "Gartner", "World Bank", "IMF", "OECD", "Bloomberg", "McKinsey", "Reuters",
+];
+
+export const IMAGE_TYPES = ["Graphs", "Charts", "Infographics", "Diagrams", "Tables as Figures"];
+
 export const defaultSettings: WriterSettings = {
   type: "",
   topic: "",
@@ -116,4 +131,12 @@ export const defaultSettings: WriterSettings = {
   transitionStyle: "Formal connectors",
   paragraphLength: "Medium",
   analysisDepth: "Deep Critical",
+  totalCitations: 0,
+  includeImages: true,
+  imageCount: 0,
+  imageTypes: [],
+  includeTables: true,
+  tableCount: 0,
+  statisticalSourceCount: 0,
+  preferredDataSources: [],
 };
