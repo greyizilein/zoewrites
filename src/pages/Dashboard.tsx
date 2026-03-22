@@ -164,8 +164,10 @@ const Dashboard = () => {
                     <BarChart3 size={14} /> Analytics
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="flex items-center gap-2">
-                  <Settings size={14} /> Settings
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard" className="flex items-center gap-2">
+                    <Settings size={14} /> Settings
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleSignOut} className="flex items-center gap-2 text-destructive focus:text-destructive">
                   <LogOut size={14} /> Sign Out
@@ -198,25 +200,27 @@ const Dashboard = () => {
           </motion.div>
 
           {/* KPI strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-8">
-            {[
-              { label: "Words Left", value: isUnlimited ? "∞" : formatCompact(wordsLeft), sub: isUnlimited ? "unlimited" : `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
-              { label: "Assessments", value: assessments.length, sub: `${completedCount} done`, color: "text-muted-blue" },
-              { label: "Written", value: formatCompact(totalWordsWritten), sub: "total", color: "text-sage" },
-              { label: "Avg. Done", value: `${avgCompletion}%`, sub: "across all", color: "text-dusty-purple" },
-            ].map((kpi, i) => (
-              <motion.div
-                key={kpi.label}
-                initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                transition={{ duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                className="h-[88px] sm:h-[100px] flex flex-col items-center justify-center p-2.5 sm:p-4 rounded-xl border border-border bg-card cursor-pointer hover:scale-[1.02] active:scale-[0.97] hover:shadow-md hover:border-foreground/10 transition-all duration-200"
-              >
-                <p className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{kpi.label}</p>
-                <p className={`text-lg sm:text-2xl font-bold tabular-nums leading-tight ${kpi.color}`}>{kpi.value}</p>
-                <p className="text-[9px] sm:text-[11px] text-muted-foreground mt-0.5">{kpi.sub}</p>
-              </motion.div>
-            ))}
+          <div className="flex justify-center sm:justify-start mb-4 sm:mb-8">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 w-full sm:w-full" style={{ maxWidth: "calc(min(100%, 320px))" }}>
+              {[
+                { label: "Words Left", value: isUnlimited ? "∞" : formatCompact(wordsLeft), sub: isUnlimited ? "unlimited" : `of ${formatCompact(wordLimit)}`, color: "text-terracotta" },
+                { label: "Assessments", value: assessments.length, sub: `${completedCount} done`, color: "text-muted-blue" },
+                { label: "Written", value: formatCompact(totalWordsWritten), sub: "total", color: "text-sage" },
+                { label: "Avg. Done", value: `${avgCompletion}%`, sub: "across all", color: "text-dusty-purple" },
+              ].map((kpi, i) => (
+                <motion.div
+                  key={kpi.label}
+                  initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
+                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                  transition={{ duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
+                  className="aspect-square sm:aspect-auto sm:h-[100px] flex flex-col items-center justify-center p-2 sm:p-4 rounded-xl border border-border bg-card cursor-pointer hover:scale-[1.02] active:scale-[0.97] hover:shadow-md hover:border-foreground/10 transition-all duration-200"
+                >
+                  <p className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{kpi.label}</p>
+                  <p className={`text-lg sm:text-2xl font-bold tabular-nums leading-tight ${kpi.color}`}>{kpi.value}</p>
+                  <p className="text-[9px] sm:text-[11px] text-muted-foreground mt-0.5">{kpi.sub}</p>
+                </motion.div>
+              ))}
+            </div>
           </div>
 
           {/* Word budget bar */}
