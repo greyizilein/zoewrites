@@ -1,5 +1,7 @@
-import { Link } from "react-router-dom";
-import { Home, PenLine, X } from "lucide-react";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Home, PenLine, X, Settings, BarChart3, LogOut, ChevronUp } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { stageLabels } from "./types";
 
 interface Props {
@@ -19,6 +21,14 @@ const dotClass = (i: number, current: number) => {
 };
 
 export default function WriterSidebar({ currentStage, onStageChange, onClose, userName, userTier, initials, recentAssessments }: Props) {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  };
+
   return (
     <>
       {/* Top */}
@@ -82,17 +92,46 @@ export default function WriterSidebar({ currentStage, onStageChange, onClose, us
         )}
       </div>
 
-      {/* User */}
-      <div className="p-2 border-t border-border flex-shrink-0">
-        <div className="flex items-center gap-2 px-1.5 py-1.5">
+      {/* User with expandable menu */}
+      <div className="border-t border-border flex-shrink-0">
+        <button
+          onClick={() => setProfileOpen(!profileOpen)}
+          className="w-full p-2 flex items-center gap-2 px-2.5 py-2.5 hover:bg-muted/50 transition-colors"
+        >
           <div className="w-6 h-6 rounded-full bg-terracotta/15 flex items-center justify-center text-[10px] font-semibold text-terracotta flex-shrink-0">
             {initials}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 text-left">
             <p className="text-[13px] font-medium truncate">{userName}</p>
             <p className="text-[11px] text-muted-foreground capitalize">{userTier} plan</p>
           </div>
-        </div>
+          <ChevronUp size={14} className={`text-muted-foreground transition-transform ${profileOpen ? "" : "rotate-180"}`} />
+        </button>
+
+        {profileOpen && (
+          <div className="px-2 pb-2 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            <Link
+              to="/analytics"
+              onClick={onClose}
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-muted-foreground hover:bg-muted/50 transition-colors"
+            >
+              <BarChart3 size={14} /> Analytics
+            </Link>
+            <Link
+              to="/dashboard"
+              onClick={onClose}
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-muted-foreground hover:bg-muted/50 transition-colors"
+            >
+              <Settings size={14} /> Settings
+            </Link>
+            <button
+              onClick={handleSignOut}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <LogOut size={14} /> Sign out
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
