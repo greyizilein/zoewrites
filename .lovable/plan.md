@@ -1,47 +1,38 @@
 
 
-# Export Verification + Dashboard Recent Assessments Widget
+# Add Average Completion % to Dashboard KPI Strip
 
-## Export-docx Verification (Already Correct)
+## Current State
 
-The `export-docx/index.ts` is properly configured:
-- **Justified text**: Line 102 — `alignment: AlignmentType.JUSTIFIED` on all body paragraphs
-- **Heading hierarchy**: H1/H2/H3 styles with `outlineLevel: 0/1/2` (lines 436-444) and `parseContentLine` handles `#`, `##`, `###` markdown
-- **Table of Contents**: Line 288 — `headingStyleRange: "1-3"` with hyperlinks
-- **Submission details**: Lines 249-280 — title page includes name, student ID, institution, module, supervisor, date, company
-- **Font selection**: Lines 198-201 — accepts font parameter and applies it throughout
+The KPI strip (lines 172-195) already shows:
+- Words Left
+- Assessments (with completed count as subtitle)
+- Words Written
+- Active count
 
-No changes needed to the export function.
+This already covers "total assessments" and "completed count." The missing metric is **average completion percentage**.
 
-## Dashboard Widget: Recent Assessments Summary
+## Plan
 
-Add a "Recent Activity" widget between the word budget bar and the assessment grid that shows:
-- Last 5 assessments in a compact table/list format
-- Status badge (coloured dot + label)
-- Word count progress (current/target)
-- Completion percentage
-- Last updated timestamp
-- Quick-link to open each assessment
+**`src/pages/Dashboard.tsx`**: 
+- Add `avgCompletion` calculation: average of `(word_current / word_target * 100)` across all assessments
+- Replace the "Words Written" KPI card with "Avg. Completion" showing the percentage
+- Move "Words Written" to the subtitle of another card or keep as a 5th card on larger screens
 
-### File to Change
+Alternatively, keep all 4 existing cards and swap "Active" (which is redundant with the subtitle on "Assessments") for "Avg. Completion":
+
+| Slot | Label | Value | Sub |
+|------|-------|-------|-----|
+| 1 | Words Left | wordsLeft | of wordLimit |
+| 2 | Assessments | total | completedCount complete |
+| 3 | Words Written | total | total |
+| 4 | Avg. Completion | X% | across all |
+
+Simply add the `avgCompletion` computation and replace the 4th KPI card ("Active") with "Avg. Completion" — since active count is already shown in the welcome text.
+
+### File
 
 | File | Change |
 |------|--------|
-| `src/pages/Dashboard.tsx` | Add a "Recent Activity" summary widget after the word budget bar (line 209), showing the 5 most recent assessments in a compact card with status dots, word counts, and progress bars |
-
-### Widget Design
-
-A single card with a mini table:
-```
-Recent Activity
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-● Strategic Mgmt Report    1,245/2,500  50%  2h ago
-● Marketing Analysis       890/1,000    89%  1d ago  
-✓ Ethics Essay             1,500/1,500  100% 3d ago
-```
-
-- Coloured dot: terracotta (active), sage (complete)
-- Clicking a row navigates to the assessment
-- Shows up to 5 entries
-- Below the word budget bar, above the full card grid
+| `src/pages/Dashboard.tsx` | Compute `avgCompletion`, replace "Active" KPI with "Avg. Completion" percentage |
 
