@@ -225,16 +225,16 @@ const Dashboard = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.25 }}
-            className="p-3 sm:p-4 rounded-xl border border-border bg-card mb-6 sm:mb-8"
+            className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8"
           >
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-[13px] font-semibold">Word Budget</span>
-              <span className="font-mono text-[12px] text-muted-foreground">{wordsUsed.toLocaleString()} / {wordLimit.toLocaleString()} used</span>
+            <div className="flex justify-between items-center mb-1.5 sm:mb-2">
+              <span className="text-[11px] sm:text-[13px] font-semibold">Word Budget</span>
+              <span className="font-mono text-[10px] sm:text-[12px] text-muted-foreground">{formatCompact(wordsUsed)} / {formatCompact(wordLimit)}</span>
             </div>
-            <Progress value={wordUsagePercent} className="h-2" />
-            <div className="flex justify-between mt-1.5 text-[11px] text-muted-foreground">
-              <span>{wordUsagePercent}% used</span>
-              <span className="capitalize">{profile?.tier} tier</span>
+            <Progress value={wordUsagePercent} className="h-1.5 sm:h-2" />
+            <div className="flex justify-between mt-1 sm:mt-1.5 text-[9px] sm:text-[11px] text-muted-foreground">
+              <span>{wordUsagePercent}%</span>
+              <span className="capitalize">{profile?.tier}</span>
             </div>
           </motion.div>
 
