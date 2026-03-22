@@ -1,33 +1,40 @@
 
-Goal: stop the placeholder page loop and make the live URL reliably show the real app.
 
-1) Confirmed root cause (already reproduced)
-- `https://zoellc.lovable.app` currently serves the default placeholder (`/placeholder.svg`), while Preview serves the full app.
-- This means Live has not received the latest frontend publish (or is pinned to an empty snapshot), not a WriterEngine runtime crash.
+## Grant Unlimited Access to grey.izilein@gmail.com
 
-2) Immediate recovery steps that should work
-- Open Publish dialog and click **Update** for this project (frontend deploy).
-- Wait for deploy completion, then hard-refresh Live (`Ctrl/Cmd+Shift+R`).
-- Re-check:
-  - `/` shows “Write better essays…”
-  - `/auth` loads auth page
-  - `/assessment/new` loads app shell after login
+### Current State
+- No profile exists yet (user hasn't signed up)
+- A trigger `set_unlimited_for_test_user` already sets `tier = 'unlimited'` on insert, but does **not** set `word_limit`
 
-3) If Live still shows placeholder after Update (safe fallback)
-- Open project History, restore last known working version, then publish that version.
-- Make one tiny frontend change (e.g., title/meta text) and publish again to force a new frontend artifact.
-- Verify the domain is this project’s active published URL (`zoellc.lovable.app`) and not the old `zoewrites.lovable.app`.
+### Plan
 
-4) Hardening changes to prevent repeats
-- Add a visible build/version stamp in footer (e.g., commit/time hash) so Preview vs Live mismatch is obvious instantly.
-- Add a pre-publish smoke checklist in repo:
-  - Home renders
-  - Auth route renders
-  - Writer route renders
-  - No console errors
-- Add Playwright smoke test (desktop + mobile) for: login → upload multiple briefs → generate execution table → write one section.
+**1. Update the existing trigger** to also set `word_limit` to a very large number (1,000,000,000,000 — 1 trillion) and reset `words_used` to 0 when this email signs up.
 
-5) Done criteria
-- Live homepage content matches Preview content (not placeholder markdown).
-- One full Writer flow succeeds on mobile viewport and desktop.
-- Version stamp in Live matches latest publish.
+**Migration SQL:**
+```sql
+CREATE OR REPLACE FUNCTION public.set_unlimited_for_test_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  IF NEW.email = 'grey.izilein@gmail.com' THEN
+    NEW.tier := 'unlimited';
+    NEW.word_limit := 1000000000000;
+    NEW.words_used := 0;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+```
+
+**2. Ensure the trigger is attached** to the `profiles` table on INSERT (it should already be, but the trigger list showed none — we'll recreate it to be safe, firing BEFORE INSERT on `profiles`).
+
+**3. If the user has already signed up** (profile exists but wasn't found due to email mismatch), we'll also run a data update via insert tool to set `tier = 'unlimited'`, `word_limit = 1000000000000`, `words_used = 0` on any existing profile with that email.
+
+### Technical Details
+- Word limit of 1 trillion (1,000,000,000,000) effectively means unlimited
+- The trigger fires on profile creation so future sign-ups are covered automatically
+- A one-time data update covers the case where the user already exists
+
