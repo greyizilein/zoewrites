@@ -1,30 +1,29 @@
 
 
-# Fix Dashboard Mobile Layout — Compact KPI Cards
+# Dashboard KPI Cards — Square Interactive Cards (Like Screenshot)
 
 ## Problem
 
-From the screenshots, on mobile (448px viewport):
-- KPI cards appear as tall vertical rectangles stacked in a single column instead of compact 2×2 grid
-- The large number "2,000,000,000" forces cards to stretch
-- Word budget bar and Recent Activity take too much vertical space
-- Overall page requires excessive scrolling
+KPI cards are flat horizontal rectangles on mobile. The user wants compact **square-ish cards** like the screenshot reference — with the label on top, value prominent in the center, and subtitle below. Each card should feel interactive (hover/tap effects).
 
 ## Plan
 
-**`src/pages/Dashboard.tsx`**:
+**`src/pages/Dashboard.tsx`** — KPI card layout:
 
-1. **KPI cards — compact horizontal layout on mobile**: Change each KPI card from vertical stack (label → value → sub) to a horizontal inline layout on mobile. Use `flex` with label+sub on left, value on right. Reduce padding to `p-2.5` on mobile. This makes each card ~50px tall instead of ~90px.
+1. **Card shape**: Change mobile layout from horizontal `flex items-center justify-between` to vertical centered layout. Use `aspect-square` on mobile to force square cards. Padding `p-3`. Content stacked vertically and centered.
 
-2. **Large number formatting**: Add compact number formatting — numbers over 999,999 show as "2B" or "2M" on mobile instead of "2,000,000,000".
+2. **Structure per card**:
+   - Top: small uppercase label (muted)
+   - Center: large bold value (coloured)
+   - Bottom: subtitle text (muted, small)
 
-3. **Word budget bar**: Reduce mobile padding to `p-2.5`, smaller text, thinner progress bar.
+3. **Interactive feel**: Add `hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer hover:shadow-md hover:border-foreground/10` for tap/hover feedback on both mobile and desktop.
 
-4. **Recent Activity**: On mobile, hide the word count columns (just show title + dot + time ago) to prevent horizontal overflow. Reduce padding.
+4. **Grid**: Keep `grid-cols-2 sm:grid-cols-4` with `gap-2 sm:gap-3` — 2x2 on mobile, 4 across on desktop.
 
-5. **Assessment cards grid**: Keep as-is (already works at `sm:grid-cols-2`).
+5. **Desktop**: Same centered vertical layout but larger text, no aspect-square constraint.
 
 | File | Change |
 |------|--------|
-| `src/pages/Dashboard.tsx` | Compact KPI card layout, short number formatting, tighter mobile spacing throughout |
+| `src/pages/Dashboard.tsx` | Restyle KPI cards to square, vertically centered, interactive with hover/tap effects |
 
