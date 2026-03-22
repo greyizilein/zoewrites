@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Plus, LogOut, Home, FileText, Settings, Loader2, Trash2,
-  BarChart3, MoreHorizontal, PenSquare, User, RefreshCw, ChevronDown,
+  Plus, LogOut, Home, Loader2, Trash2,
+  BarChart3, MoreHorizontal, PenSquare, RefreshCw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
 interface Assessment {
   id: string;
@@ -247,8 +247,8 @@ const Dashboard = () => {
         {/* Top bar */}
         <header className="sticky top-0 z-40 bg-[hsl(220,20%,96%)]/90 backdrop-blur-sm pt-safe">
           <div className="max-w-lg mx-auto px-4 pt-3 pb-2 flex items-center justify-between">
-            {/* Brand */}
-            <div className="flex items-center gap-2.5">
+            {/* Brand — links to homepage */}
+            <Link to="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity active:scale-[0.97]">
               <div className="w-8 h-8 rounded-full bg-terracotta flex items-center justify-center shadow-sm">
                 <span className="text-white text-[10px] font-extrabold">ZW</span>
               </div>
@@ -256,7 +256,7 @@ const Dashboard = () => {
                 <p className="text-[13px] font-bold text-foreground leading-none">ZOE Writes</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">{assessments.length} Assessments</p>
               </div>
-            </div>
+            </Link>
             {/* Right actions */}
             <div className="flex items-center gap-2">
               <button
@@ -344,22 +344,33 @@ const Dashboard = () => {
 
             {/* Quick action row */}
             <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-border/50">
-              {[
-                { label: "New Assessment", icon: Plus, to: "/assessment/new", bg: "bg-terracotta/10", ic: "text-terracotta" },
-                { label: "Analytics", icon: BarChart3, to: "/analytics", bg: "bg-muted-blue/10", ic: "text-muted-blue" },
-                { label: "Settings", icon: Settings, to: "/dashboard", bg: "bg-dusty-purple/10", ic: "text-dusty-purple" },
-              ].map(a => (
-                <Link
-                  key={a.label}
-                  to={a.to}
-                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all"
-                >
-                  <div className={`w-8 h-8 rounded-lg ${a.bg} flex items-center justify-center`}>
-                    <a.icon size={15} className={a.ic} />
-                  </div>
-                  <span className="text-[9px] font-medium text-foreground text-center leading-tight">{a.label}</span>
-                </Link>
-              ))}
+              <Link
+                to="/assessment/new"
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all"
+              >
+                <div className="w-8 h-8 rounded-lg bg-terracotta/10 flex items-center justify-center">
+                  <Plus size={15} className="text-terracotta" />
+                </div>
+                <span className="text-[9px] font-medium text-foreground text-center leading-tight">New Assessment</span>
+              </Link>
+              <Link
+                to="/analytics"
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all"
+              >
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                  <BarChart3 size={15} className="text-blue-500" />
+                </div>
+                <span className="text-[9px] font-medium text-foreground text-center leading-tight">Analytics</span>
+              </Link>
+              <button
+                onClick={handleSignOut}
+                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all"
+              >
+                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
+                  <LogOut size={15} className="text-muted-foreground" />
+                </div>
+                <span className="text-[9px] font-medium text-foreground text-center leading-tight">Sign Out</span>
+              </button>
             </div>
           </motion.div>
 
@@ -408,16 +419,8 @@ const Dashboard = () => {
                           contentStyle={{ fontSize: 10, borderRadius: 8, border: "1px solid hsl(var(--border))" }}
                           formatter={(v: any, name: string) => [fmt(v) + " words", name === "written" ? "Written" : "Remaining"]}
                         />
-                        <Bar dataKey="written" radius={[3, 3, 0, 0]} maxBarSize={18}>
-                          {chartData.map((_, i) => (
-                            <Cell key={i} fill="hsl(var(--terracotta))" />
-                          ))}
-                        </Bar>
-                        <Bar dataKey="remaining" radius={[3, 3, 0, 0]} maxBarSize={18}>
-                          {chartData.map((_, i) => (
-                            <Cell key={i} fill="hsl(24,14%,20%)" opacity={0.75} />
-                          ))}
-                        </Bar>
+                        <Bar dataKey="written" radius={[3, 3, 0, 0]} maxBarSize={18} fill="#c27b5c" />
+                        <Bar dataKey="remaining" radius={[3, 3, 0, 0]} maxBarSize={18} fill="#2e231a" opacity={0.65} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -554,20 +557,17 @@ const Dashboard = () => {
         {/* ── Bottom Nav — mobile only ─────────────────────── */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-sm border-t border-border shadow-lg">
           <div className="flex items-center justify-around h-[58px] max-w-md mx-auto px-2">
-            {[
-              { icon: Home, label: "Dashboard", to: "/dashboard" },
-              { icon: PenSquare, label: "New", to: "/assessment/new" },
-              { icon: FileText, label: "Assessments", to: "/dashboard" },
-              { icon: BarChart3, label: "Analytics", to: "/analytics" },
-              { icon: User, label: "Profile", to: "/dashboard" },
-            ].map(item => {
-              const active = location.pathname === "/dashboard" && item.label === "Dashboard"
-                || location.pathname === "/analytics" && item.label === "Analytics";
+            {([
+              { icon: Home, label: "Home", to: "/dashboard", isLink: true },
+              { icon: PenSquare, label: "New", to: "/assessment/new", isLink: true },
+              { icon: BarChart3, label: "Analytics", to: "/analytics", isLink: true },
+            ] as const).map(item => {
+              const active = location.pathname === item.to;
               return (
                 <Link
                   key={item.label}
                   to={item.to}
-                  className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition-colors active:scale-95 ${
+                  className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors active:scale-95 ${
                     active ? "text-terracotta" : "text-muted-foreground"
                   }`}
                 >
@@ -577,6 +577,13 @@ const Dashboard = () => {
                 </Link>
               );
             })}
+            <button
+              onClick={handleSignOut}
+              className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-muted-foreground transition-colors active:scale-95"
+            >
+              <LogOut size={19} strokeWidth={1.8} />
+              <span className="text-[9px] font-medium">Sign Out</span>
+            </button>
           </div>
         </nav>
       </div>

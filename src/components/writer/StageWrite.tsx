@@ -34,8 +34,8 @@ export default function StageWrite({
 
   const totalWords = sections.reduce((a, s) => a + s.word_current, 0);
   const totalTarget = sections.reduce((a, s) => a + s.word_target, 0);
-  const completedCount = sections.filter(s => s.status === "complete").length;
-  const allComplete = completedCount === sections.length && sections.length > 0;
+  const completedCount = sections.filter(s => s.content && s.content.trim().length >= 50).length;
+  const allComplete = sections.length > 0 && completedCount === sections.length;
   const progress = totalTarget > 0 ? Math.round((totalWords / totalTarget) * 100) : 0;
 
   const phaseLabels: Record<NonNullable<AutoPhase>, string> = {
@@ -153,7 +153,7 @@ export default function StageWrite({
       <div className="bg-card border border-border/50 rounded-2xl shadow-sm overflow-hidden mb-4">
         {sections.map((s, idx) => {
           const isGenerating = generatingId === s.id;
-          const isDone = s.status === "complete";
+          const isDone = !!(s.content && s.content.trim().length >= 50);
           const isExpanded = expandedId === s.id;
           const pct = s.word_target > 0 ? Math.round((s.word_current / s.word_target) * 100) : 0;
 
@@ -181,14 +181,18 @@ export default function StageWrite({
                   <div className={`h-full rounded-full transition-all ${isDone ? "bg-sage" : "bg-terracotta"}`} style={{ width: `${Math.min(100, pct)}%` }} />
                 </div>
 
-                {/* Write / generating button */}
-                {!isDone && !isGenerating && !autopilotRunning && (
+                {/* Write / rewrite / generating button */}
+                {!isGenerating && !autopilotRunning && (
                   <button
                     onClick={() => onGenerate(s.id)}
                     disabled={generating}
-                    className="flex-shrink-0 px-3 py-1.5 bg-foreground text-background rounded-lg text-[11px] font-bold hover:bg-foreground/85 transition-all active:scale-[0.97] disabled:opacity-40"
+                    className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all active:scale-[0.97] disabled:opacity-40 ${
+                      isDone
+                        ? "border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                        : "bg-foreground text-background hover:bg-foreground/85"
+                    }`}
                   >
-                    Write
+                    {isDone ? "Rewrite" : "Write"}
                   </button>
                 )}
                 {isGenerating && (
@@ -197,7 +201,7 @@ export default function StageWrite({
                     <span className="text-[11px] font-semibold">Writing</span>
                   </div>
                 )}
-                {isDone && (
+                {isDone && !isGenerating && (
                   <button
                     onClick={() => setExpandedId(isExpanded ? null : s.id)}
                     className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted transition-colors text-muted-foreground"
