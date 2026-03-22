@@ -177,12 +177,16 @@ export default function StageBriefIntake({
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground block mb-1">Assessment title</label>
                   <input className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-1 focus:ring-terracotta/30" placeholder="Strategic Analysis of..."
-                    onChange={e => onBriefTextChange(e.target.value + (briefText ? "\n" + briefText : ""))}
+                    value={settings.topic}
+                    onChange={e => updateSetting("topic", e.target.value)}
                   />
                 </div>
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground block mb-1">Module</label>
-                  <input className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-1 focus:ring-terracotta/30" placeholder="Strategic Management" />
+                  <input className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-1 focus:ring-terracotta/30" placeholder="Strategic Management"
+                    value={settings.module}
+                    onChange={e => updateSetting("module", e.target.value)}
+                  />
                 </div>
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground block mb-1">Word count</label>

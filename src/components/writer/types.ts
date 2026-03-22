@@ -32,6 +32,7 @@ export interface AssessmentData {
 export interface WriterSettings {
   type: string;
   topic: string;
+  module: string;
   wordCount: string;
   citationStyle: string;
   level: string;
@@ -94,6 +95,7 @@ export const stageLabels = ["Brief", "Plan", "Write", "Critique", "Revise", "Edi
 export const defaultSettings: WriterSettings = {
   type: "",
   topic: "",
+  module: "",
   wordCount: "",
   citationStyle: "Harvard (UK)",
   level: "Postgraduate L7",

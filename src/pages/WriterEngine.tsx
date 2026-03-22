@@ -385,7 +385,7 @@ const WriterEngine = () => {
       // Word count enforcement: auto-trim if over 1% of target (reads fresh from DB)
       {
         const latestData = await supabase.from("sections").select("content, word_current").eq("id", sectionId).single();
-        const currentContent = latestData.data?.content || fullContent;
+        const currentContent = (!latestData.error && latestData.data?.content) || fullContent;
         const currentWc = currentContent.split(/\s+/).filter(Boolean).length;
         const ceiling = Math.ceil(section.word_target * 1.01);
         if (currentWc > ceiling) {
@@ -777,7 +777,9 @@ const WriterEngine = () => {
           return [...filtered, imgRecord];
         });
       }
-    } catch { /* best effort */ }
+    } catch (e: any) {
+      toast({ title: "Image save failed", description: e?.message, variant: "destructive" });
+    }
   };
 
   const handleDownloadImagesZip = async () => {
@@ -889,7 +891,9 @@ const WriterEngine = () => {
         await handleWriteAll();
         break;
       case "write_section":
-        const sec = sections.find(s => s.title.toLowerCase().includes((args.section_title || "").toLowerCase()));
+        const secQuery = (args.section_title || "").toLowerCase();
+        const sec = sections.find(s => s.title.toLowerCase() === secQuery) ||
+          sections.find(s => s.title.toLowerCase().includes(secQuery));
         if (sec) {
           setChatMessages(prev => [...prev, { role: "assistant", content: `✍️ Writing "${sec.title}"…` }]);
           setStage(2);
@@ -1010,11 +1014,13 @@ const WriterEngine = () => {
           try {
             const args = tc.arguments ? JSON.parse(tc.arguments) : {};
             await executeChatAction(tc.name, args);
-          } catch { /* ignore */ }
+          } catch (e: any) {
+            setChatMessages(prev => [...prev, { role: "assistant", content: `Action "${tc.name}" failed: ${e?.message || "unknown error"}` }]);
+          }
         }
       }
-    } catch {
-      setChatMessages(prev => [...prev, { role: "assistant", content: "Sorry, an error occurred." }]);
+    } catch (e: any) {
+      setChatMessages(prev => [...prev, { role: "assistant", content: `Sorry, an error occurred: ${e?.message || "unknown error"}` }]);
     }
     setChatLoading(false);
   };
