@@ -1184,6 +1184,7 @@ const WriterEngine = () => {
                   hasImages={assessmentImages.length > 0}
                   isProcessing={isProcessing}
                   onNext={() => setStage(9)}
+                  sections={sections}
                 />
               )}
               {stage === 9 && (
