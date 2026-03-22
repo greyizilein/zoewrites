@@ -981,6 +981,9 @@ const WriterEngine = () => {
               {stage === 4 && (
                 <StageEditProofread
                   onRunEdit={handleEditProofread}
+                  editDiffs={editDiffs}
+                  onAcceptEdits={handleAcceptEdits}
+                  onDenyEdits={handleDenyEdits}
                   editReport={editReport}
                   onBack={() => setStage(3)} onNext={() => setStage(5)}
                 />
@@ -995,8 +998,9 @@ const WriterEngine = () => {
               )}
               {stage === 6 && (
                 <StageWriterSlate
-                  sections={sections} totalTarget={totalTarget}
+                  sections={sections} priorSections={priorSections} totalTarget={totalTarget}
                   onAcceptAll={handleAcceptAll} onDenyAll={handleDenyAll}
+                  onAcceptSection={handleAcceptSection} onDenySection={handleDenySection}
                   onTrimToTarget={handleTrimToTarget}
                   onBack={() => setStage(5)} onNext={() => setStage(7)}
                   isProcessing={isProcessing}
