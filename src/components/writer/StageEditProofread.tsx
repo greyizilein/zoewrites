@@ -174,7 +174,7 @@ export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits
 
           {allResolved && (
             <div className="bg-sage/10 border border-sage/20 rounded-[10px] px-3.5 py-3 text-center">
-              <span className="text-[13px] text-sage font-medium">All edits resolved — proceed to Revise →</span>
+              <span className="text-[13px] text-sage font-medium">All edits resolved — proceed to Writer Slate →</span>
             </div>
           )}
         </div>
