@@ -1,81 +1,65 @@
 
 
-# Fix Accept/Deny Changes + Word Count Enforcement
+# Fix Pipeline Flow: Auto-Feed Issues, Working Stages, Download Button
 
-## Problems Identified
+## Problems
 
-1. **Edit & Proofread (Stage 4)**: Auto-applies corrections silently — no accept/deny UI. User can't review what changed.
-2. **Writer Slate (Stage 6)**: Has Accept/Deny buttons but `handleAcceptAll` and `handleDenyAll` are no-ops (just show toasts). No actual tracked changes data or per-section accept/deny.
-3. **Revise (Stage 5)**: Applies revisions directly with no review step — changes go straight into sections.
-4. **Word count 1% constraint**: The `section-generate` and `section-revise` edge functions set `±1%` in prompts, but there's no enforcement after the AI returns. The humanise function can also change word counts. No post-processing trim/expand happens automatically.
+1. **Self-Critique issues don't auto-feed into Revise** — critique report has issues but `revisionFeedback` is never populated from them. Stage 5 gets empty `initialFeedback`.
+2. **Edit & Proofread** — the edge function returns one blob of `corrected_content`, but parsing splits on `## ` which may fail if the AI doesn't preserve exact headings. Need more robust matching.
+3. **Writer Slate "Accept All"** — calls `handleAcceptAll` which just shows a toast. No visual confirmation of changes being applied, no processing animation, stays on the same page correctly but feels dead.
+4. **Writer Slate navigates away** — the `onBack` goes to Revise (stage 5) but there's no bug here; user may be confused because Accept All has no visual feedback.
+5. **Final Submission (Stage 8)** — download buttons only show after clicking "Prepare →" and waiting for checklist. The `Prepare →` button is in the StickyFooter's right slot, which is confusing. Download should be more accessible.
 
 ## Plan
 
-### A. Edit & Proofread — Add Accept/Deny per Section
+### A. Auto-feed critique issues → Revise stage
 
-**`StageEditProofread.tsx`**: After the edit pass runs, show a per-section diff view with:
-- Original content (red strikethrough) vs corrected content (green)
-- Per-section Accept / Deny buttons
-- "Accept All" / "Deny All" at the top
-- Only accepted changes get written to the sections table
+**`WriterEngine.tsx`**: After `handleQualityCheck` runs (or when advancing from critique to edit to revise), compile the quality report issues into a feedback string and set `revisionFeedback`.
 
-**`WriterEngine.tsx`**: Change `handleEditProofread` to store both original and corrected content in state (new `editDiffs` state) instead of auto-applying. Add `handleAcceptEdits(sectionIds)` and `handleDenyEdits(sectionIds)` functions that apply or revert.
+When `onNext` from Self-Critique (stage 3→4) fires, build revision feedback from `qualityReport`:
+```
+const issues = qualityReport?.report?.issues || [];
+const feedback = issues.map(i => `[${i.severity}] ${i.description} → ${i.suggestion}`).join("\n");
+setRevisionFeedback(feedback);
+```
 
-### B. Writer Slate — Real Tracked Changes
+Also auto-apply: when user reaches Stage 5 with `initialFeedback` populated, auto-trigger `onApplyRevisions` immediately (with a loading state).
+
+**`StageRevise.tsx`**: Add auto-apply behavior — if `initialFeedback` is provided and non-empty, automatically call `onApplyRevisions(initialFeedback)` on mount (once).
+
+### B. Edit & Proofread robustness
+
+The current `edit-proofread` edge function sends ALL content as one string and gets back one corrected blob. The section-splitting logic is fragile.
+
+**Fix**: Change `handleEditProofread` to call the edge function **per section** instead of all at once. This gives clean per-section diffs without parsing.
+
+### C. Writer Slate — visual feedback on Accept/Deny
 
 **`StageWriterSlate.tsx`**: 
-- Add props for `previousSections` (snapshot before revisions) alongside current `sections`
-- Compute per-section word diffs (added/removed words)
-- Per-section Accept (keep current) / Deny (revert to previous) buttons
-- "Accept All" applies all current content; "Deny All" reverts all to previous snapshots
+- When "Accept All" is clicked, show a brief processing animation (ChecklistAnimation with items like "Applying changes…", "Updating word counts…", "Confirming…")
+- After animation, show a success banner and auto-advance to next stage after 1.5s
+- When "Deny All" is clicked, show revert animation similarly
 
-**`WriterEngine.tsx`**: 
-- Add `priorSections` state — snapshot sections before Stage 5 revisions
-- Before `handleApplyRevisions` runs, save current sections to `priorSections`
-- `handleAcceptAll` = keep current sections as-is (no-op on data, just confirm)
-- `handleDenyAll` = restore `priorSections` content back to sections + DB
+**`WriterEngine.tsx`**:
+- `handleAcceptAll` should update assessment word count in DB and set a confirmed state
+- `handleDenyAll` already reverts — just needs to work with the visual flow
 
-### C. Word Count Enforcement
+### D. Final Submission — always show download
 
-**`WriterEngine.tsx`** — add `enforceWordCount` function:
-- After any write/revise/humanise completes, check if section word count exceeds `word_target * 1.01`
-- If over, call `section-revise` with trimming feedback automatically
-- If under `word_target * 0.99`, call `section-revise` with expansion feedback
-- Run this as a post-step in `streamSection` after humanisation
+**`StageSubmissionPrep.tsx`**: 
+- Show the download button immediately (not gated behind `done` state)
+- Keep the "Prepare" checklist as optional/automatic
+- Auto-run the preparation checklist on mount
+- Show download buttons prominently at the top
 
-**Writer Slate auto-trim**: 
-- When entering Stage 6, if `totalWords` differs from `totalTarget` by more than 1%, auto-show the trim/expand button prominently with a warning banner
-- The existing `handleTrimToTarget` already works but needs to be smarter — distribute the trim/expand proportionally across sections based on their size
-
-### D. Files to Change
+### E. Files to Change
 
 | File | Change |
 |------|--------|
-| `src/components/writer/StageEditProofread.tsx` | Add accept/deny per-section diff UI |
-| `src/components/writer/StageWriterSlate.tsx` | Add per-section accept/deny with previous content comparison |
-| `src/pages/WriterEngine.tsx` | Add `editDiffs` + `priorSections` state, real accept/deny handlers, word count enforcement in `streamSection` |
-
-### Technical Detail
-
-**Edit diffs state shape:**
-```typescript
-interface EditDiff {
-  sectionId: string;
-  sectionTitle: string;
-  original: string;
-  corrected: string;
-  accepted: boolean | null; // null = pending
-}
-```
-
-**Word count enforcement** runs after each section write in `streamSection`:
-```typescript
-// After humanise step
-const finalWc = content.split(/\s+/).filter(Boolean).length;
-const floor = section.word_target;
-const ceiling = Math.ceil(section.word_target * 1.01);
-if (finalWc < floor || finalWc > ceiling) {
-  // Auto-trim/expand via section-revise
-}
-```
+| `src/pages/WriterEngine.tsx` | Auto-populate `revisionFeedback` from critique issues; per-section edit calls; improve `handleAcceptAll` |
+| `src/components/writer/StageRevise.tsx` | Auto-apply revisions on mount when `initialFeedback` is provided |
+| `src/components/writer/StageWriterSlate.tsx` | Add processing animation on accept/deny, auto-advance after confirmation |
+| `src/components/writer/StageSubmissionPrep.tsx` | Show download buttons immediately, auto-run prep checklist |
+| `src/components/writer/StageEditProofread.tsx` | Minor — ensure diffs display correctly with per-section approach |
+| `src/components/writer/StageSelfCritique.tsx` | Auto-advance to next stage after critique completes |
 
