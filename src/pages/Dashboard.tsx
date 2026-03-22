@@ -83,6 +83,9 @@ const Dashboard = () => {
   const activeCount = assessments.filter(a => a.status !== "complete").length;
   const completedCount = assessments.filter(a => a.status === "complete").length;
   const totalWordsWritten = assessments.reduce((a, b) => a + b.word_current, 0);
+  const avgCompletion = assessments.length > 0
+    ? Math.round(assessments.reduce((sum, a) => sum + (a.word_target > 0 ? (a.word_current / a.word_target) * 100 : 0), 0) / assessments.length)
+    : 0;
 
   if (loading) {
     return (
@@ -174,7 +177,7 @@ const Dashboard = () => {
               { label: "Words Left", value: wordsLeft.toLocaleString(), sub: `of ${wordLimit.toLocaleString()}`, color: "text-terracotta" },
               { label: "Assessments", value: assessments.length, sub: `${completedCount} complete`, color: "text-muted-blue" },
               { label: "Words Written", value: totalWordsWritten.toLocaleString(), sub: "total", color: "text-sage" },
-              { label: "Active", value: activeCount, sub: "in progress", color: "text-dusty-purple" },
+              { label: "Avg. Completion", value: `${avgCompletion}%`, sub: "across all", color: "text-dusty-purple" },
             ].map((kpi, i) => (
               <motion.div
                 key={kpi.label}
