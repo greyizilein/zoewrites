@@ -63,7 +63,9 @@ const WriterEngine = () => {
   const [revisionFeedback, setRevisionFeedback] = useState<string>("");
   const [editDiffs, setEditDiffs] = useState<EditDiff[]>([]);
   const [priorSections, setPriorSections] = useState<Section[]>([]);
-
+  const [progressMessage, setProgressMessage] = useState("");
+  const [submissionDetails, setSubmissionDetails] = useState<SubmissionDetails | undefined>();
+  const [selectedFont, setSelectedFont] = useState("Calibri 12pt");
   const [briefText, setBriefText] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [urlInput, setUrlInput] = useState("");
