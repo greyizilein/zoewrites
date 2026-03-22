@@ -85,6 +85,7 @@ const Dashboard = () => {
   const initials = userName.slice(0, 2).toUpperCase();
   const wordsUsed = profile?.words_used || 0;
   const wordLimit = profile?.word_limit || 500;
+  const isUnlimited = wordLimit >= 1_000_000_000;
   const wordsLeft = Math.max(0, wordLimit - wordsUsed);
   const wordUsagePercent = wordLimit > 0 ? Math.min(Math.round((wordsUsed / wordLimit) * 100), 100) : 0;
   const activeCount = assessments.filter(a => a.status !== "complete").length;
