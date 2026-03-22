@@ -136,16 +136,34 @@ const Dashboard = () => {
       {/* Main */}
       <div className="flex-1">
         <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40 md:hidden">
-          <div className="px-6 h-14 flex items-center justify-between">
+          <div className="px-4 h-14 flex items-center justify-between">
             <Link to="/" className="flex items-center">
               <span className="text-xl font-extrabold text-foreground tracking-tight">ZOE</span>
             </Link>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-terracotta/15 flex items-center justify-center text-xs font-semibold text-terracotta">{initials}</div>
-              <Button variant="ghost" size="icon" onClick={handleSignOut} className="text-muted-foreground hover:text-foreground">
-                <LogOut size={16} />
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-8 h-8 rounded-full bg-terracotta/15 flex items-center justify-center text-xs font-semibold text-terracotta active:scale-95 transition-transform">
+                  {initials}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <div className="px-3 py-2 border-b border-border">
+                  <p className="text-sm font-medium text-foreground truncate">{userName}</p>
+                  <p className="text-[11px] text-muted-foreground capitalize">{profile?.tier || "free"} tier</p>
+                </div>
+                <DropdownMenuItem asChild>
+                  <Link to="/analytics" className="flex items-center gap-2">
+                    <BarChart3 size={14} /> Analytics
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="flex items-center gap-2">
+                  <Settings size={14} /> Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOut} className="flex items-center gap-2 text-destructive focus:text-destructive">
+                  <LogOut size={14} /> Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
