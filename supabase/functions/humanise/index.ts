@@ -53,6 +53,19 @@ function postProcess(text: string): string {
   return result;
 }
 
+function hardTrimToWordCount(text: string, ceiling: number): { text: string; wordCount: number } {
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  let trimmed = "";
+  let wc = 0;
+  for (const s of sentences) {
+    const sWc = s.trim().split(/\s+/).filter(Boolean).length;
+    if (wc + sWc > ceiling) break;
+    trimmed += s;
+    wc += sWc;
+  }
+  return { text: trimmed.trim() || text, wordCount: wc || text.split(/\s+/).filter(Boolean).length };
+}
+
 function getVoiceInstruction(voice: string): string {
   switch (voice) {
     case "first":
@@ -121,6 +134,16 @@ serve(async (req) => {
     );
     passes.push("discipline-detection");
 
+    // Hard cap after each pass to prevent drift
+    const capAfterPass = (text: string): string => {
+      const wc = text.split(/\s+/).filter(Boolean).length;
+      if (wc > wordCeiling) {
+        const result = hardTrimToWordCount(text, wordCeiling);
+        return result.text;
+      }
+      return text;
+    };
+
     // Pass 1: Author revision
     processed = await aiPass(
       processed,
@@ -128,6 +151,7 @@ serve(async (req) => {
       LOVABLE_API_KEY,
       aiModel
     );
+    processed = capAfterPass(processed);
     passes.push("author-revision");
 
     // Pass 2: Journal reviewer
@@ -137,6 +161,7 @@ serve(async (req) => {
       LOVABLE_API_KEY,
       aiModel
     );
+    processed = capAfterPass(processed);
     passes.push("journal-reviewer");
 
     if (mode === "full") {
@@ -147,16 +172,42 @@ serve(async (req) => {
         LOVABLE_API_KEY,
         aiModel
       );
+      processed = capAfterPass(processed);
       passes.push("aggressive-paraphrase");
 
-      // Pass 4: Final polish
+      // Pass 4: Final polish targeting AI detection signals
       processed = await aiPass(
         processed,
         `Final polish targeting 6 AI-detection signals: (1) sentence-length uniformity — vary between 8 and 40 words, (2) excessive hedging — remove unnecessary qualifiers, (3) predictable paragraph structure — vary openings, (4) overuse of transition words — reduce and diversify, (5) passive voice density — convert 30% of passives to active, (6) lexical repetition — replace repeated terms. ${voiceRule} Preserve all citations. ${wordCountRule} Return only the text.`,
         LOVABLE_API_KEY,
         aiModel
       );
+      processed = capAfterPass(processed);
       passes.push("turnitin-bypass");
+
+      // Pass 5: Anti-AI detection pass — specifically targets patterns that AI detectors flag
+      processed = await aiPass(
+        processed,
+        `You are an expert at evading AI content detection systems. Rewrite this text to reduce its AI detection score while maintaining academic quality. Target these specific patterns:
+
+1. SENTENCE STARTERS: AI texts disproportionately start sentences with "This", "The", "It", "However", "Moreover", "Furthermore", "Additionally", "In". Change at least 60% of sentence starters to use: dependent clauses, prepositional phrases, adverbs, gerunds, or direct subjects with active verbs.
+
+2. SENTENCE RHYTHM: AI texts have unnaturally uniform sentence length (15-25 words). Insert short punchy sentences (5-10 words) and occasional long complex ones (30-45 words). At least 20% of sentences should be under 12 words.
+
+3. PARAGRAPH OPENING PATTERNS: Never start consecutive paragraphs the same way. Use varied structures: questions, short declarative statements, quotations, statistics, counter-arguments.
+
+4. WORD CHOICE: Replace these AI-favourite words with natural alternatives: "crucial" → "key/important/central", "significant" → "notable/marked/considerable", "comprehensive" → remove or use specific descriptor, "facilitate" → "help/enable/support", "demonstrate" → "show/reveal/indicate", "implement" → "apply/carry out/introduce", "enhance" → "improve/strengthen/boost".
+
+5. CONNECTOR OVERUSE: Remove 40% of transitional phrases like "Moreover", "Furthermore", "In addition", "Consequently". Let ideas connect naturally through content rather than explicit signposting.
+
+6. HEDGING UNIFORMITY: AI texts hedge everything identically. Vary hedging: some claims should be direct ("X causes Y"), some cautious ("evidence suggests"), some interrogative ("whether X leads to Y remains debated").
+
+${voiceRule} Preserve ALL citations exactly. ${wordCountRule} Return only the rewritten text.`,
+        LOVABLE_API_KEY,
+        aiModel
+      );
+      processed = capAfterPass(processed);
+      passes.push("anti-ai-detection");
     }
 
     // Layer 3: Post-processor (code-based)
@@ -183,20 +234,12 @@ Preserve all citations exactly. Do NOT add filler or padding. Every added senten
       passes.push("word-count-correction");
     }
 
-    // Hard word count cap — truncate at sentence boundaries if over ceiling
+    // FINAL hard word count cap — always enforced, never skipped
     if (finalWordCount > wordCeiling) {
       console.log(`[humanise] Hard cap: ${finalWordCount} > ${wordCeiling}, truncating at sentence boundaries`);
-      const sentences = processed.match(/[^.!?]+[.!?]+/g) || [processed];
-      let trimmed = "";
-      let wc = 0;
-      for (const s of sentences) {
-        const sWc = s.trim().split(/\s+/).filter(Boolean).length;
-        if (wc + sWc > wordCeiling) break;
-        trimmed += s;
-        wc += sWc;
-      }
-      processed = trimmed.trim();
-      finalWordCount = wc;
+      const result = hardTrimToWordCount(processed, wordCeiling);
+      processed = result.text;
+      finalWordCount = result.wordCount;
       passes.push("hard-cap-trim");
     }
 

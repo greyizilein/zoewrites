@@ -4,7 +4,7 @@ import StickyFooter from "./StickyFooter";
 
 interface Props {
   onApplyCorrections: (corrections: string) => void;
-  onReExport: () => void;
+  onReExport: (...args: any[]) => void;
   isProcessing: boolean;
   onBack?: () => void;
   assessmentTitle: string;

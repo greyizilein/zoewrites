@@ -51,6 +51,7 @@ function parseContentLine(line: string): Paragraph | null {
   const h3Match = trimmed.match(/^###\s+(.+)$/);
   if (h3Match) {
     return new Paragraph({
+      heading: HeadingLevel.HEADING_3,
       spacing: { before: 200, after: 100 },
       children: [new TextRun({ text: h3Match[1].replace(/\*+/g, ""), bold: true, size: 24, font: "Arial" })],
     });
@@ -95,9 +96,10 @@ function parseContentLine(line: string): Paragraph | null {
     });
   }
 
-  // Regular paragraph with inline formatting
+  // Regular paragraph with inline formatting — justified
   return new Paragraph({
     spacing: { after: 200, line: 360 },
+    alignment: AlignmentType.JUSTIFIED,
     children: parseInlineFormatting(trimmed),
   });
 }
@@ -189,8 +191,14 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { assessment_id, prefer_inline } = await req.json();
+    const { assessment_id, prefer_inline, submission_details, font: fontParam } = await req.json();
     if (!assessment_id) throw new Error("Missing assessment_id");
+
+    // Parse font parameter
+    const fontParts = (fontParam || "Calibri 12pt").split(" ");
+    const docFont = fontParts[0] || "Calibri";
+    const docFontSize = parseInt(fontParts[1]) || 12;
+    const docFontSizePt = docFontSize * 2; // half-points
 
     const authHeader = req.headers.get("authorization");
     const apiKey = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
@@ -237,25 +245,40 @@ serve(async (req) => {
     const safeTitle = (assessment.title || "Assessment").replace(/[^a-zA-Z0-9\s-_]/g, "").replace(/\s+/g, "_");
     const filename = `${safeTitle}_FINAL.docx`;
 
-    // Build title page
+    // Build title page with submission details
+    const sd = submission_details || {};
     const titlePageChildren = [
       new Paragraph({ spacing: { before: 4000 }, children: [] }),
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: 400 },
-        children: [new TextRun({ text: assessment.title, bold: true, size: 52, font: "Arial" })],
+        children: [new TextRun({ text: assessment.title, bold: true, size: 52, font: docFont })],
       }),
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: 200 },
-        children: [new TextRun({ text: assessment.type || "Assessment", size: 28, font: "Arial", color: "666666" })],
+        children: [new TextRun({ text: assessment.type || "Assessment", size: 28, font: docFont, color: "666666" })],
       }),
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }), size: 22, font: "Arial", color: "999999" })],
-      }),
-      new Paragraph({ children: [new PageBreak()] }),
     ];
+    // Add submission details to title page
+    const detailLines = [
+      sd.fullName && `By: ${sd.fullName}`,
+      sd.studentId && `Student ID: ${sd.studentId}`,
+      sd.institution,
+      sd.moduleName && sd.moduleCode ? `${sd.moduleName} (${sd.moduleCode})` : sd.moduleName || sd.moduleCode,
+      sd.supervisor && `Supervisor: ${sd.supervisor}`,
+      sd.academicYear && `Academic Year: ${sd.academicYear}`,
+      sd.company && `Organisation: ${sd.company}`,
+      sd.submissionDate ? new Date(sd.submissionDate).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }) : new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }),
+    ].filter(Boolean);
+    for (const line of detailLines) {
+      titlePageChildren.push(new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 100 },
+        children: [new TextRun({ text: line as string, size: 24, font: docFont, color: "555555" })],
+      }));
+    }
+    titlePageChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
     const tocChildren = [
       new Paragraph({
@@ -408,14 +431,17 @@ serve(async (req) => {
 
     const doc = new Document({
       styles: {
-        default: { document: { run: { font: "Arial", size: 24 } } },
+        default: { document: { run: { font: docFont, size: docFontSizePt } } },
         paragraphStyles: [
           { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
-            run: { size: 28, bold: true, font: "Arial" },
+            run: { size: 28, bold: true, font: docFont },
             paragraph: { spacing: { before: 360, after: 200 }, outlineLevel: 0 } },
           { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
-            run: { size: 26, bold: true, font: "Arial" },
+            run: { size: 26, bold: true, font: docFont },
             paragraph: { spacing: { before: 240, after: 120 }, outlineLevel: 1 } },
+          { id: "Heading3", name: "Heading 3", basedOn: "Normal", next: "Normal", quickFormat: true,
+            run: { size: 24, bold: true, font: docFont },
+            paragraph: { spacing: { before: 200, after: 100 }, outlineLevel: 2 } },
         ]
       },
       sections: [{

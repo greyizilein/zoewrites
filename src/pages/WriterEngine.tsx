@@ -15,9 +15,10 @@ import StageEditProofread from "@/components/writer/StageEditProofread";
 import StageRevise from "@/components/writer/StageRevise";
 import StageWriterSlate from "@/components/writer/StageWriterSlate";
 import StageFinalScan from "@/components/writer/StageFinalScan";
-import StageSubmissionPrep from "@/components/writer/StageSubmissionPrep";
+import StageSubmissionPrep, { SubmissionDetails } from "@/components/writer/StageSubmissionPrep";
 import StageManualSubmission from "@/components/writer/StageManualSubmission";
 import DraggableChatFab from "@/components/writer/DraggableChatFab";
+import ProgressBanner from "@/components/writer/ProgressBanner";
 import { EditDiff } from "@/components/writer/StageEditProofread";
 import { Section, Recommendation, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 
@@ -62,7 +63,9 @@ const WriterEngine = () => {
   const [revisionFeedback, setRevisionFeedback] = useState<string>("");
   const [editDiffs, setEditDiffs] = useState<EditDiff[]>([]);
   const [priorSections, setPriorSections] = useState<Section[]>([]);
-
+  const [progressMessage, setProgressMessage] = useState("");
+  const [submissionDetails, setSubmissionDetails] = useState<SubmissionDetails | undefined>();
+  const [selectedFont, setSelectedFont] = useState("Calibri 12pt");
   const [briefText, setBriefText] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [urlInput, setUrlInput] = useState("");
@@ -75,6 +78,8 @@ const WriterEngine = () => {
   const [autopilotRunning, setAutopilotRunning] = useState(false);
   const autopilotCancelRef = useRef(false);
 
+  const [imageVariants, setImageVariants] = useState<any[]>([]);
+  const [imagesSkipped, setImagesSkipped] = useState(false);
   const [assessmentImages, setAssessmentImages] = useState<any[]>([]);
 
   const [chatOpen, setChatOpen] = useState(false);
@@ -264,6 +269,7 @@ const WriterEngine = () => {
     setGenerating(true);
     setGeneratingId(sectionId);
     setStreamContent("");
+    setProgressMessage(`Writing ${section.title}…`);
 
     await supabase.from("sections").update({ status: "writing" }).eq("id", sectionId);
     setSections(prev => prev.map(s => s.id === sectionId ? { ...s, status: "writing" } : s));
@@ -350,6 +356,11 @@ const WriterEngine = () => {
         }
       }
 
+      // Harvard citation post-processing: replace & with "and" inside citation parentheses
+      if ((settings.citationStyle || "Harvard") === "Harvard") {
+        finalContent = finalContent.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
+      }
+
       await supabase.from("sections").update({ content: finalContent, word_current: wordCount, status: "complete" }).eq("id", sectionId);
       setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: finalContent, word_current: wordCount, status: "complete" } : s));
 
@@ -358,7 +369,7 @@ const WriterEngine = () => {
 
       // Auto-humanise
       if (settings.humanisation === "High" || settings.humanisation === "Maximum") {
-        toast({ title: "Auto-humanising…", description: section.title });
+        setProgressMessage(`Humanising ${section.title}…`);
         try {
           const { data: hData, error: hErr } = await supabase.functions.invoke("humanise", {
             body: { content: finalContent, word_target: section.word_target, mode: "full", model: selectedModel, voice_perspective: settings.firstPerson ? "first" : "third" },
@@ -435,6 +446,7 @@ const WriterEngine = () => {
       setGenerating(false);
       setGeneratingId(null);
       setStreamContent("");
+      setProgressMessage("");
     }
   }, [sections, assessment, executionPlan, settings, selectedModel, toast]);
 
@@ -677,15 +689,23 @@ const WriterEngine = () => {
     setTimeout(() => { document.body.removeChild(a); if (typeof blobOrUrl !== "string") URL.revokeObjectURL(href); }, 200);
   };
 
-  const handleExport = async () => {
+  const handleExport = async (details?: SubmissionDetails, font?: string) => {
+    if (details) setSubmissionDetails(details);
+    if (font) setSelectedFont(font);
     setIsProcessing(true);
+    setProgressMessage("Exporting document…");
     const assessmentId = assessment?.id || id;
     const fallbackName = `${(assessment?.title || "Assessment").replace(/[^a-zA-Z0-9\s_-]/g, "").replace(/\s+/g, "_")}_FINAL.docx`;
     const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     const attemptExport = async (preferInline = false) => {
       const { data, error } = await supabase.functions.invoke("export-docx", {
-        body: { assessment_id: assessmentId, prefer_inline: preferInline },
+        body: {
+          assessment_id: assessmentId,
+          prefer_inline: preferInline,
+          submission_details: details || submissionDetails,
+          font: font || selectedFont,
+        },
       });
       if (error) throw new Error(error.message || "Export failed");
       if (data?.success === false) throw new Error(data.error || "Export failed");
@@ -712,22 +732,52 @@ const WriterEngine = () => {
       toast({ title: "Export failed", description: e.message, variant: "destructive" });
     }
     setIsProcessing(false);
+    setProgressMessage("");
   };
 
   // ─── Image Generation ───
   const handleGenerateImages = async () => {
     if (!assessment?.id) return;
-    toast({ title: "Generating images…" });
+    setProgressMessage("Generating images…");
     try {
       const { data, error } = await supabase.functions.invoke("generate-images", {
         body: { assessment_id: assessment.id, sections: sections.filter(s => s.content) },
       });
       if (error) throw error;
-      setAssessmentImages(data?.images || []);
-      toast({ title: `${data?.count || 0} images generated!` });
+      // Store as variants for user selection (not saved to DB yet)
+      setImageVariants(data?.images || []);
+      toast({ title: `${data?.count || 0} image variants generated!` });
     } catch (e: any) {
       toast({ title: "Image generation failed", description: e.message, variant: "destructive" });
     }
+    setProgressMessage("");
+  };
+
+  const handleSelectImage = async (variant: any) => {
+    // Toggle selection
+    setImageVariants(prev => prev.map(v =>
+      v.section_id === variant.section_id
+        ? { ...v, selected: v.variant === variant.variant }
+        : v
+    ));
+    // Save selected image to assessment_images table
+    try {
+      const { data: imgRecord } = await supabase.from("assessment_images").insert({
+        section_id: variant.section_id,
+        figure_number: variant.figure_number,
+        caption: variant.caption,
+        prompt: variant.prompt,
+        url: variant.url,
+        image_type: variant.image_type,
+      }).select().single();
+      if (imgRecord) {
+        setAssessmentImages(prev => {
+          // Remove any previous image for this section
+          const filtered = prev.filter(i => i.section_id !== variant.section_id);
+          return [...filtered, imgRecord];
+        });
+      }
+    } catch { /* best effort */ }
   };
 
   const handleDownloadImagesZip = async () => {
@@ -1071,7 +1121,9 @@ const WriterEngine = () => {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-3.5 sm:px-6 md:px-14 py-5 sm:py-7 md:py-10 pb-20">
+          <div className="flex-1 overflow-y-auto pb-20">
+            <ProgressBanner message={progressMessage} active={!!progressMessage} />
+            <div className="px-3.5 sm:px-6 md:px-14 py-5 sm:py-7 md:py-10">
             <div className="max-w-[820px] mx-auto">
               {stage === 0 && (
                 <StageBriefIntake
@@ -1102,6 +1154,10 @@ const WriterEngine = () => {
                   streamContent={streamContent} writingAll={writingAll}
                   onBack={() => setStage(1)} onNext={() => setStage(3)}
                   settings={settings} onSettingsChange={setSettings}
+                  imageVariants={imageVariants}
+                  onSelectImage={handleSelectImage}
+                  imagesSkipped={imagesSkipped}
+                  onSkipImages={() => setImagesSkipped(true)}
                 />
               )}
               {stage === 3 && (
@@ -1163,6 +1219,7 @@ const WriterEngine = () => {
                   hasImages={assessmentImages.length > 0}
                   isProcessing={isProcessing}
                   onNext={() => setStage(9)}
+                  sections={sections}
                 />
               )}
               {stage === 9 && (
@@ -1173,6 +1230,7 @@ const WriterEngine = () => {
                   assessmentTitle={assessment?.title || "Assessment"}
                 />
               )}
+            </div>
             </div>
           </div>
 
