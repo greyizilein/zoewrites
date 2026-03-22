@@ -18,6 +18,7 @@ import StageFinalScan from "@/components/writer/StageFinalScan";
 import StageSubmissionPrep from "@/components/writer/StageSubmissionPrep";
 import StageManualSubmission from "@/components/writer/StageManualSubmission";
 import DraggableChatFab from "@/components/writer/DraggableChatFab";
+import { EditDiff } from "@/components/writer/StageEditProofread";
 import { Section, Recommendation, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
@@ -59,6 +60,8 @@ const WriterEngine = () => {
   const [editReport, setEditReport] = useState<any>(null);
   const [scanReport, setScanReport] = useState<any>(null);
   const [revisionFeedback, setRevisionFeedback] = useState<string>("");
+  const [editDiffs, setEditDiffs] = useState<EditDiff[]>([]);
+  const [priorSections, setPriorSections] = useState<Section[]>([]);
 
   const [briefText, setBriefText] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
@@ -349,6 +352,64 @@ const WriterEngine = () => {
         } catch { /* optional */ }
       }
 
+      // Word count enforcement: auto-trim/expand if outside ±1% of target
+      {
+        const latestSection = sections.find(s => s.id === sectionId);
+        const currentContent = latestSection?.content || fullContent;
+        const currentWc = currentContent.split(/\s+/).filter(Boolean).length;
+        const floor = section.word_target;
+        const ceiling = Math.ceil(section.word_target * 1.01);
+        if (currentWc < floor || currentWc > ceiling) {
+          const trimFeedback = currentWc > ceiling
+            ? `Trim this section to exactly ${section.word_target} words. Remove redundant phrases, tighten prose. Do NOT add new content.`
+            : `Expand this section to exactly ${section.word_target} words. Add depth and analysis where appropriate.`;
+          try {
+            toast({ title: "Adjusting word count…", description: section.title });
+            const session = await supabase.auth.getSession();
+            const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+            const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+              body: JSON.stringify({
+                content: currentContent, feedback: trimFeedback,
+                word_target: section.word_target, section_title: section.title,
+                model: selectedModel, settings,
+              }),
+            });
+            if (trimResp.ok && trimResp.body) {
+              const trimReader = trimResp.body.getReader();
+              const trimDecoder = new TextDecoder();
+              let trimBuffer = "";
+              let trimContent = "";
+              while (true) {
+                const { done: tDone, value: tValue } = await trimReader.read();
+                if (tDone) break;
+                trimBuffer += trimDecoder.decode(tValue, { stream: true });
+                let tIdx: number;
+                while ((tIdx = trimBuffer.indexOf("\n")) !== -1) {
+                  let tLine = trimBuffer.slice(0, tIdx);
+                  trimBuffer = trimBuffer.slice(tIdx + 1);
+                  if (tLine.endsWith("\r")) tLine = tLine.slice(0, -1);
+                  if (!tLine.startsWith("data: ")) continue;
+                  const tJson = tLine.slice(6).trim();
+                  if (tJson === "[DONE]") break;
+                  try {
+                    const tParsed = JSON.parse(tJson);
+                    const tc = tParsed.choices?.[0]?.delta?.content;
+                    if (tc) trimContent += tc;
+                  } catch { /* partial */ }
+                }
+              }
+              if (trimContent) {
+                const trimWc = trimContent.split(/\s+/).filter(Boolean).length;
+                await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", sectionId);
+                setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: trimContent, word_current: trimWc } : s));
+              }
+            }
+          } catch { /* word count adjustment is best-effort */ }
+        }
+      }
+
       toast({ title: "Section complete", description: `${section.title} — ${wordCount} words.` });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -415,20 +476,26 @@ const WriterEngine = () => {
       if (error) throw error;
       setEditReport(data);
 
-      // Apply corrected content back to sections
+      // Build diffs instead of auto-applying
       if (data?.corrected_content) {
         const correctedSections = data.corrected_content.split(/^## /m).filter(Boolean);
+        const diffs: EditDiff[] = [];
         for (const cs of correctedSections) {
           const titleEnd = cs.indexOf("\n");
           const title = cs.slice(0, titleEnd).trim();
           const content = cs.slice(titleEnd + 1).trim();
           const section = sections.find(s => s.title === title);
-          if (section) {
-            const wc = content.split(/\s+/).filter(Boolean).length;
-            await supabase.from("sections").update({ content, word_current: wc }).eq("id", section.id);
-            setSections(prev => prev.map(s => s.id === section.id ? { ...s, content, word_current: wc } : s));
+          if (section && section.content) {
+            diffs.push({
+              sectionId: section.id,
+              sectionTitle: section.title,
+              original: section.content,
+              corrected: content,
+              accepted: null,
+            });
           }
         }
+        setEditDiffs(diffs);
       }
 
       return data;
@@ -438,10 +505,29 @@ const WriterEngine = () => {
     }
   };
 
+  const handleAcceptEdits = async (sectionIds: string[]) => {
+    for (const sid of sectionIds) {
+      const diff = editDiffs.find(d => d.sectionId === sid);
+      if (!diff) continue;
+      const wc = diff.corrected.split(/\s+/).filter(Boolean).length;
+      await supabase.from("sections").update({ content: diff.corrected, word_current: wc }).eq("id", sid);
+      setSections(prev => prev.map(s => s.id === sid ? { ...s, content: diff.corrected, word_current: wc } : s));
+    }
+    setEditDiffs(prev => prev.map(d => sectionIds.includes(d.sectionId) ? { ...d, accepted: true } : d));
+    toast({ title: `${sectionIds.length} edit(s) accepted` });
+  };
+
+  const handleDenyEdits = (sectionIds: string[]) => {
+    setEditDiffs(prev => prev.map(d => sectionIds.includes(d.sectionId) ? { ...d, accepted: false } : d));
+    toast({ title: `${sectionIds.length} edit(s) denied` });
+  };
+
   // ─── STAGE 5: Apply revisions ───
   const handleApplyRevisions = async (feedback: string) => {
     if (!feedback.trim()) return;
     setIsProcessing(true);
+    // Snapshot sections before revisions for Writer Slate comparison
+    setPriorSections(sections.map(s => ({ ...s })));
     try {
       for (const s of sections.filter(s => s.content)) {
         await streamSection(s.id, true, feedback);
@@ -455,12 +541,31 @@ const WriterEngine = () => {
   };
 
   // ─── STAGE 6: Writer Slate actions ───
-  const handleAcceptAll = () => {
+  const handleAcceptAll = async () => {
+    // Keep current sections — just confirm
     toast({ title: "All changes accepted" });
   };
 
-  const handleDenyAll = () => {
+  const handleDenyAll = async () => {
+    if (priorSections.length === 0) { toast({ title: "No prior version to revert to" }); return; }
+    for (const prior of priorSections) {
+      if (prior.content) {
+        await supabase.from("sections").update({ content: prior.content, word_current: prior.word_current }).eq("id", prior.id);
+      }
+    }
+    setSections(priorSections.map(s => ({ ...s })));
     toast({ title: "All changes denied — reverted to previous version" });
+  };
+
+  const handleAcceptSection = (_sectionId: string) => {
+    // Current content is already the accepted version — no-op on data
+  };
+
+  const handleDenySection = async (sectionId: string) => {
+    const prior = priorSections.find(p => p.id === sectionId);
+    if (!prior || !prior.content) return;
+    await supabase.from("sections").update({ content: prior.content, word_current: prior.word_current }).eq("id", sectionId);
+    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: prior.content!, word_current: prior.word_current } : s));
   };
 
   const handleTrimToTarget = async () => {
@@ -934,6 +1039,9 @@ const WriterEngine = () => {
               {stage === 4 && (
                 <StageEditProofread
                   onRunEdit={handleEditProofread}
+                  editDiffs={editDiffs}
+                  onAcceptEdits={handleAcceptEdits}
+                  onDenyEdits={handleDenyEdits}
                   editReport={editReport}
                   onBack={() => setStage(3)} onNext={() => setStage(5)}
                 />
@@ -948,8 +1056,9 @@ const WriterEngine = () => {
               )}
               {stage === 6 && (
                 <StageWriterSlate
-                  sections={sections} totalTarget={totalTarget}
+                  sections={sections} priorSections={priorSections} totalTarget={totalTarget}
                   onAcceptAll={handleAcceptAll} onDenyAll={handleDenyAll}
+                  onAcceptSection={handleAcceptSection} onDenySection={handleDenySection}
                   onTrimToTarget={handleTrimToTarget}
                   onBack={() => setStage(5)} onNext={() => setStage(7)}
                   isProcessing={isProcessing}
