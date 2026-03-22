@@ -216,7 +216,7 @@ const Dashboard = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.25 }}
-            className="p-4 rounded-xl border border-border bg-card mb-8"
+            className="p-3 sm:p-4 rounded-xl border border-border bg-card mb-6 sm:mb-8"
           >
             <div className="flex justify-between items-center mb-2">
               <span className="text-[13px] font-semibold">Word Budget</span>
