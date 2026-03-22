@@ -859,7 +859,7 @@ const WriterEngine = () => {
         const revSec = sections.find(s => s.title.toLowerCase().includes((args.section_title || "").toLowerCase()));
         if (revSec) {
           setChatMessages(prev => [...prev, { role: "assistant", content: `📝 Revising "${revSec.title}"…` }]);
-          setStage(5);
+          setStage(4);
           await streamSection(revSec.id, true, args.feedback);
         }
         break;
