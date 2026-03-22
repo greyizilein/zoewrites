@@ -1,38 +1,30 @@
 
 
-# Add Average Completion % to Dashboard KPI Strip
+# Fix Dashboard Mobile Layout — Compact KPI Cards
 
-## Current State
+## Problem
 
-The KPI strip (lines 172-195) already shows:
-- Words Left
-- Assessments (with completed count as subtitle)
-- Words Written
-- Active count
-
-This already covers "total assessments" and "completed count." The missing metric is **average completion percentage**.
+From the screenshots, on mobile (448px viewport):
+- KPI cards appear as tall vertical rectangles stacked in a single column instead of compact 2×2 grid
+- The large number "2,000,000,000" forces cards to stretch
+- Word budget bar and Recent Activity take too much vertical space
+- Overall page requires excessive scrolling
 
 ## Plan
 
-**`src/pages/Dashboard.tsx`**: 
-- Add `avgCompletion` calculation: average of `(word_current / word_target * 100)` across all assessments
-- Replace the "Words Written" KPI card with "Avg. Completion" showing the percentage
-- Move "Words Written" to the subtitle of another card or keep as a 5th card on larger screens
+**`src/pages/Dashboard.tsx`**:
 
-Alternatively, keep all 4 existing cards and swap "Active" (which is redundant with the subtitle on "Assessments") for "Avg. Completion":
+1. **KPI cards — compact horizontal layout on mobile**: Change each KPI card from vertical stack (label → value → sub) to a horizontal inline layout on mobile. Use `flex` with label+sub on left, value on right. Reduce padding to `p-2.5` on mobile. This makes each card ~50px tall instead of ~90px.
 
-| Slot | Label | Value | Sub |
-|------|-------|-------|-----|
-| 1 | Words Left | wordsLeft | of wordLimit |
-| 2 | Assessments | total | completedCount complete |
-| 3 | Words Written | total | total |
-| 4 | Avg. Completion | X% | across all |
+2. **Large number formatting**: Add compact number formatting — numbers over 999,999 show as "2B" or "2M" on mobile instead of "2,000,000,000".
 
-Simply add the `avgCompletion` computation and replace the 4th KPI card ("Active") with "Avg. Completion" — since active count is already shown in the welcome text.
+3. **Word budget bar**: Reduce mobile padding to `p-2.5`, smaller text, thinner progress bar.
 
-### File
+4. **Recent Activity**: On mobile, hide the word count columns (just show title + dot + time ago) to prevent horizontal overflow. Reduce padding.
+
+5. **Assessment cards grid**: Keep as-is (already works at `sm:grid-cols-2`).
 
 | File | Change |
 |------|--------|
-| `src/pages/Dashboard.tsx` | Compute `avgCompletion`, replace "Active" KPI with "Avg. Completion" percentage |
+| `src/pages/Dashboard.tsx` | Compact KPI card layout, short number formatting, tighter mobile spacing throughout |
 
