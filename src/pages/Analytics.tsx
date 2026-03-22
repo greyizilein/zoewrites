@@ -293,6 +293,25 @@ const Analytics = () => {
             </ResponsiveContainer>
           </motion.div>
 
+          {/* Completion trend */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.37 }}
+            className="p-5 rounded-xl border border-border bg-card"
+          >
+            <h3 className="text-sm font-semibold text-foreground mb-4">Completion Trend</h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={completionTrendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" domain={[0, 100]} unit="%" />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))" }} formatter={(v: number) => [`${v}%`, "Avg Completion"]} />
+                <Area type="monotone" dataKey="avg" stroke="hsl(153, 16%, 42%)" fill="hsl(153, 16%, 42%)" fillOpacity={0.12} strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </motion.div>
+
           {/* Cumulative assessments */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
