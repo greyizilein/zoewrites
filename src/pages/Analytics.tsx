@@ -35,6 +35,7 @@ const Analytics = () => {
   const [statusData, setStatusData] = useState<any[]>([]);
   const [typeData, setTypeData] = useState<any[]>([]);
   const [velocityData, setVelocityData] = useState<any[]>([]);
+  const [completionTrendData, setCompletionTrendData] = useState<any[]>([]);
   const [totals, setTotals] = useState({
     words: 0, assessments: 0, completed: 0, active: 0,
     avgTurnaround: 0, totalCitations: 0, completionRate: 0,
