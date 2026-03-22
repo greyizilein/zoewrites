@@ -516,7 +516,7 @@ const WriterEngine = () => {
     toast({ title: `${sectionIds.length} edit(s) denied` });
   };
 
-  // ─── STAGE 5: Apply revisions ───
+  // ─── STAGE 4: Apply revisions (was stage 5) ───
   const handleApplyRevisions = async (feedback: string) => {
     if (!feedback.trim()) return;
     setIsProcessing(true);
@@ -527,7 +527,7 @@ const WriterEngine = () => {
         await streamSection(s.id, true, feedback);
       }
       toast({ title: "Revisions applied" });
-      setStage(6); // advance to Writer Slate
+      setStage(5); // advance to Edit & Proofread
     } catch (e: any) {
       toast({ title: "Revision failed", description: e.message, variant: "destructive" });
     }
