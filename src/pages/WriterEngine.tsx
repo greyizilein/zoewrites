@@ -1098,26 +1098,26 @@ const WriterEngine = () => {
                       const feedback = issues.map((i: any) => `[${i.severity}] ${i.description} → ${i.suggestion}`).join("\n");
                       setRevisionFeedback(feedback);
                     }
-                    setStage(4);
+                    setStage(4); // → Revise
                   }}
                 />
               )}
               {stage === 4 && (
+                <StageRevise
+                  onApplyRevisions={handleApplyRevisions}
+                  isProcessing={isProcessing}
+                  onBack={() => setStage(3)} onNext={() => setStage(5)}
+                  initialFeedback={revisionFeedback}
+                />
+              )}
+              {stage === 5 && (
                 <StageEditProofread
                   onRunEdit={handleEditProofread}
                   editDiffs={editDiffs}
                   onAcceptEdits={handleAcceptEdits}
                   onDenyEdits={handleDenyEdits}
                   editReport={editReport}
-                  onBack={() => setStage(3)} onNext={() => setStage(5)}
-                />
-              )}
-              {stage === 5 && (
-                <StageRevise
-                  onApplyRevisions={handleApplyRevisions}
-                  isProcessing={isProcessing}
                   onBack={() => setStage(4)} onNext={() => setStage(6)}
-                  initialFeedback={revisionFeedback}
                 />
               )}
               {stage === 6 && (
@@ -1126,7 +1126,7 @@ const WriterEngine = () => {
                   onAcceptAll={handleAcceptAll} onDenyAll={handleDenyAll}
                   onAcceptSection={handleAcceptSection} onDenySection={handleDenySection}
                   onTrimToTarget={handleTrimToTarget}
-                  onBack={() => setStage(5)} onNext={() => setStage(7)}
+                  onNext={() => setStage(7)}
                   isProcessing={isProcessing}
                 />
               )}
