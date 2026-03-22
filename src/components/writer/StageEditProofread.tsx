@@ -63,7 +63,7 @@ export default function StageEditProofread({ onRunEdit, editDiffs, onAcceptEdits
   return (
     <div className="max-w-[560px] mx-auto">
       <div className="mb-6 text-center">
-        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 5 of 10</p>
+        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 6 of 10</p>
         <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Edit & Proofread</h1>
         <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Automated grammar, spelling, and structure pass.</p>
       </div>
