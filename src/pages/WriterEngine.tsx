@@ -1090,7 +1090,9 @@ const WriterEngine = () => {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-3.5 sm:px-6 md:px-14 py-5 sm:py-7 md:py-10 pb-20">
+          <div className="flex-1 overflow-y-auto pb-20">
+            <ProgressBanner message={progressMessage} active={!!progressMessage} />
+            <div className="px-3.5 sm:px-6 md:px-14 py-5 sm:py-7 md:py-10">
             <div className="max-w-[820px] mx-auto">
               {stage === 0 && (
                 <StageBriefIntake
