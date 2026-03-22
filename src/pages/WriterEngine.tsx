@@ -352,24 +352,21 @@ const WriterEngine = () => {
         } catch { /* optional */ }
       }
 
-      // Word count enforcement: auto-trim/expand if outside ±1% of target
+      // Word count enforcement: auto-trim if over 1% of target (reads fresh from DB)
       {
-        const latestSection = sections.find(s => s.id === sectionId);
-        const currentContent = latestSection?.content || fullContent;
+        const latestData = await supabase.from("sections").select("content, word_current").eq("id", sectionId).single();
+        const currentContent = latestData.data?.content || fullContent;
         const currentWc = currentContent.split(/\s+/).filter(Boolean).length;
-        const floor = section.word_target;
         const ceiling = Math.ceil(section.word_target * 1.01);
-        if (currentWc < floor || currentWc > ceiling) {
-          const trimFeedback = currentWc > ceiling
-            ? `Trim this section to exactly ${section.word_target} words. Remove redundant phrases, tighten prose. Do NOT add new content.`
-            : `Expand this section to exactly ${section.word_target} words. Add depth and analysis where appropriate.`;
+        if (currentWc > ceiling) {
+          const trimFeedback = `Trim this section to exactly ${section.word_target} words. Remove redundant phrases, tighten prose. Do NOT add new content.`;
           try {
-            toast({ title: "Adjusting word count…", description: section.title });
-            const session = await supabase.auth.getSession();
-            const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+            toast({ title: "Trimming to target…", description: section.title });
+            const session2 = await supabase.auth.getSession();
+            const at2 = session2.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
             const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
               method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${at2}` },
               body: JSON.stringify({
                 content: currentContent, feedback: trimFeedback,
                 word_target: section.word_target, section_title: section.title,
