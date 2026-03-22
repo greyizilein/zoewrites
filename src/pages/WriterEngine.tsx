@@ -1143,7 +1143,6 @@ const WriterEngine = () => {
                   onDownloadImages={handleDownloadImagesZip}
                   hasImages={assessmentImages.length > 0}
                   isProcessing={isProcessing}
-                  onBack={() => setStage(7)}
                   onNext={() => setStage(9)}
                 />
               )}
