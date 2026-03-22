@@ -444,6 +444,7 @@ const WriterEngine = () => {
       setGenerating(false);
       setGeneratingId(null);
       setStreamContent("");
+      setProgressMessage("");
     }
   }, [sections, assessment, executionPlan, settings, selectedModel, toast]);
 
