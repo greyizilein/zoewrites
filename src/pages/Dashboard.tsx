@@ -209,11 +209,11 @@ const Dashboard = () => {
                 initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
                 animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                 transition={{ duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                className="aspect-square sm:aspect-auto flex flex-col items-center justify-center p-3 sm:p-4 rounded-xl border border-border bg-card cursor-pointer hover:scale-[1.02] active:scale-[0.97] hover:shadow-md hover:border-foreground/10 transition-all duration-200"
+                className="h-[88px] sm:h-[100px] flex flex-col items-center justify-center p-2.5 sm:p-4 rounded-xl border border-border bg-card cursor-pointer hover:scale-[1.02] active:scale-[0.97] hover:shadow-md hover:border-foreground/10 transition-all duration-200"
               >
-                <p className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">{kpi.label}</p>
-                <p className={`text-xl sm:text-2xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
-                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-0.5">{kpi.sub}</p>
+                <p className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{kpi.label}</p>
+                <p className={`text-lg sm:text-2xl font-bold tabular-nums leading-tight ${kpi.color}`}>{kpi.value}</p>
+                <p className="text-[9px] sm:text-[11px] text-muted-foreground mt-0.5">{kpi.sub}</p>
               </motion.div>
             ))}
           </div>
