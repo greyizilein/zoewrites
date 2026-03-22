@@ -7,7 +7,6 @@ interface Props {
   qualityReport: any;
   totalWords: number;
   totalTarget: number;
-  onBack: () => void;
   onNext: () => void;
 }
 
@@ -24,7 +23,7 @@ const critiqueChecks = [
   "Humanisation & AI-pattern scoring",
 ];
 
-export default function StageSelfCritique({ onRunCritique, qualityReport, totalWords, totalTarget, onBack, onNext }: Props) {
+export default function StageSelfCritique({ onRunCritique, qualityReport, totalWords, totalTarget, onNext }: Props) {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(!!qualityReport);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +52,6 @@ export default function StageSelfCritique({ onRunCritique, qualityReport, totalW
     <div className="max-w-[560px] mx-auto">
       <div className="mb-6 text-center">
         <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 4 of 10</p>
-
         <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Self-Critique</h1>
         <p className="text-[13px] sm:text-[14px] text-muted-foreground leading-relaxed">Read-only quality report against A+ criteria.</p>
       </div>
@@ -129,7 +127,7 @@ export default function StageSelfCritique({ onRunCritique, qualityReport, totalW
         </div>
       )}
 
-      <StickyFooter leftLabel="← Write" onLeft={onBack} rightLabel="Revise →" onRight={onNext} />
+      <StickyFooter rightLabel="Revise →" onRight={onNext} />
     </div>
   );
 }

@@ -11,7 +11,7 @@ interface Props {
   onDownloadImages?: () => void;
   hasImages?: boolean;
   isProcessing: boolean;
-  onBack: () => void;
+  onBack?: () => void;
   onNext: () => void;
 }
 

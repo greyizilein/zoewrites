@@ -6,7 +6,7 @@ interface Props {
   onApplyCorrections: (corrections: string) => void;
   onReExport: () => void;
   isProcessing: boolean;
-  onBack: () => void;
+  onBack?: () => void;
   assessmentTitle: string;
 }
 

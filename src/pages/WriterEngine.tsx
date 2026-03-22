@@ -330,9 +330,28 @@ const WriterEngine = () => {
         }
       }
 
-      const wordCount = fullContent.split(/\s+/).filter(Boolean).length;
-      await supabase.from("sections").update({ content: fullContent, word_current: wordCount, status: "complete" }).eq("id", sectionId);
-      setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: fullContent, word_current: wordCount, status: "complete" } : s));
+      // Hard word count cap: truncate at sentence boundaries if over 1% of target
+      let finalContent = fullContent;
+      const ceiling = Math.ceil(section.word_target * 1.01);
+      let wordCount = finalContent.split(/\s+/).filter(Boolean).length;
+      if (wordCount > ceiling) {
+        const sentences = finalContent.match(/[^.!?]+[.!?]+/g) || [finalContent];
+        let trimmed = "";
+        let wc = 0;
+        for (const sent of sentences) {
+          const sWc = sent.trim().split(/\s+/).filter(Boolean).length;
+          if (wc + sWc > ceiling) break;
+          trimmed += sent;
+          wc += sWc;
+        }
+        if (trimmed.trim()) {
+          finalContent = trimmed.trim();
+          wordCount = wc;
+        }
+      }
+
+      await supabase.from("sections").update({ content: finalContent, word_current: wordCount, status: "complete" }).eq("id", sectionId);
+      setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: finalContent, word_current: wordCount, status: "complete" } : s));
 
       const newTotal = sections.reduce((a, s) => a + (s.id === sectionId ? wordCount : s.word_current), 0);
       if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
@@ -1090,15 +1109,13 @@ const WriterEngine = () => {
                   onRunCritique={handleQualityCheck}
                   qualityReport={qualityReport}
                   totalWords={totalWords} totalTarget={totalTarget}
-                  onBack={() => setStage(2)}
                   onNext={() => {
-                    // Auto-feed critique issues into revision feedback
                     const issues = qualityReport?.report?.issues || [];
                     if (issues.length > 0) {
                       const feedback = issues.map((i: any) => `[${i.severity}] ${i.description} → ${i.suggestion}`).join("\n");
                       setRevisionFeedback(feedback);
                     }
-                    setStage(4); // → Revise
+                    setStage(4);
                   }}
                 />
               )}
@@ -1106,7 +1123,7 @@ const WriterEngine = () => {
                 <StageRevise
                   onApplyRevisions={handleApplyRevisions}
                   isProcessing={isProcessing}
-                  onBack={() => setStage(3)} onNext={() => setStage(5)}
+                  onNext={() => setStage(5)}
                   initialFeedback={revisionFeedback}
                 />
               )}
@@ -1117,7 +1134,7 @@ const WriterEngine = () => {
                   onAcceptEdits={handleAcceptEdits}
                   onDenyEdits={handleDenyEdits}
                   editReport={editReport}
-                  onBack={() => setStage(4)} onNext={() => setStage(6)}
+                  onNext={() => setStage(6)}
                 />
               )}
               {stage === 6 && (
@@ -1134,7 +1151,7 @@ const WriterEngine = () => {
                 <StageFinalScan
                   onRunScan={handleFinalScan}
                   scanReport={scanReport}
-                  onBack={() => setStage(6)} onNext={() => setStage(8)}
+                  onNext={() => setStage(8)}
                 />
               )}
               {stage === 8 && (
@@ -1145,7 +1162,6 @@ const WriterEngine = () => {
                   onDownloadImages={handleDownloadImagesZip}
                   hasImages={assessmentImages.length > 0}
                   isProcessing={isProcessing}
-                  onBack={() => setStage(7)}
                   onNext={() => setStage(9)}
                 />
               )}
@@ -1154,7 +1170,6 @@ const WriterEngine = () => {
                   onApplyCorrections={handleManualCorrections}
                   onReExport={handleExport}
                   isProcessing={isProcessing}
-                  onBack={() => setStage(8)}
                   assessmentTitle={assessment?.title || "Assessment"}
                 />
               )}
