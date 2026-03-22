@@ -1154,6 +1154,10 @@ const WriterEngine = () => {
                   streamContent={streamContent} writingAll={writingAll}
                   onBack={() => setStage(1)} onNext={() => setStage(3)}
                   settings={settings} onSettingsChange={setSettings}
+                  imageVariants={imageVariants}
+                  onSelectImage={handleSelectImage}
+                  imagesSkipped={imagesSkipped}
+                  onSkipImages={() => setImagesSkipped(true)}
                 />
               )}
               {stage === 3 && (
