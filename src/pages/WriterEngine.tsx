@@ -778,7 +778,7 @@ const WriterEngine = () => {
       if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
 
       toast({ title: "Autopilot: Edit & proofread…" });
-      setStage(4);
+      setStage(5);
       await handleEditProofread();
       if (autopilotCancelRef.current) { setAutopilotRunning(false); return; }
 
