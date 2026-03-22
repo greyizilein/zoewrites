@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Plus, LogOut, Home, FileText, Settings, Loader2, Trash2,
-  BarChart3, MoreHorizontal, PenSquare, User,
+  BarChart3, MoreHorizontal, PenSquare, User, RefreshCw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip } from "recharts";
 
 interface Assessment {
   id: string;
@@ -44,33 +44,75 @@ function getTimeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en", { month: "short", day: "numeric" });
 }
 
-/* SVG Donut Arc */
-const DonutGauge = ({ value, max, size = 180 }: { value: number; max: number; size?: number }) => {
-  const stroke = 14;
-  const r = (size - stroke) / 2;
+/* ── Speedometer gauge: 240° arc, starts at ~8 o'clock ─────────────────── */
+const SpeedometerGauge = ({
+  value, max, size = 210,
+}: { value: number; max: number; size?: number }) => {
   const cx = size / 2;
   const cy = size / 2;
+  const r = size * 0.38;
+  const sw = size * 0.075; // stroke width
+
   const circ = 2 * Math.PI * r;
+  const sweepFrac = 240 / 360;
+  const arcLen = circ * sweepFrac;
+  const gapLen = circ - arcLen;
+
   const pct = max > 0 ? Math.min(value / max, 1) : 0;
-  const dashOffset = circ * (1 - pct);
+  const filledLen = arcLen * pct;
+
+  // rotate 150° from 3-o'clock position → arc starts at ~8 o'clock
+  const rot = 150;
+
+  // clip viewBox: show only the top portion (arc doesn't go below mid-bottom)
+  const viewH = cy + r * 0.62 + sw;
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="drop-shadow-sm">
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth={stroke} opacity={0.3} />
+    <svg width={size} height={viewH} viewBox={`0 0 ${size} ${viewH}`}>
+      {/* Track */}
       <circle
         cx={cx} cy={cy} r={r} fill="none"
-        stroke="hsl(var(--terracotta))"
-        strokeWidth={stroke}
+        stroke="hsl(var(--border))" strokeOpacity={0.5}
+        strokeWidth={sw}
+        strokeDasharray={`${arcLen} ${gapLen}`}
         strokeLinecap="round"
-        strokeDasharray={circ}
-        strokeDashoffset={dashOffset}
-        transform={`rotate(-90 ${cx} ${cy})`}
-        className="transition-all duration-700 ease-out"
+        transform={`rotate(${rot} ${cx} ${cy})`}
       />
-      <text x={cx} y={cy - 6} textAnchor="middle" className="fill-foreground text-2xl font-bold" style={{ fontSize: 28 }}>
+      {/* Dark inner arc (secondary — total target indicator) */}
+      <circle
+        cx={cx} cy={cy} r={r} fill="none"
+        stroke="hsl(24,14%,20%)"
+        strokeWidth={sw * 0.45}
+        strokeOpacity={0.18}
+        strokeDasharray={`${arcLen} ${gapLen}`}
+        strokeLinecap="round"
+        transform={`rotate(${rot} ${cx} ${cy})`}
+      />
+      {/* Filled arc — orange */}
+      {pct > 0 && (
+        <circle
+          cx={cx} cy={cy} r={r} fill="none"
+          stroke="hsl(var(--terracotta))"
+          strokeWidth={sw}
+          strokeDasharray={`${filledLen} ${circ - filledLen}`}
+          strokeLinecap="round"
+          transform={`rotate(${rot} ${cx} ${cy})`}
+          className="transition-all duration-700 ease-out"
+        />
+      )}
+      {/* Value */}
+      <text
+        x={cx} y={cy - 2}
+        textAnchor="middle" dominantBaseline="middle"
+        style={{ fontSize: size * 0.145, fontWeight: 800, fill: "hsl(var(--foreground))", letterSpacing: "-1px" }}
+      >
         {fmt(value)}
       </text>
-      <text x={cx} y={cy + 16} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 11 }}>
+      <text
+        x={cx} y={cy + size * 0.12}
+        textAnchor="middle"
+        style={{ fontSize: size * 0.055, fill: "hsl(var(--muted-foreground))", fontWeight: 500 }}
+      >
         Total Words
       </text>
     </svg>
@@ -86,11 +128,13 @@ const Dashboard = () => {
   const { toast } = useToast();
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = useState<"week" | "all">("week");
   const [profile, setProfile] = useState<{
     full_name: string | null; tier: string; words_used: number; word_limit: number;
   } | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
       if (!user) return;
       const [{ data: ad }, { data: pd }] = await Promise.all([
@@ -99,11 +143,13 @@ const Dashboard = () => {
         supabase.from("profiles").select("full_name, tier, words_used, word_limit")
           .eq("user_id", user.id).single(),
       ]);
+      if (cancelled) return;
       setAssessments(ad || []);
       setProfile(pd as any);
       setLoading(false);
     };
     fetchData();
+    return () => { cancelled = true; };
   }, [user]);
 
   const handleSignOut = async () => { await signOut(); navigate("/"); };
@@ -128,19 +174,28 @@ const Dashboard = () => {
   const wordLimit = profile?.word_limit || 500;
   const isUnlimited = wordLimit >= 1_000_000_000;
   const wordsLeft = isUnlimited ? Infinity : Math.max(0, wordLimit - wordsUsed);
-  const totalWordsWritten = assessments.reduce((a, b) => a + b.word_current, 0);
-  const totalWordsTarget = assessments.reduce((a, b) => a + b.word_target, 0);
-  const completedCount = assessments.filter(a => a.status === "complete").length;
-  const activeCount = assessments.filter(a => !["complete", "draft"].includes(a.status)).length;
-  const draftCount = assessments.filter(a => a.status === "draft").length;
-  const avgCompletion = assessments.length > 0
-    ? Math.round(assessments.reduce((s, a) => s + (a.word_target > 0 ? (a.word_current / a.word_target) * 100 : 0), 0) / assessments.length)
+
+  // Filter by time range
+  const now = Date.now();
+  const weekMs = 7 * 24 * 60 * 60 * 1000;
+  const filtered = timeRange === "week"
+    ? assessments.filter(a => now - new Date(a.updated_at).getTime() < weekMs)
+    : assessments;
+
+  const totalWordsWritten = filtered.reduce((a, b) => a + b.word_current, 0);
+  const totalWordsTarget = filtered.reduce((a, b) => a + b.word_target, 0);
+  const completedCount = filtered.filter(a => a.status === "complete").length;
+  const activeCount = filtered.filter(a => !["complete", "draft"].includes(a.status)).length;
+  const draftCount = filtered.filter(a => a.status === "draft").length;
+  const avgCompletion = filtered.length > 0
+    ? Math.round(filtered.reduce((s, a) => s + (a.word_target > 0 ? (a.word_current / a.word_target) * 100 : 0), 0) / filtered.length)
     : 0;
 
-  // Chart data — last 7 assessments completion %
-  const chartData = assessments.slice(0, 7).reverse().map(a => ({
-    name: a.title.slice(0, 8),
-    pct: a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0,
+  // Chart: last 6 assessments — words written (orange) + remaining (dark)
+  const chartData = assessments.slice(0, 6).reverse().map(a => ({
+    name: a.title.slice(0, 6),
+    written: a.word_current,
+    remaining: Math.max(0, a.word_target - a.word_current),
     done: a.status === "complete",
   }));
 
@@ -152,18 +207,19 @@ const Dashboard = () => {
     );
   }
 
-  const tileClass = "flex flex-col items-center justify-center rounded-xl border border-border bg-card cursor-pointer hover:shadow-md hover:border-foreground/10 active:scale-[0.96] transition-all duration-200";
-
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Desktop Sidebar */}
-      <aside className="w-56 border-r border-border bg-card/30 p-4 hidden md:flex flex-col">
-        <Link to="/" className="flex items-center mb-8">
-          <span className="text-xl font-extrabold text-foreground tracking-tight">ZOE</span>
+    <div className="min-h-screen bg-[hsl(220,20%,96%)] flex">
+      {/* ── Desktop Sidebar ─────────────────────────────────── */}
+      <aside className="w-56 border-r border-border bg-card p-4 hidden md:flex flex-col">
+        <Link to="/" className="flex items-center gap-2 mb-8">
+          <div className="w-8 h-8 rounded-full bg-terracotta flex items-center justify-center">
+            <span className="text-white text-[11px] font-extrabold">ZW</span>
+          </div>
+          <span className="text-base font-extrabold text-foreground tracking-tight">ZOE Writes</span>
         </Link>
         <nav className="space-y-1 flex-1">
-          <Link to="/dashboard" className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-terracotta/10 text-foreground">
-            <Home size={15} /> Home
+          <Link to="/dashboard" className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-terracotta/10 text-terracotta">
+            <Home size={15} /> Dashboard
           </Link>
           <Link to="/assessment/new" className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
             <Plus size={15} /> New Assessment
@@ -186,142 +242,253 @@ const Dashboard = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 pb-20 md:pb-0">
-        {/* Top Bar */}
-        <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-sm">
-          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-            <Link to="/" className="md:hidden">
-              <span className="text-lg font-extrabold text-foreground tracking-tight">ZOE</span>
-            </Link>
-            <p className="text-sm text-muted-foreground hidden sm:block">
-              Welcome, <span className="text-foreground font-medium">{userName}</span>
-            </p>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="w-8 h-8 rounded-full bg-terracotta/15 flex items-center justify-center text-xs font-semibold text-terracotta active:scale-95 transition-transform">
-                  {initials}
+      {/* ── Main ────────────────────────────────────────────── */}
+      <div className="flex-1 pb-20 md:pb-6 overflow-y-auto">
+        {/* Top bar */}
+        <header className="sticky top-0 z-40 bg-[hsl(220,20%,96%)]/90 backdrop-blur-sm pt-safe">
+          <div className="max-w-lg mx-auto px-4 pt-3 pb-2 flex items-center justify-between">
+            {/* Brand */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-terracotta flex items-center justify-center shadow-sm">
+                <span className="text-white text-[10px] font-extrabold">ZW</span>
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-foreground leading-none">ZOE Writes</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{assessments.length} Assessments</p>
+              </div>
+            </div>
+            {/* Right actions */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => window.location.reload()}
+                className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground shadow-sm active:scale-95 transition-transform"
+              >
+                <RefreshCw size={13} />
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="w-8 h-8 rounded-full bg-terracotta/15 flex items-center justify-center text-xs font-bold text-terracotta active:scale-95 transition-transform border border-terracotta/20">
+                    {initials}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <div className="px-3 py-2 border-b border-border">
+                    <p className="text-sm font-medium text-foreground truncate">{userName}</p>
+                    <p className="text-[11px] text-muted-foreground capitalize">{profile?.tier || "free"} tier</p>
+                  </div>
+                  <DropdownMenuItem asChild>
+                    <Link to="/analytics" className="flex items-center gap-2"><BarChart3 size={14} /> Analytics</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive flex items-center gap-2">
+                    <LogOut size={14} /> Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          {/* Time toggle */}
+          <div className="max-w-lg mx-auto px-4 pb-2">
+            <div className="inline-flex bg-card border border-border rounded-full p-0.5 shadow-sm">
+              {(["week", "all"] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setTimeRange(r)}
+                  className={`px-4 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                    timeRange === r
+                      ? "bg-terracotta text-white shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {r === "week" ? "This Week" : "All Time"}
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <div className="px-3 py-2 border-b border-border">
-                  <p className="text-sm font-medium text-foreground truncate">{userName}</p>
-                  <p className="text-[11px] text-muted-foreground capitalize">{profile?.tier || "free"} tier</p>
-                </div>
-                <DropdownMenuItem asChild>
-                  <Link to="/analytics" className="flex items-center gap-2"><BarChart3 size={14} /> Analytics</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleSignOut} className="flex items-center gap-2 text-destructive focus:text-destructive">
-                  <LogOut size={14} /> Sign Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              ))}
+            </div>
           </div>
         </header>
 
-        <main className="max-w-2xl mx-auto px-4 py-5">
-          {/* Hero Gauge */}
+        <main className="max-w-lg mx-auto px-4 space-y-3 pt-1">
+
+          {/* ── Hero card: Gauge + side stats ─────────────── */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, ease }}
-            className="flex flex-col items-center mb-5"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease }}
+            className="bg-card rounded-2xl shadow-sm border border-border/50 p-4"
           >
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Today's Progress</p>
-            <div className="flex items-center gap-5">
-              <DonutGauge value={totalWordsWritten} max={totalWordsTarget || 1} />
-              <div className="space-y-2.5">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Today's Activity</p>
+
+            <div className="flex items-center gap-2">
+              {/* Gauge */}
+              <div className="flex-shrink-0 -mb-2">
+                <SpeedometerGauge value={totalWordsWritten} max={totalWordsTarget || 1} size={200} />
+              </div>
+
+              {/* Side stats */}
+              <div className="flex flex-col gap-2 flex-1 pl-1">
                 {[
-                  { label: "Complete", count: completedCount, color: "bg-sage" },
-                  { label: "Active", count: activeCount, color: "bg-terracotta" },
-                  { label: "Draft", count: draftCount, color: "bg-muted-foreground/40" },
+                  { label: "Complete", count: completedCount, color: "bg-sage", textColor: "text-sage" },
+                  { label: "In Progress", count: activeCount, color: "bg-terracotta", textColor: "text-terracotta" },
+                  { label: "Draft", count: draftCount, color: "bg-muted-foreground/40", textColor: "text-muted-foreground" },
                 ].map(s => (
-                  <div key={s.label} className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${s.color}`} />
-                    <span className="text-xs text-muted-foreground">{s.count} {s.label}</span>
+                  <div key={s.label} className="flex items-center gap-2 bg-muted/40 rounded-xl px-3 py-2">
+                    <span className={`w-2 h-2 rounded-full ${s.color} flex-shrink-0`} />
+                    <div className="min-w-0">
+                      <p className={`text-base font-bold tabular-nums leading-none ${s.textColor}`}>{s.count}</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{s.label}</p>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
-          </motion.div>
 
-          {/* Stat Tiles — 3 columns */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1, ease }}
-            className="grid grid-cols-3 gap-2 mb-3"
-          >
-            {[
-              { label: "Words Left", value: isUnlimited ? "∞" : fmt(wordsLeft as number), color: "text-terracotta" },
-              { label: "Assessments", value: assessments.length.toString(), color: "text-muted-blue" },
-              { label: "Avg. Done", value: `${avgCompletion}%`, color: "text-dusty-purple" },
-            ].map((t, i) => (
-              <motion.div
-                key={t.label}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.15 + i * 0.06, ease }}
-                className={`${tileClass} h-[72px] p-2`}
-              >
-                <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">{t.label}</p>
-                <p className={`text-lg font-bold tabular-nums leading-tight ${t.color}`}>{t.value}</p>
-              </motion.div>
-            ))}
-          </motion.div>
-
-          {/* Action Tiles — 3 columns */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2, ease }}
-            className="grid grid-cols-3 gap-2 mb-5"
-          >
-            {[
-              { label: "New", icon: Plus, to: "/assessment/new", bg: "bg-terracotta/10", ic: "text-terracotta" },
-              { label: "Analytics", icon: BarChart3, to: "/analytics", bg: "bg-muted-blue/10", ic: "text-muted-blue" },
-              { label: "Settings", icon: Settings, to: "/dashboard", bg: "bg-dusty-purple/10", ic: "text-dusty-purple" },
-            ].map((a, i) => (
-              <motion.div
-                key={a.label}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.25 + i * 0.06, ease }}
-              >
-                <Link to={a.to} className={`${tileClass} h-[72px] p-2 gap-1`}>
+            {/* Quick action row */}
+            <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-border/50">
+              {[
+                { label: "New Assessment", icon: Plus, to: "/assessment/new", bg: "bg-terracotta/10", ic: "text-terracotta" },
+                { label: "Analytics", icon: BarChart3, to: "/analytics", bg: "bg-muted-blue/10", ic: "text-muted-blue" },
+                { label: "Settings", icon: Settings, to: "/dashboard", bg: "bg-dusty-purple/10", ic: "text-dusty-purple" },
+              ].map(a => (
+                <Link
+                  key={a.label}
+                  to={a.to}
+                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all"
+                >
                   <div className={`w-8 h-8 rounded-lg ${a.bg} flex items-center justify-center`}>
-                    <a.icon size={16} className={a.ic} />
+                    <a.icon size={15} className={a.ic} />
                   </div>
-                  <span className="text-[10px] font-medium text-foreground">{a.label}</span>
+                  <span className="text-[9px] font-medium text-foreground text-center leading-tight">{a.label}</span>
                 </Link>
-              </motion.div>
-            ))}
+              ))}
+            </div>
           </motion.div>
 
-          {/* CTA */}
+          {/* ── Assessment Progress card ───────────────────── */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3, ease }}
-            className="mb-5"
+            transition={{ duration: 0.55, delay: 0.1, ease }}
+            className="bg-card rounded-2xl shadow-sm border border-border/50 p-4"
           >
-            <Link to="/assessment/new">
-              <Button className="w-full bg-terracotta hover:bg-terracotta/90 text-white font-semibold h-11 rounded-xl active:scale-[0.97] transition-transform">
-                <Plus size={16} className="mr-1.5" /> New Assessment
-              </Button>
-            </Link>
+            {/* Header row */}
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="text-[13px] font-bold text-foreground">Assessment Progress</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[10px] text-muted-foreground">Performance</span>
+                  <div className="flex -space-x-1">
+                    {["bg-terracotta", "bg-sage", "bg-muted-blue"].map((c, i) => (
+                      <span key={i} className={`w-4 h-4 rounded-full ${c} border-2 border-card`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <Link to="/analytics">
+                <button className="flex items-center gap-1 bg-muted/60 hover:bg-muted text-[10px] font-semibold text-foreground px-3 py-1.5 rounded-full transition-colors active:scale-95">
+                  Get Report <ChevronDown size={10} />
+                </button>
+              </Link>
+            </div>
+
+            {/* Chart */}
+            {chartData.length > 0 ? (
+              <>
+                <div className="flex items-end gap-4 mb-3">
+                  <div>
+                    <p className="text-4xl font-extrabold text-foreground tabular-nums leading-none">{avgCompletion}%</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">Avg. Completion</p>
+                    <p className="text-[9px] text-muted-foreground/60">Across {filtered.length} assessment{filtered.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <div className="flex-1">
+                    <ResponsiveContainer width="100%" height={90}>
+                      <BarChart data={chartData} barCategoryGap="15%" barGap={2}>
+                        <XAxis dataKey="name" tick={{ fontSize: 8 }} tickLine={false} axisLine={false} />
+                        <YAxis hide />
+                        <Tooltip
+                          contentStyle={{ fontSize: 10, borderRadius: 8, border: "1px solid hsl(var(--border))" }}
+                          formatter={(v: any, name: string) => [fmt(v) + " words", name === "written" ? "Written" : "Remaining"]}
+                        />
+                        <Bar dataKey="written" radius={[3, 3, 0, 0]} maxBarSize={18}>
+                          {chartData.map((_, i) => (
+                            <Cell key={i} fill="hsl(var(--terracotta))" />
+                          ))}
+                        </Bar>
+                        <Bar dataKey="remaining" radius={[3, 3, 0, 0]} maxBarSize={18}>
+                          {chartData.map((_, i) => (
+                            <Cell key={i} fill="hsl(24,14%,20%)" opacity={0.75} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center gap-4 pt-2 border-t border-border/50">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-terracotta" />
+                    <span className="text-[9px] text-muted-foreground font-medium">Words Written</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-[hsl(24,14%,20%)]" />
+                    <span className="text-[9px] text-muted-foreground font-medium">Remaining</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center py-6">No data yet — start an assessment!</p>
+            )}
           </motion.div>
 
-          {/* Recent Assessments */}
+          {/* ── Words quota card ───────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.18, ease }}
+            className="bg-card rounded-2xl shadow-sm border border-border/50 p-4"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[13px] font-bold text-foreground">Word Quota</p>
+              <span className="text-[10px] font-semibold text-terracotta capitalize px-2 py-0.5 bg-terracotta/10 rounded-full">
+                {profile?.tier || "free"}
+              </span>
+            </div>
+            <div className="flex items-end justify-between mb-2">
+              <div>
+                <p className="text-2xl font-extrabold text-foreground tabular-nums">
+                  {isUnlimited ? "∞" : fmt(wordsLeft as number)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">words remaining</p>
+              </div>
+              <p className="text-[10px] text-muted-foreground">{fmt(wordsUsed)} used</p>
+            </div>
+            {!isUnlimited && (
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-terracotta rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, (wordsUsed / wordLimit) * 100)}%` }}
+                />
+              </div>
+            )}
+          </motion.div>
+
+          {/* ── Recent Assessments ─────────────────────────── */}
           {assessments.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.35, ease }}
-              className="rounded-xl border border-border bg-card p-3 mb-4"
+              transition={{ duration: 0.55, delay: 0.24, ease }}
+              className="bg-card rounded-2xl shadow-sm border border-border/50 p-4"
             >
-              <h2 className="text-xs font-semibold text-foreground mb-2">Recent Assessments</h2>
-              <div className="space-y-0.5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[13px] font-bold text-foreground">Recent Assessments</p>
+                <Link to="/assessment/new">
+                  <button className="w-6 h-6 rounded-full bg-terracotta/10 flex items-center justify-center active:scale-95 transition-transform">
+                    <Plus size={12} className="text-terracotta" />
+                  </button>
+                </Link>
+              </div>
+              <div className="space-y-1">
                 {assessments.slice(0, 5).map(a => {
                   const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
                   const done = a.status === "complete";
@@ -329,16 +496,25 @@ const Dashboard = () => {
                     <div key={a.id} className="flex items-center gap-2 group">
                       <Link
                         to={`/assessment/${a.id}`}
-                        className="flex items-center gap-2 flex-1 min-w-0 px-1.5 py-1.5 rounded-lg hover:bg-muted/50 transition-colors"
+                        className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2 rounded-xl hover:bg-muted/50 transition-colors"
                       >
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${done ? "bg-sage" : "bg-terracotta"}`} />
-                        <span className="text-xs font-medium text-foreground truncate flex-1">{a.title}</span>
-                        <span className="text-[10px] tabular-nums text-muted-foreground">{pct}%</span>
-                        <span className="text-[10px] text-muted-foreground">{getTimeAgo(a.updated_at)}</span>
+                        <div className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white ${done ? "bg-sage" : "bg-terracotta"}`}>
+                          {pct}%
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12px] font-semibold text-foreground truncate">{a.title}</p>
+                          <p className="text-[9px] text-muted-foreground">{fmt(a.word_current)}w · {getTimeAgo(a.updated_at)}</p>
+                        </div>
+                        <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden flex-shrink-0">
+                          <div
+                            className={`h-full rounded-full ${done ? "bg-sage" : "bg-terracotta"}`}
+                            style={{ width: `${Math.min(100, pct)}%` }}
+                          />
+                        </div>
                       </Link>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity p-0.5">
+                          <button className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity p-1 flex-shrink-0">
                             <MoreHorizontal size={14} />
                           </button>
                         </DropdownMenuTrigger>
@@ -355,72 +531,49 @@ const Dashboard = () => {
             </motion.div>
           )}
 
-          {/* Empty state */}
+          {/* ── Empty state ────────────────────────────────── */}
           {assessments.length === 0 && (
             <motion.div
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, ease }}
-              className="text-center py-12"
+              className="bg-card rounded-2xl border border-border/50 shadow-sm text-center py-12 px-6"
             >
               <FileText size={40} className="mx-auto text-muted-foreground/20 mb-3" />
-              <h2 className="text-base font-semibold text-foreground mb-1">No assessments yet</h2>
-              <p className="text-xs text-muted-foreground mb-4">Create your first assessment to get started.</p>
+              <h2 className="text-base font-bold text-foreground mb-1">No assessments yet</h2>
+              <p className="text-xs text-muted-foreground mb-5">Create your first to get started.</p>
               <Link to="/assessment/new">
-                <Button className="bg-terracotta hover:bg-terracotta/90 text-white font-semibold active:scale-[0.97] transition-transform">
-                  <Plus size={16} className="mr-1" /> Create First Assessment
+                <Button className="bg-terracotta hover:bg-terracotta/90 text-white font-semibold active:scale-[0.97] transition-transform rounded-xl">
+                  <Plus size={16} className="mr-1.5" /> Create Assessment
                 </Button>
               </Link>
             </motion.div>
           )}
-
-          {/* Mini Chart */}
-          {chartData.length > 1 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.4, ease }}
-              className="rounded-xl border border-border bg-card p-3"
-            >
-              <h2 className="text-xs font-semibold text-foreground mb-2">Completion Trend</h2>
-              <ResponsiveContainer width="100%" height={100}>
-                <BarChart data={chartData} barCategoryGap="20%">
-                  <XAxis dataKey="name" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
-                  <YAxis hide domain={[0, 100]} />
-                  <Bar dataKey="pct" radius={[4, 4, 0, 0]}>
-                    {chartData.map((entry, i) => (
-                      <Cell key={i} fill={entry.done ? "hsl(var(--sage))" : "hsl(var(--terracotta))"} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="flex items-center justify-center gap-4 mt-1.5">
-                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sage" /><span className="text-[9px] text-muted-foreground">Complete</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-terracotta" /><span className="text-[9px] text-muted-foreground">In Progress</span></div>
-              </div>
-            </motion.div>
-          )}
         </main>
 
-        {/* Bottom Nav — mobile only */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-sm">
-          <div className="flex items-center justify-around h-14 max-w-md mx-auto">
+        {/* ── Bottom Nav — mobile only ─────────────────────── */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-sm border-t border-border shadow-lg">
+          <div className="flex items-center justify-around h-[58px] max-w-md mx-auto px-2">
             {[
-              { icon: Home, label: "Home", to: "/dashboard" },
+              { icon: Home, label: "Dashboard", to: "/dashboard" },
               { icon: PenSquare, label: "New", to: "/assessment/new" },
+              { icon: FileText, label: "Assessments", to: "/dashboard" },
               { icon: BarChart3, label: "Analytics", to: "/analytics" },
-              { icon: Settings, label: "Settings", to: "/dashboard" },
               { icon: User, label: "Profile", to: "/dashboard" },
             ].map(item => {
-              const active = location.pathname === item.to && item.label === "Home";
+              const active = location.pathname === "/dashboard" && item.label === "Dashboard"
+                || location.pathname === "/analytics" && item.label === "Analytics";
               return (
                 <Link
                   key={item.label}
                   to={item.to}
-                  className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors ${active ? "text-terracotta" : "text-muted-foreground"} active:scale-95`}
+                  className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition-colors active:scale-95 ${
+                    active ? "text-terracotta" : "text-muted-foreground"
+                  }`}
                 >
-                  <item.icon size={18} />
+                  <item.icon size={19} strokeWidth={active ? 2.2 : 1.8} />
                   <span className="text-[9px] font-medium">{item.label}</span>
+                  {active && <span className="w-1 h-1 rounded-full bg-terracotta mt-0.5" />}
                 </Link>
               );
             })}

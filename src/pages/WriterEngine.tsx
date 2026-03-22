@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Menu, ChevronLeft, ChevronRight, Sparkles, X, Send, Loader2, MessageCircle, Paperclip } from "lucide-react";
+import { Menu, ChevronLeft, ChevronRight, Sparkles, X, Send, Loader2, Paperclip } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,7 +20,10 @@ import StageManualSubmission from "@/components/writer/StageManualSubmission";
 import DraggableChatFab from "@/components/writer/DraggableChatFab";
 import ProgressBanner from "@/components/writer/ProgressBanner";
 import { EditDiff } from "@/components/writer/StageEditProofread";
-import { Section, Recommendation, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
+import { Section, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
+import { readContentStream } from "@/lib/sseStream";
+import { countWords, truncateToWordCeiling } from "@/lib/wordCount";
+import { useWriterChat } from "@/hooks/useWriterChat";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -82,16 +85,12 @@ const WriterEngine = () => {
   const [imagesSkipped, setImagesSkipped] = useState(false);
   const [assessmentImages, setAssessmentImages] = useState<any[]>([]);
 
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
   const [recentAssessments, setRecentAssessments] = useState<{ id: string; title: string; status: string }[]>([]);
   const [profile, setProfile] = useState<{ full_name: string | null; tier: string } | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchData = async () => {
       if (!id || !user) return;
       const [{ data: aData }, { data: sData }, { data: profileData }, { data: recentData }, { data: imgData }] = await Promise.all([
@@ -101,6 +100,7 @@ const WriterEngine = () => {
         supabase.from("assessments").select("id, title, status").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(5),
         supabase.from("assessment_images").select("*").in("section_id", (await supabase.from("sections").select("id").eq("assessment_id", id)).data?.map(s => s.id) || []),
       ]);
+      if (cancelled) return;
       if (aData) {
         setAssessment(aData);
         setExecutionPlan(aData.execution_plan);
@@ -119,22 +119,25 @@ const WriterEngine = () => {
       setRecentAssessments((recentData || []).filter(r => r.id !== id));
       setLoading(false);
     };
-    if (id) fetchData();
-    else {
+
+    if (id) {
+      fetchData();
+    } else {
       const loadContext = async () => {
         if (!user) return;
         const [{ data: profileData }, { data: recentData }] = await Promise.all([
           supabase.from("profiles").select("full_name, tier").eq("user_id", user.id).single(),
           supabase.from("assessments").select("id, title, status").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(5),
         ]);
+        if (cancelled) return;
         setProfile(profileData);
         setRecentAssessments(recentData || []);
       };
       loadContext();
     }
-  }, [id, user]);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
+    return () => { cancelled = true; };
+  }, [id, user]);
 
   const selectedModel = settings.model || "google/gemini-2.5-flash";
   const userName = profile?.full_name || user?.email?.split("@")[0] || "User";
@@ -261,6 +264,26 @@ const WriterEngine = () => {
     }
   };
 
+  // ─── Shared trim helper ─────────────────────────────────────────────────────
+  // Calls section-revise with a trim instruction and returns the trimmed content,
+  // or null if the request failed or returned nothing useful.
+  const streamTrimSection = async (
+    content: string,
+    feedback: string,
+    wordTarget: number,
+    sectionTitle: string,
+    accessToken: string,
+  ): Promise<string | null> => {
+    const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ content, feedback, word_target: wordTarget, section_title: sectionTitle, model: selectedModel, settings }),
+    });
+    if (!trimResp.ok || !trimResp.body) return null;
+    const result = await readContentStream(trimResp.body);
+    return result || null;
+  };
+
   // ─── STAGE 2: Stream section ───
   const streamSection = useCallback(async (sectionId: string, isRevision = false, feedback = "") => {
     const section = sections.find(s => s.id === sectionId);
@@ -297,7 +320,8 @@ const WriterEngine = () => {
 
     try {
       const session = await supabase.auth.getSession();
-      const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const accessToken = session.data.session?.access_token;
+      if (!accessToken) throw new Error("Session expired. Please sign in again.");
 
       const resp = await fetch(`${CHAT_URL}/${endpoint}`, {
         method: "POST",
@@ -311,50 +335,12 @@ const WriterEngine = () => {
         throw new Error(`Stream failed: ${resp.status}`);
       }
 
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let fullContent = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buffer.indexOf("\n")) !== -1) {
-          let line = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) { fullContent += content; setStreamContent(fullContent); }
-          } catch { /* partial */ }
-        }
-      }
+      const fullContent = await readContentStream(resp.body, setStreamContent);
 
       // Hard word count cap: truncate at sentence boundaries if over 1% of target
-      let finalContent = fullContent;
       const ceiling = Math.ceil(section.word_target * 1.01);
-      let wordCount = finalContent.split(/\s+/).filter(Boolean).length;
-      if (wordCount > ceiling) {
-        const sentences = finalContent.match(/[^.!?]+[.!?]+/g) || [finalContent];
-        let trimmed = "";
-        let wc = 0;
-        for (const sent of sentences) {
-          const sWc = sent.trim().split(/\s+/).filter(Boolean).length;
-          if (wc + sWc > ceiling) break;
-          trimmed += sent;
-          wc += sWc;
-        }
-        if (trimmed.trim()) {
-          finalContent = trimmed.trim();
-          wordCount = wc;
-        }
-      }
+      let finalContent = truncateToWordCeiling(fullContent, ceiling);
+      let wordCount = countWords(finalContent);
 
       // Harvard citation post-processing: replace & with "and" inside citation parentheses
       if ((settings.citationStyle || "Harvard") === "Harvard") {
@@ -386,52 +372,17 @@ const WriterEngine = () => {
       {
         const latestData = await supabase.from("sections").select("content, word_current").eq("id", sectionId).single();
         const currentContent = (!latestData.error && latestData.data?.content) || fullContent;
-        const currentWc = currentContent.split(/\s+/).filter(Boolean).length;
-        const ceiling = Math.ceil(section.word_target * 1.01);
-        if (currentWc > ceiling) {
+        const currentWc = countWords(currentContent);
+        const wCeiling = Math.ceil(section.word_target * 1.01);
+        if (currentWc > wCeiling) {
           const trimFeedback = `Trim this section to exactly ${section.word_target} words. Remove redundant phrases, tighten prose. Do NOT add new content.`;
           try {
             toast({ title: "Trimming to target…", description: section.title });
-            const session2 = await supabase.auth.getSession();
-            const at2 = session2.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-            const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${at2}` },
-              body: JSON.stringify({
-                content: currentContent, feedback: trimFeedback,
-                word_target: section.word_target, section_title: section.title,
-                model: selectedModel, settings,
-              }),
-            });
-            if (trimResp.ok && trimResp.body) {
-              const trimReader = trimResp.body.getReader();
-              const trimDecoder = new TextDecoder();
-              let trimBuffer = "";
-              let trimContent = "";
-              while (true) {
-                const { done: tDone, value: tValue } = await trimReader.read();
-                if (tDone) break;
-                trimBuffer += trimDecoder.decode(tValue, { stream: true });
-                let tIdx: number;
-                while ((tIdx = trimBuffer.indexOf("\n")) !== -1) {
-                  let tLine = trimBuffer.slice(0, tIdx);
-                  trimBuffer = trimBuffer.slice(tIdx + 1);
-                  if (tLine.endsWith("\r")) tLine = tLine.slice(0, -1);
-                  if (!tLine.startsWith("data: ")) continue;
-                  const tJson = tLine.slice(6).trim();
-                  if (tJson === "[DONE]") break;
-                  try {
-                    const tParsed = JSON.parse(tJson);
-                    const tc = tParsed.choices?.[0]?.delta?.content;
-                    if (tc) trimContent += tc;
-                  } catch { /* partial */ }
-                }
-              }
-              if (trimContent) {
-                const trimWc = trimContent.split(/\s+/).filter(Boolean).length;
-                await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", sectionId);
-                setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: trimContent, word_current: trimWc } : s));
-              }
+            const trimContent = await streamTrimSection(currentContent, trimFeedback, section.word_target, section.title, accessToken);
+            if (trimContent) {
+              const trimWc = countWords(trimContent);
+              await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", sectionId);
+              setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: trimContent, word_current: trimWc } : s));
             }
           } catch { /* word count adjustment is best-effort */ }
         }
@@ -601,16 +552,24 @@ const WriterEngine = () => {
   // Dedicated trim function for Writer Slate — trim only, no humanise, no backward nav
   const handleTrimToTarget = async (trimTargets?: Record<string, number>) => {
     setIsProcessing(true);
+
     const session = await supabase.auth.getSession();
-    const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const accessToken = session.data.session?.access_token;
+    if (!accessToken) {
+      toast({ title: "Session expired", description: "Please sign in again.", variant: "destructive" });
+      setIsProcessing(false);
+      return;
+    }
 
     const contentSections = sections.filter(s => s.content);
     const currentTotal = contentSections.reduce((a, s) => a + s.word_current, 0);
     const excess = currentTotal - totalTarget;
     if (excess <= 0) { setIsProcessing(false); toast({ title: "Already within target" }); return; }
 
+    // Track updated word counts locally so the final total is accurate
+    const updatedWordCounts: Record<string, number> = {};
+
     for (const s of contentSections) {
-      // Calculate how many words to trim from this section
       const customTrim = trimTargets?.[s.id];
       const proportionalTrim = Math.ceil(excess * (s.word_current / currentTotal));
       const wordsToRemove = customTrim ?? proportionalTrim;
@@ -620,50 +579,18 @@ const WriterEngine = () => {
       const trimFeedback = `Trim this section from ${s.word_current} to exactly ${targetWc} words. Remove redundant phrases and tighten prose. Do NOT add new content. Do NOT humanise. Preserve all citations exactly.`;
 
       try {
-        const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-          body: JSON.stringify({
-            content: s.content, feedback: trimFeedback,
-            word_target: targetWc, section_title: s.title,
-            model: selectedModel, settings,
-          }),
-        });
-        if (trimResp.ok && trimResp.body) {
-          const trimReader = trimResp.body.getReader();
-          const trimDecoder = new TextDecoder();
-          let trimBuffer = "";
-          let trimContent = "";
-          while (true) {
-            const { done: tDone, value: tValue } = await trimReader.read();
-            if (tDone) break;
-            trimBuffer += trimDecoder.decode(tValue, { stream: true });
-            let tIdx: number;
-            while ((tIdx = trimBuffer.indexOf("\n")) !== -1) {
-              let tLine = trimBuffer.slice(0, tIdx);
-              trimBuffer = trimBuffer.slice(tIdx + 1);
-              if (tLine.endsWith("\r")) tLine = tLine.slice(0, -1);
-              if (!tLine.startsWith("data: ")) continue;
-              const tJson = tLine.slice(6).trim();
-              if (tJson === "[DONE]") break;
-              try {
-                const tParsed = JSON.parse(tJson);
-                const tc = tParsed.choices?.[0]?.delta?.content;
-                if (tc) trimContent += tc;
-              } catch { /* partial */ }
-            }
-          }
-          if (trimContent) {
-            const trimWc = trimContent.split(/\s+/).filter(Boolean).length;
-            await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", s.id);
-            setSections(prev => prev.map(x => x.id === s.id ? { ...x, content: trimContent, word_current: trimWc } : x));
-          }
+        const trimContent = await streamTrimSection(s.content!, trimFeedback, targetWc, s.title, accessToken);
+        if (trimContent) {
+          const trimWc = countWords(trimContent);
+          updatedWordCounts[s.id] = trimWc;
+          await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", s.id);
+          setSections(prev => prev.map(x => x.id === s.id ? { ...x, content: trimContent, word_current: trimWc } : x));
         }
       } catch { /* best-effort trim */ }
     }
 
-    // Check if within 5% — auto-accept if so
-    const newTotal = sections.reduce((a, s) => a + s.word_current, 0);
+    // Use locally-tracked counts to avoid reading stale React state
+    const newTotal = contentSections.reduce((a, s) => a + (updatedWordCounts[s.id] ?? s.word_current), 0);
     if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
     setIsProcessing(false);
     toast({ title: "Word count trimmed" });
@@ -869,170 +796,29 @@ const WriterEngine = () => {
     }
   };
 
-  // ─── Chat with tool-calling ───
-  const executeChatAction = async (toolName: string, args: any) => {
-    const destructiveActions = ["export_document"];
-
-    if (destructiveActions.includes(toolName) && !args.confirmed) {
-      setChatMessages(prev => [...prev, { role: "assistant", content: `⚠️ Confirm export? Reply "yes".` }]);
-      return;
-    }
-
-    switch (toolName) {
-      case "analyse_brief":
-        if (args.brief_text) setBriefText(args.brief_text);
-        setChatMessages(prev => [...prev, { role: "assistant", content: "📝 Analysing brief…" }]);
-        setStage(0);
-        await handleAnalyseBrief();
-        break;
-      case "write_all":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "✍️ Writing all sections…" }]);
-        setStage(2);
-        await handleWriteAll();
-        break;
-      case "write_section":
-        const secQuery = (args.section_title || "").toLowerCase();
-        const sec = sections.find(s => s.title.toLowerCase() === secQuery) ||
-          sections.find(s => s.title.toLowerCase().includes(secQuery));
-        if (sec) {
-          setChatMessages(prev => [...prev, { role: "assistant", content: `✍️ Writing "${sec.title}"…` }]);
-          setStage(2);
-          await streamSection(sec.id);
-        } else {
-          setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Section "${args.section_title}" not found.` }]);
-        }
-        break;
-      case "run_critique":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "🔍 Running critique…" }]);
-        setStage(3);
-        await handleQualityCheck();
-        break;
-      case "humanise_all":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "🎭 Humanising…" }]);
-        setStage(2);
-        for (const s of sections.filter(s => s.content)) {
-          try {
-            const { data } = await supabase.functions.invoke("humanise", {
-              body: { content: s.content, word_target: s.word_target, mode: "full", model: selectedModel, voice_perspective: settings.firstPerson ? "first" : "third" },
-            });
-            if (data?.humanised_content) {
-              const wc = data.humanised_content.split(/\s+/).filter(Boolean).length;
-              await supabase.from("sections").update({ content: data.humanised_content, word_current: wc }).eq("id", s.id);
-              setSections(prev => prev.map(x => x.id === s.id ? { ...x, content: data.humanised_content, word_current: wc } : x));
-            }
-          } catch { /* skip */ }
-        }
-        break;
-      case "export_document":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "📥 Exporting…" }]);
-        setStage(8);
-        await handleExport();
-        break;
-      case "apply_revision":
-        const revSec = sections.find(s => s.title.toLowerCase().includes((args.section_title || "").toLowerCase()));
-        if (revSec) {
-          setChatMessages(prev => [...prev, { role: "assistant", content: `📝 Revising "${revSec.title}"…` }]);
-          setStage(4);
-          await streamSection(revSec.id, true, args.feedback);
-        }
-        break;
-      case "generate_images":
-        setChatMessages(prev => [...prev, { role: "assistant", content: "🖼️ Generating images…" }]);
-        setStage(2);
-        await handleGenerateImages();
-        break;
-    }
-  };
-
-  const handleChatSend = async () => {
-    if (!chatInput.trim() || chatLoading) return;
-    const userMsg = { role: "user" as const, content: chatInput };
-    setChatMessages(prev => [...prev, userMsg]);
-    setChatInput("");
-    setChatLoading(true);
-    let assistantSoFar = "";
-    let toolCallsBuffer: any[] = [];
-
-    try {
-      const session = await supabase.auth.getSession();
-      const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-      const resp = await fetch(`${CHAT_URL}/zoe-chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          messages: [...chatMessages, userMsg],
-          section_content: sections.find(s => s.content)?.content || "",
-          assessment_title: assessment?.title || "",
-          sections_summary: sections.map(s => `${s.title} (${s.status}, ${s.word_current}w)`).join(", "),
-          model: selectedModel,
-        }),
-      });
-      if (!resp.ok || !resp.body) throw new Error("Chat failed");
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buffer.indexOf("\n")) !== -1) {
-          let line = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              assistantSoFar += content;
-              setChatMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last?.role === "assistant") return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
-                return [...prev, { role: "assistant", content: assistantSoFar }];
-              });
-            }
-            const toolCalls = parsed.choices?.[0]?.delta?.tool_calls;
-            if (toolCalls) {
-              for (const tc of toolCalls) {
-                if (tc.index !== undefined) {
-                  if (!toolCallsBuffer[tc.index]) toolCallsBuffer[tc.index] = { name: "", arguments: "" };
-                  if (tc.function?.name) toolCallsBuffer[tc.index].name = tc.function.name;
-                  if (tc.function?.arguments) toolCallsBuffer[tc.index].arguments += tc.function.arguments;
-                }
-              }
-            }
-          } catch { /* partial */ }
-        }
-      }
-
-      for (const tc of toolCallsBuffer) {
-        if (tc.name) {
-          try {
-            const args = tc.arguments ? JSON.parse(tc.arguments) : {};
-            await executeChatAction(tc.name, args);
-          } catch (e: any) {
-            setChatMessages(prev => [...prev, { role: "assistant", content: `Action "${tc.name}" failed: ${e?.message || "unknown error"}` }]);
-          }
-        }
-      }
-    } catch (e: any) {
-      setChatMessages(prev => [...prev, { role: "assistant", content: `Sorry, an error occurred: ${e?.message || "unknown error"}` }]);
-    }
-    setChatLoading(false);
-  };
-
-  const handleChatFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadedFiles(prev => [...prev, file]);
-    setActiveIntakeMode("upload");
-    setChatMessages(prev => [...prev, { role: "user", content: `📎 Uploaded: ${file.name}` }]);
-    setChatMessages(prev => [...prev, { role: "assistant", content: `Received "${file.name}". Say "analyse my brief" to process it.` }]);
-  };
+  // ─── Chat ────────────────────────────────────────────────────────────────────
+  const {
+    chatOpen, setChatOpen,
+    chatMessages, chatInput, setChatInput,
+    chatLoading, chatEndRef,
+    handleChatSend, handleChatFileUpload,
+  } = useWriterChat({
+    sections,
+    assessment,
+    settings,
+    selectedModel,
+    setBriefText,
+    setStage,
+    setUploadedFiles,
+    setActiveIntakeMode,
+    streamSection,
+    handleAnalyseBrief,
+    handleWriteAll,
+    handleQualityCheck,
+    handleEditProofread,
+    handleGenerateImages,
+    handleExport,
+  });
 
   const canAdvance = (targetStage: number) => {
     if (targetStage <= stage) return true;
