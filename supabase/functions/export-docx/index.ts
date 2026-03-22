@@ -96,9 +96,10 @@ function parseContentLine(line: string): Paragraph | null {
     });
   }
 
-  // Regular paragraph with inline formatting
+  // Regular paragraph with inline formatting — justified
   return new Paragraph({
     spacing: { after: 200, line: 360 },
+    alignment: AlignmentType.JUSTIFIED,
     children: parseInlineFormatting(trimmed),
   });
 }
