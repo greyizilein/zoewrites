@@ -352,6 +352,64 @@ const WriterEngine = () => {
         } catch { /* optional */ }
       }
 
+      // Word count enforcement: auto-trim/expand if outside ±1% of target
+      {
+        const latestSection = sections.find(s => s.id === sectionId);
+        const currentContent = latestSection?.content || fullContent;
+        const currentWc = currentContent.split(/\s+/).filter(Boolean).length;
+        const floor = section.word_target;
+        const ceiling = Math.ceil(section.word_target * 1.01);
+        if (currentWc < floor || currentWc > ceiling) {
+          const trimFeedback = currentWc > ceiling
+            ? `Trim this section to exactly ${section.word_target} words. Remove redundant phrases, tighten prose. Do NOT add new content.`
+            : `Expand this section to exactly ${section.word_target} words. Add depth and analysis where appropriate.`;
+          try {
+            toast({ title: "Adjusting word count…", description: section.title });
+            const session = await supabase.auth.getSession();
+            const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+            const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+              body: JSON.stringify({
+                content: currentContent, feedback: trimFeedback,
+                word_target: section.word_target, section_title: section.title,
+                model: selectedModel, settings,
+              }),
+            });
+            if (trimResp.ok && trimResp.body) {
+              const trimReader = trimResp.body.getReader();
+              const trimDecoder = new TextDecoder();
+              let trimBuffer = "";
+              let trimContent = "";
+              while (true) {
+                const { done: tDone, value: tValue } = await trimReader.read();
+                if (tDone) break;
+                trimBuffer += trimDecoder.decode(tValue, { stream: true });
+                let tIdx: number;
+                while ((tIdx = trimBuffer.indexOf("\n")) !== -1) {
+                  let tLine = trimBuffer.slice(0, tIdx);
+                  trimBuffer = trimBuffer.slice(tIdx + 1);
+                  if (tLine.endsWith("\r")) tLine = tLine.slice(0, -1);
+                  if (!tLine.startsWith("data: ")) continue;
+                  const tJson = tLine.slice(6).trim();
+                  if (tJson === "[DONE]") break;
+                  try {
+                    const tParsed = JSON.parse(tJson);
+                    const tc = tParsed.choices?.[0]?.delta?.content;
+                    if (tc) trimContent += tc;
+                  } catch { /* partial */ }
+                }
+              }
+              if (trimContent) {
+                const trimWc = trimContent.split(/\s+/).filter(Boolean).length;
+                await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", sectionId);
+                setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: trimContent, word_current: trimWc } : s));
+              }
+            }
+          } catch { /* word count adjustment is best-effort */ }
+        }
+      }
+
       toast({ title: "Section complete", description: `${section.title} — ${wordCount} words.` });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
