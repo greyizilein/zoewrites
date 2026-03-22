@@ -685,15 +685,23 @@ const WriterEngine = () => {
     setTimeout(() => { document.body.removeChild(a); if (typeof blobOrUrl !== "string") URL.revokeObjectURL(href); }, 200);
   };
 
-  const handleExport = async () => {
+  const handleExport = async (details?: SubmissionDetails, font?: string) => {
+    if (details) setSubmissionDetails(details);
+    if (font) setSelectedFont(font);
     setIsProcessing(true);
+    setProgressMessage("Exporting document…");
     const assessmentId = assessment?.id || id;
     const fallbackName = `${(assessment?.title || "Assessment").replace(/[^a-zA-Z0-9\s_-]/g, "").replace(/\s+/g, "_")}_FINAL.docx`;
     const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     const attemptExport = async (preferInline = false) => {
       const { data, error } = await supabase.functions.invoke("export-docx", {
-        body: { assessment_id: assessmentId, prefer_inline: preferInline },
+        body: {
+          assessment_id: assessmentId,
+          prefer_inline: preferInline,
+          submission_details: details || submissionDetails,
+          font: font || selectedFont,
+        },
       });
       if (error) throw new Error(error.message || "Export failed");
       if (data?.success === false) throw new Error(data.error || "Export failed");
