@@ -567,17 +567,75 @@ const WriterEngine = () => {
     setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: prior.content!, word_current: prior.word_current } : s));
   };
 
-  const handleTrimToTarget = async () => {
+  // Dedicated trim function for Writer Slate — trim only, no humanise, no backward nav
+  const handleTrimToTarget = async (trimTargets?: Record<string, number>) => {
     setIsProcessing(true);
-    const diff = totalWords - totalTarget;
-    const feedback = diff > 0
-      ? `Trim exactly ${diff} words from the document while maintaining quality and flow. Remove redundant phrases and tighten prose.`
-      : `Expand the document by exactly ${Math.abs(diff)} words. Add depth, examples, or analysis where appropriate.`;
-    for (const s of sections.filter(s => s.content)) {
-      await streamSection(s.id, true, feedback);
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+    const contentSections = sections.filter(s => s.content);
+    const currentTotal = contentSections.reduce((a, s) => a + s.word_current, 0);
+    const excess = currentTotal - totalTarget;
+    if (excess <= 0) { setIsProcessing(false); toast({ title: "Already within target" }); return; }
+
+    for (const s of contentSections) {
+      // Calculate how many words to trim from this section
+      const customTrim = trimTargets?.[s.id];
+      const proportionalTrim = Math.ceil(excess * (s.word_current / currentTotal));
+      const wordsToRemove = customTrim ?? proportionalTrim;
+      if (wordsToRemove <= 0) continue;
+
+      const targetWc = Math.max(s.word_current - wordsToRemove, Math.floor(s.word_target * 0.95));
+      const trimFeedback = `Trim this section from ${s.word_current} to exactly ${targetWc} words. Remove redundant phrases and tighten prose. Do NOT add new content. Do NOT humanise. Preserve all citations exactly.`;
+
+      try {
+        const trimResp = await fetch(`${CHAT_URL}/section-revise`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({
+            content: s.content, feedback: trimFeedback,
+            word_target: targetWc, section_title: s.title,
+            model: selectedModel, settings,
+          }),
+        });
+        if (trimResp.ok && trimResp.body) {
+          const trimReader = trimResp.body.getReader();
+          const trimDecoder = new TextDecoder();
+          let trimBuffer = "";
+          let trimContent = "";
+          while (true) {
+            const { done: tDone, value: tValue } = await trimReader.read();
+            if (tDone) break;
+            trimBuffer += trimDecoder.decode(tValue, { stream: true });
+            let tIdx: number;
+            while ((tIdx = trimBuffer.indexOf("\n")) !== -1) {
+              let tLine = trimBuffer.slice(0, tIdx);
+              trimBuffer = trimBuffer.slice(tIdx + 1);
+              if (tLine.endsWith("\r")) tLine = tLine.slice(0, -1);
+              if (!tLine.startsWith("data: ")) continue;
+              const tJson = tLine.slice(6).trim();
+              if (tJson === "[DONE]") break;
+              try {
+                const tParsed = JSON.parse(tJson);
+                const tc = tParsed.choices?.[0]?.delta?.content;
+                if (tc) trimContent += tc;
+              } catch { /* partial */ }
+            }
+          }
+          if (trimContent) {
+            const trimWc = trimContent.split(/\s+/).filter(Boolean).length;
+            await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", s.id);
+            setSections(prev => prev.map(x => x.id === s.id ? { ...x, content: trimContent, word_current: trimWc } : x));
+          }
+        }
+      } catch { /* best-effort trim */ }
     }
+
+    // Check if within 5% — auto-accept if so
+    const newTotal = sections.reduce((a, s) => a + s.word_current, 0);
+    if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
     setIsProcessing(false);
-    toast({ title: "Word count adjusted" });
+    toast({ title: "Word count trimmed" });
   };
 
   // ─── STAGE 7: Final Scan ───
