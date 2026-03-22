@@ -60,6 +60,8 @@ const WriterEngine = () => {
   const [editReport, setEditReport] = useState<any>(null);
   const [scanReport, setScanReport] = useState<any>(null);
   const [revisionFeedback, setRevisionFeedback] = useState<string>("");
+  const [editDiffs, setEditDiffs] = useState<EditDiff[]>([]);
+  const [priorSections, setPriorSections] = useState<Section[]>([]);
 
   const [briefText, setBriefText] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
