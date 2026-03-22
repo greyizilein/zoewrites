@@ -1,8 +1,19 @@
 import { useState } from "react";
-import { Loader2, Check, Zap, ChevronDown, Sparkles, ImagePlus, Image } from "lucide-react";
+import { Loader2, Check, Zap, ChevronDown, Sparkles, ImagePlus, Image, X } from "lucide-react";
 import PersonalisePanel from "./PersonalisePanel";
 import StickyFooter from "./StickyFooter";
 import { Section, WriterSettings, aiModels } from "./types";
+
+interface ImageVariant {
+  section_id: string;
+  section_title: string;
+  figure_number: number;
+  variant: number;
+  caption: string;
+  url: string;
+  image_type: string;
+  selected: boolean;
+}
 
 interface Props {
   sections: Section[];
@@ -19,6 +30,10 @@ interface Props {
   onNext: () => void;
   settings: WriterSettings;
   onSettingsChange: (s: WriterSettings) => void;
+  imageVariants?: ImageVariant[];
+  onSelectImage?: (variant: ImageVariant) => void;
+  imagesSkipped?: boolean;
+  onSkipImages?: () => void;
 }
 
 const IMAGE_SUGGESTIONS: Record<string, string[]> = {
@@ -43,7 +58,8 @@ function getSuggestedImages(title: string): string[] {
 export default function StageWriteHumanise({
   sections, onGenerate, onWriteAll, onAutopilot, onGenerateImages,
   autopilotRunning, generating, generatingId, streamContent, writingAll,
-  onBack, onNext, settings, onSettingsChange,
+  onBack, onNext, settings, onSettingsChange, imageVariants, onSelectImage,
+  imagesSkipped, onSkipImages,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showImagePanel, setShowImagePanel] = useState(false);
@@ -54,6 +70,15 @@ export default function StageWriteHumanise({
   const completedCount = sections.filter(s => s.status === "complete").length;
   const allComplete = completedCount === sections.length && sections.length > 0;
   const progress = totalTarget > 0 ? Math.round((totalWords / totalTarget) * 100) : 0;
+
+  // Group image variants by section
+  const variantsBySection = (imageVariants || []).reduce<Record<string, ImageVariant[]>>((acc, v) => {
+    if (!acc[v.section_id]) acc[v.section_id] = [];
+    acc[v.section_id].push(v);
+    return acc;
+  }, {});
+  const hasUnselectedImages = imageVariants && imageVariants.length > 0 && !imageVariants.some(v => v.selected);
+  const imagesGated = allComplete && hasUnselectedImages && !imagesSkipped;
 
   const statusDot = (status: string) => {
     if (status === "complete") return "bg-sage";
@@ -161,6 +186,53 @@ export default function StageWriteHumanise({
         </div>
       )}
 
+      {/* Image Selection (when variants are available) */}
+      {imageVariants && imageVariants.length > 0 && onSelectImage && (
+        <div className="border border-dusty-purple/20 bg-dusty-purple/5 rounded-xl p-3.5 mb-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center gap-2">
+              <Image size={14} className="text-dusty-purple" />
+              <span className="text-[13px] font-semibold">Select Images</span>
+            </div>
+            {onSkipImages && (
+              <button onClick={onSkipImages} className="text-[11px] text-muted-foreground hover:underline">Skip images</button>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground mb-3">Choose one variant per section to include in your document:</p>
+          {Object.entries(variantsBySection).map(([sectionId, variants]) => (
+            <div key={sectionId} className="mb-4 last:mb-0">
+              <p className="text-[12px] font-semibold mb-2">{variants[0]?.section_title}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {variants.map(v => (
+                  <button
+                    key={`${v.section_id}-${v.variant}`}
+                    onClick={() => onSelectImage(v)}
+                    className={`relative rounded-lg border-2 overflow-hidden transition-all active:scale-[0.97] ${
+                      v.selected ? "border-dusty-purple ring-1 ring-dusty-purple/30" : "border-border hover:border-dusty-purple/40"
+                    }`}
+                  >
+                    <img
+                      src={v.url}
+                      alt={v.caption}
+                      className="w-full h-24 sm:h-32 object-cover"
+                      loading="lazy"
+                    />
+                    <div className="px-2 py-1 bg-card text-[10px] text-muted-foreground truncate">
+                      {v.image_type === "diagram" ? "📊 Diagram" : "📈 Chart"}
+                    </div>
+                    {v.selected && (
+                      <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-dusty-purple flex items-center justify-center">
+                        <Check size={10} className="text-white" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <PersonalisePanel
         title="Personalise Writing"
         fields={[
@@ -246,7 +318,14 @@ export default function StageWriteHumanise({
         })}
       </div>
 
-      <StickyFooter leftLabel="← Plan" onLeft={onBack} rightLabel="Self-Critique →" onRight={onNext} />
+      {/* Gate: must select images or skip before proceeding */}
+      {imagesGated && (
+        <div className="mt-4 bg-terracotta/5 border border-terracotta/20 rounded-[10px] px-3.5 py-3 text-center">
+          <p className="text-[12px] text-terracotta font-medium">Select images above or skip to continue →</p>
+        </div>
+      )}
+
+      <StickyFooter leftLabel="← Plan" onLeft={onBack} rightLabel={imagesGated ? undefined : "Self-Critique →"} onRight={imagesGated ? undefined : onNext} />
     </div>
   );
 }
