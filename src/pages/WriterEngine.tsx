@@ -464,41 +464,38 @@ const WriterEngine = () => {
     }
   };
 
-  // ─── STAGE 4: Edit & Proofread ───
+  // ─── STAGE 4: Edit & Proofread (per-section) ───
   const handleEditProofread = async () => {
-    const allContent = sections.filter(s => s.content).map(s => `## ${s.title}\n${s.content}`).join("\n\n");
-    if (!allContent) { toast({ title: "No content", variant: "destructive" }); return; }
+    const contentSections = sections.filter(s => s.content);
+    if (contentSections.length === 0) { toast({ title: "No content", variant: "destructive" }); return; }
 
     try {
-      const { data, error } = await supabase.functions.invoke("edit-proofread", {
-        body: { content: allContent, model: selectedModel },
-      });
-      if (error) throw error;
-      setEditReport(data);
+      const diffs: EditDiff[] = [];
+      let totalCorrections = 0;
 
-      // Build diffs instead of auto-applying
-      if (data?.corrected_content) {
-        const correctedSections = data.corrected_content.split(/^## /m).filter(Boolean);
-        const diffs: EditDiff[] = [];
-        for (const cs of correctedSections) {
-          const titleEnd = cs.indexOf("\n");
-          const title = cs.slice(0, titleEnd).trim();
-          const content = cs.slice(titleEnd + 1).trim();
-          const section = sections.find(s => s.title === title);
-          if (section && section.content) {
-            diffs.push({
-              sectionId: section.id,
-              sectionTitle: section.title,
-              original: section.content,
-              corrected: content,
-              accepted: null,
-            });
-          }
+      for (const section of contentSections) {
+        const { data, error } = await supabase.functions.invoke("edit-proofread", {
+          body: { content: section.content, model: selectedModel },
+        });
+        if (error) throw error;
+
+        const corrected = data?.corrected_content || section.content;
+        totalCorrections += data?.corrections_count || 0;
+
+        if (corrected !== section.content) {
+          diffs.push({
+            sectionId: section.id,
+            sectionTitle: section.title,
+            original: section.content!,
+            corrected,
+            accepted: null,
+          });
         }
-        setEditDiffs(diffs);
       }
 
-      return data;
+      setEditReport({ corrections_count: totalCorrections, summary: `${totalCorrections} corrections across ${diffs.length} sections` });
+      setEditDiffs(diffs);
+      return { corrections_count: totalCorrections };
     } catch (e: any) {
       toast({ title: "Edit failed", description: e.message, variant: "destructive" });
       throw e;
@@ -542,7 +539,12 @@ const WriterEngine = () => {
 
   // ─── STAGE 6: Writer Slate actions ───
   const handleAcceptAll = async () => {
-    // Keep current sections — just confirm
+    // Update assessment word count in DB
+    const newTotal = sections.reduce((a, s) => a + s.word_current, 0);
+    if (assessment?.id) {
+      await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
+    }
+    setPriorSections([]); // Clear prior — changes are now canonical
     toast({ title: "All changes accepted" });
   };
 
@@ -1033,7 +1035,16 @@ const WriterEngine = () => {
                   onRunCritique={handleQualityCheck}
                   qualityReport={qualityReport}
                   totalWords={totalWords} totalTarget={totalTarget}
-                  onBack={() => setStage(2)} onNext={() => setStage(4)}
+                  onBack={() => setStage(2)}
+                  onNext={() => {
+                    // Auto-feed critique issues into revision feedback
+                    const issues = qualityReport?.report?.issues || [];
+                    if (issues.length > 0) {
+                      const feedback = issues.map((i: any) => `[${i.severity}] ${i.description} → ${i.suggestion}`).join("\n");
+                      setRevisionFeedback(feedback);
+                    }
+                    setStage(4);
+                  }}
                 />
               )}
               {stage === 4 && (

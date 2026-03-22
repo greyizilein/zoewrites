@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { Check, X, ChevronDown, AlertTriangle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Check, X, ChevronDown, AlertTriangle, Loader2 } from "lucide-react";
 import StickyFooter from "./StickyFooter";
+import ChecklistAnimation from "./ChecklistAnimation";
 import { Section } from "./types";
 
 interface Props {
@@ -17,9 +18,23 @@ interface Props {
   isProcessing: boolean;
 }
 
+const acceptChecklist = [
+  "Applying accepted changes…",
+  "Updating word counts…",
+  "Confirming document state…",
+];
+
+const denyChecklist = [
+  "Reverting to prior version…",
+  "Restoring section content…",
+  "Confirming rollback…",
+];
+
 export default function StageWriterSlate({ sections, priorSections, totalTarget, onAcceptAll, onDenyAll, onAcceptSection, onDenySection, onTrimToTarget, onBack, onNext, isProcessing }: Props) {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [resolvedSections, setResolvedSections] = useState<Record<string, "accepted" | "denied">>({});
+  const [animating, setAnimating] = useState<"accept" | "deny" | null>(null);
+  const [animDone, setAnimDone] = useState(false);
 
   const totalWords = sections.reduce((a, s) => a + s.word_current, 0);
   const diff = totalWords - totalTarget;
@@ -27,6 +42,18 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
   const isOverTarget = diff > 0;
   const overOnePercent = Math.abs(diff) > totalTarget * 0.01;
   const hasPrior = priorSections.length > 0;
+
+  // Auto-advance after animation completes
+  useEffect(() => {
+    if (animDone) {
+      const timer = setTimeout(() => {
+        setAnimating(null);
+        setAnimDone(false);
+        onNext();
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [animDone, onNext]);
 
   const handleAcceptSection = (sectionId: string) => {
     onAcceptSection(sectionId);
@@ -38,21 +65,49 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
     setResolvedSections(prev => ({ ...prev, [sectionId]: "denied" }));
   };
 
-  const handleAcceptAll = () => {
-    onAcceptAll();
+  const handleAcceptAll = async () => {
+    setAnimating("accept");
+    await onAcceptAll();
     const all: Record<string, "accepted"> = {};
     sections.forEach(s => { all[s.id] = "accepted"; });
     setResolvedSections(all);
   };
 
-  const handleDenyAll = () => {
-    onDenyAll();
+  const handleDenyAll = async () => {
+    setAnimating("deny");
+    await onDenyAll();
     const all: Record<string, "denied"> = {};
     sections.forEach(s => { all[s.id] = "denied"; });
     setResolvedSections(all);
   };
 
   const pendingCount = sections.filter(s => !resolvedSections[s.id]).length;
+
+  // If animating, show the checklist
+  if (animating) {
+    return (
+      <div>
+        <div className="mb-6">
+          <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 7 of 10</p>
+          <h1 className="text-[22px] sm:text-[28px] font-bold tracking-tight mb-1.5">Writer Slate</h1>
+        </div>
+        <div className="border border-border rounded-xl p-4 mb-4">
+          <ChecklistAnimation
+            items={animating === "accept" ? acceptChecklist : denyChecklist}
+            running={!animDone}
+            onComplete={() => setAnimDone(true)}
+          />
+        </div>
+        {animDone && (
+          <div className="bg-sage/10 border border-sage/20 rounded-[10px] px-3.5 py-3 text-center animate-in fade-in duration-300">
+            <span className="text-[13px] text-sage font-semibold">
+              {animating === "accept" ? "✓ All changes applied — advancing to Final Scan…" : "✓ Reverted to prior version — advancing…"}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -91,7 +146,7 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
               disabled={isProcessing}
               className="text-[11px] text-white bg-terracotta px-2.5 py-1 rounded-md font-medium hover:bg-terracotta/90 disabled:opacity-50 active:scale-95 transition-all"
             >
-              {isOverTarget ? `Auto-trim →` : `Auto-expand →`}
+              {isProcessing ? <Loader2 size={11} className="animate-spin" /> : isOverTarget ? `Auto-trim →` : `Auto-expand →`}
             </button>
           </div>
         )}
@@ -156,16 +211,16 @@ export default function StageWriterSlate({ sections, priorSections, totalTarget,
                     }`}>
                       {status === "accepted" ? "✓" : "✗"}
                     </span>
-                  ) : hasPrior ? (
+                  ) : (
                     <div className="flex gap-0.5" onClick={e => e.stopPropagation()}>
                       <button onClick={() => handleAcceptSection(s.id)} className="w-6 h-6 rounded bg-sage/15 text-sage flex items-center justify-center hover:bg-sage/25 active:scale-95">
                         <Check size={11} />
                       </button>
-                      <button onClick={() => handleDenySection(s.id)} className="w-6 h-6 rounded bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 active:scale-95">
+                      <button onClick={() => handleDenySection(s.id)} disabled={!hasPrior} className="w-6 h-6 rounded bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 active:scale-95 disabled:opacity-30">
                         <X size={11} />
                       </button>
                     </div>
-                  ) : null}
+                  )}
                   <ChevronDown size={14} className={`text-muted-foreground transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""}`} />
                 </div>
               </button>
