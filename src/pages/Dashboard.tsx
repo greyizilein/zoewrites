@@ -136,20 +136,38 @@ const Dashboard = () => {
       {/* Main */}
       <div className="flex-1">
         <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40 md:hidden">
-          <div className="px-6 h-14 flex items-center justify-between">
+          <div className="px-4 h-14 flex items-center justify-between">
             <Link to="/" className="flex items-center">
               <span className="text-xl font-extrabold text-foreground tracking-tight">ZOE</span>
             </Link>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-terracotta/15 flex items-center justify-center text-xs font-semibold text-terracotta">{initials}</div>
-              <Button variant="ghost" size="icon" onClick={handleSignOut} className="text-muted-foreground hover:text-foreground">
-                <LogOut size={16} />
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-8 h-8 rounded-full bg-terracotta/15 flex items-center justify-center text-xs font-semibold text-terracotta active:scale-95 transition-transform">
+                  {initials}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <div className="px-3 py-2 border-b border-border">
+                  <p className="text-sm font-medium text-foreground truncate">{userName}</p>
+                  <p className="text-[11px] text-muted-foreground capitalize">{profile?.tier || "free"} tier</p>
+                </div>
+                <DropdownMenuItem asChild>
+                  <Link to="/analytics" className="flex items-center gap-2">
+                    <BarChart3 size={14} /> Analytics
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="flex items-center gap-2">
+                  <Settings size={14} /> Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOut} className="flex items-center gap-2 text-destructive focus:text-destructive">
+                  <LogOut size={14} /> Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
-        <main className="max-w-5xl mx-auto px-6 py-10">
+        <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -172,7 +190,7 @@ const Dashboard = () => {
           </motion.div>
 
           {/* KPI strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6 sm:mb-8">
             {[
               { label: "Words Left", value: wordsLeft.toLocaleString(), sub: `of ${wordLimit.toLocaleString()}`, color: "text-terracotta" },
               { label: "Assessments", value: assessments.length, sub: `${completedCount} complete`, color: "text-muted-blue" },
@@ -184,11 +202,11 @@ const Dashboard = () => {
                 initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
                 animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                 transition={{ duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                className="p-4 rounded-xl border border-border bg-card"
+                className="p-3 sm:p-4 rounded-xl border border-border bg-card"
               >
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">{kpi.label}</p>
-                <p className={`text-xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
-                <p className="text-[11px] text-muted-foreground">{kpi.sub}</p>
+                <p className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">{kpi.label}</p>
+                <p className={`text-base sm:text-xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground">{kpi.sub}</p>
               </motion.div>
             ))}
           </div>
@@ -198,7 +216,7 @@ const Dashboard = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.25 }}
-            className="p-4 rounded-xl border border-border bg-card mb-8"
+            className="p-3 sm:p-4 rounded-xl border border-border bg-card mb-6 sm:mb-8"
           >
             <div className="flex justify-between items-center mb-2">
               <span className="text-[13px] font-semibold">Word Budget</span>
