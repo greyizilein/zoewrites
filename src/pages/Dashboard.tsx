@@ -220,22 +220,34 @@ const Dashboard = () => {
           </div>
 
           {/* Word budget bar */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.25 }}
-            className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8"
-          >
-            <div className="flex justify-between items-center mb-1.5 sm:mb-2">
+          {isUnlimited ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+              className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8 flex items-center justify-between"
+            >
               <span className="text-[11px] sm:text-[13px] font-semibold">Word Budget</span>
-              <span className="font-mono text-[10px] sm:text-[12px] text-muted-foreground">{formatCompact(wordsUsed)} / {formatCompact(wordLimit)}</span>
-            </div>
-            <Progress value={wordUsagePercent} className="h-1.5 sm:h-2" />
-            <div className="flex justify-between mt-1 sm:mt-1.5 text-[9px] sm:text-[11px] text-muted-foreground">
-              <span>{wordUsagePercent}%</span>
-              <span className="capitalize">{profile?.tier}</span>
-            </div>
-          </motion.div>
+              <span className="text-[10px] sm:text-[12px] text-muted-foreground capitalize">Unlimited · {profile?.tier} plan</span>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+              className="p-2.5 sm:p-4 rounded-lg sm:rounded-xl border border-border bg-card mb-4 sm:mb-8"
+            >
+              <div className="flex justify-between items-center mb-1.5 sm:mb-2">
+                <span className="text-[11px] sm:text-[13px] font-semibold">Word Budget</span>
+                <span className="font-mono text-[10px] sm:text-[12px] text-muted-foreground">{formatCompact(wordsUsed)} / {formatCompact(wordLimit)}</span>
+              </div>
+              <Progress value={wordUsagePercent} className="h-1.5 sm:h-2" />
+              <div className="flex justify-between mt-1 sm:mt-1.5 text-[9px] sm:text-[11px] text-muted-foreground">
+                <span>{wordUsagePercent}%</span>
+                <span className="capitalize">{profile?.tier}</span>
+              </div>
+            </motion.div>
+          )}
 
           {/* Recent Activity */}
           {assessments.length > 0 && (
