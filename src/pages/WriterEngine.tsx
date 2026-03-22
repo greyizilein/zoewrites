@@ -418,20 +418,26 @@ const WriterEngine = () => {
       if (error) throw error;
       setEditReport(data);
 
-      // Apply corrected content back to sections
+      // Build diffs instead of auto-applying
       if (data?.corrected_content) {
         const correctedSections = data.corrected_content.split(/^## /m).filter(Boolean);
+        const diffs: EditDiff[] = [];
         for (const cs of correctedSections) {
           const titleEnd = cs.indexOf("\n");
           const title = cs.slice(0, titleEnd).trim();
           const content = cs.slice(titleEnd + 1).trim();
           const section = sections.find(s => s.title === title);
-          if (section) {
-            const wc = content.split(/\s+/).filter(Boolean).length;
-            await supabase.from("sections").update({ content, word_current: wc }).eq("id", section.id);
-            setSections(prev => prev.map(s => s.id === section.id ? { ...s, content, word_current: wc } : s));
+          if (section && section.content) {
+            diffs.push({
+              sectionId: section.id,
+              sectionTitle: section.title,
+              original: section.content,
+              corrected: content,
+              accepted: null,
+            });
           }
         }
+        setEditDiffs(diffs);
       }
 
       return data;
@@ -439,6 +445,23 @@ const WriterEngine = () => {
       toast({ title: "Edit failed", description: e.message, variant: "destructive" });
       throw e;
     }
+  };
+
+  const handleAcceptEdits = async (sectionIds: string[]) => {
+    for (const sid of sectionIds) {
+      const diff = editDiffs.find(d => d.sectionId === sid);
+      if (!diff) continue;
+      const wc = diff.corrected.split(/\s+/).filter(Boolean).length;
+      await supabase.from("sections").update({ content: diff.corrected, word_current: wc }).eq("id", sid);
+      setSections(prev => prev.map(s => s.id === sid ? { ...s, content: diff.corrected, word_current: wc } : s));
+    }
+    setEditDiffs(prev => prev.map(d => sectionIds.includes(d.sectionId) ? { ...d, accepted: true } : d));
+    toast({ title: `${sectionIds.length} edit(s) accepted` });
+  };
+
+  const handleDenyEdits = (sectionIds: string[]) => {
+    setEditDiffs(prev => prev.map(d => sectionIds.includes(d.sectionId) ? { ...d, accepted: false } : d));
+    toast({ title: `${sectionIds.length} edit(s) denied` });
   };
 
   // ─── STAGE 5: Apply revisions ───
