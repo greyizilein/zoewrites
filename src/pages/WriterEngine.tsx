@@ -1151,7 +1151,6 @@ const WriterEngine = () => {
                   onApplyCorrections={handleManualCorrections}
                   onReExport={handleExport}
                   isProcessing={isProcessing}
-                  onBack={() => setStage(8)}
                   assessmentTitle={assessment?.title || "Assessment"}
                 />
               )}
