@@ -38,10 +38,12 @@ export default function StageReview({
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [fixing, setFixing] = useState(false);
+  const [dismissedIssues, setDismissedIssues] = useState<Set<number>>(new Set());
 
   const report = qualityReport?.report;
   const grade = report?.grade || null;
-  const issues: Issue[] = report?.issues || [];
+  const allIssues: Issue[] = report?.issues || [];
+  const issues = allIssues.filter((_, i) => !dismissedIssues.has(i));
   const criticalCount = issues.filter(i => i.severity === "critical").length;
   const warningCount = issues.filter(i => i.severity === "warning").length;
 
@@ -51,12 +53,19 @@ export default function StageReview({
 
   const handleScan = async () => {
     setScanning(true);
+    setDismissedIssues(new Set()); // reset dismissed on fresh scan
     try { await onRunScan(); } finally { setScanning(false); }
   };
 
   const handleFixAll = async () => {
     setFixing(true);
-    try { await onFixAllIssues(); } finally { setFixing(false); }
+    try {
+      await onFixAllIssues();
+      // Dismiss all current issues from the list — they've been addressed
+      setDismissedIssues(new Set(issues.map((_, i) => i)));
+    } finally {
+      setFixing(false);
+    }
   };
 
   const handleSectionRevise = async (sectionId: string) => {

@@ -155,7 +155,10 @@ serve(async (req) => {
     const aiModel = model || "google/gemini-2.5-flash";
     const density = getCitationDensity(section.title);
     const wordsInK = section.word_target / 1000;
-    const citTarget = section.citation_count || Math.round(density.recommended * wordsInK);
+    // Use per-section citation_count, then global override proportional share, then auto density
+    const citTarget = section.citation_count ||
+      (totalCitationsOverride ? Math.round(totalCitationsOverride * wordsInK / Math.max((execution_plan?.total_words || 3000) / 1000, 1)) : null) ||
+      Math.round(density.recommended * wordsInK);
     const citMin = Math.round(density.min * wordsInK);
     const citMax = Math.round(density.max * wordsInK);
 
@@ -170,6 +173,15 @@ serve(async (req) => {
     const sourceDateTo = settings?.sourceDateTo || "2025";
     const useSeminalSources = settings?.useSeminalSources !== false;
     const analysisDepth = settings?.analysisDepth || "Deep Critical";
+    // Content & quality settings
+    const totalCitationsOverride = settings?.totalCitations > 0 ? settings.totalCitations : null;
+    const includeImages = settings?.includeImages !== false;
+    const imageCount = settings?.imageCount || 0;
+    const imageTypes: string[] = settings?.imageTypes || [];
+    const includeTables = settings?.includeTables !== false;
+    const tableCount = settings?.tableCount || 0;
+    const statisticalSourceCount = settings?.statisticalSourceCount || 0;
+    const preferredDataSources: string[] = settings?.preferredDataSources || [];
 
     const levelExpectations = getLevelExpectations(academic_level || "Undergraduate");
     const frameworkRules = getFrameworkRules(section.framework || "");
@@ -212,6 +224,12 @@ SOURCE QUALITY RULES:
 ${useSeminalSources ? "- Seminal/foundational works published before " + sourceDateFrom + " are permitted when they established key theoretical positions. Flag these parenthetically (e.g., 'Porter, 1985 [seminal]')." : "- Do NOT use sources published before " + sourceDateFrom + "."}
 - For APA/Vancouver styles, include DOIs where applicable
 - Prefer sources with high citation counts; avoid obscure or non-peer-reviewed sources unless contextually essential
+${statisticalSourceCount > 0 ? `- Include at least ${Math.ceil(statisticalSourceCount * wordsInK / Math.max((execution_plan?.total_words || 3000) / 1000, 1))} statistical/empirical data sources with real figures and statistics.` : ""}
+${preferredDataSources.length > 0 ? `- PREFERRED DATA SOURCES: Prioritise data and statistics from these organisations: ${preferredDataSources.join(", ")}. Cite them specifically where applicable.` : ""}
+
+CONTENT ELEMENTS:
+${includeImages ? `- FIGURES: ${imageCount > 0 ? `Include approximately ${imageCount} figure${imageCount > 1 ? "s" : ""}` : "Include appropriate figures"} where they add analytical value.${imageTypes.length > 0 ? ` Preferred types: ${imageTypes.join(", ")}.` : ""} For each figure, write a placeholder line: [FIGURE X: Description — type] on its own line, followed by the caption "Figure X: [descriptive title]". Do NOT embed actual image data.` : "- Do NOT reference or include figures/images in this section."}
+${includeTables ? `- TABLES: ${tableCount > 0 ? `Include approximately ${tableCount} formatted table${tableCount > 1 ? "s" : ""}` : "Include tables where data comparison or structured information adds value"}. Use markdown table format (| column | separators |) with clear headers and a caption above ("Table X: [title]").` : "- Avoid tables in this section unless essential for data presentation."}
 
 SENTENCE BURSTINESS (critical for human-like writing):
 - Never write three consecutive sentences of similar length (±5 words)

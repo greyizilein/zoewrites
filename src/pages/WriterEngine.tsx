@@ -1,23 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Menu, ChevronLeft, ChevronRight, Sparkles, X, Send, Loader2, Paperclip } from "lucide-react";
+import { Menu, ChevronLeft, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import JSZip from "jszip";
-import ReactMarkdown from "react-markdown";
 import WriterSidebar from "@/components/writer/WriterSidebar";
 import StageBriefIntake from "@/components/writer/StageBriefIntake";
 import StageExecutionTable from "@/components/writer/StageExecutionTable";
 import StageWrite, { AutoPhase } from "@/components/writer/StageWrite";
 import StageReview from "@/components/writer/StageReview";
 import StageSubmissionPrep, { SubmissionDetails } from "@/components/writer/StageSubmissionPrep";
-import DraggableChatFab from "@/components/writer/DraggableChatFab";
 import ProgressBanner from "@/components/writer/ProgressBanner";
 import { Section, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 import { readContentStream } from "@/lib/sseStream";
 import { countWords, truncateToWordCeiling } from "@/lib/wordCount";
-import { useWriterChat } from "@/hooks/useWriterChat";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -741,30 +738,6 @@ const WriterEngine = () => {
     }
   };
 
-  // ─── Chat ────────────────────────────────────────────────────────────────────
-  const {
-    chatOpen, setChatOpen,
-    chatMessages, chatInput, setChatInput,
-    chatLoading, chatEndRef,
-    handleChatSend, handleChatFileUpload,
-  } = useWriterChat({
-    sections,
-    assessment,
-    settings,
-    selectedModel,
-    setBriefText,
-    setStage,
-    setUploadedFiles,
-    setActiveIntakeMode,
-    streamSection,
-    handleAnalyseBrief,
-    handleWriteAll,
-    handleQualityCheck,
-    handleEditProofread: handleEditProofreadSilent,
-    handleGenerateImages,
-    handleExport,
-  });
-
   const canAdvance = (targetStage: number) => {
     if (targetStage <= stage) return true;
     if (targetStage === 1 && sections.length === 0) return false;
@@ -844,15 +817,7 @@ const WriterEngine = () => {
             ))}
           </div>
 
-          {/* Right: ZOE chat button */}
-          <button
-            onClick={() => setChatOpen(!chatOpen)}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all flex-shrink-0 ${
-              chatOpen ? "bg-terracotta text-white" : "border border-border hover:bg-muted"
-            }`}
-          >
-            <Sparkles size={13} /> <span className="hidden sm:inline">ZOE</span>
-          </button>
+          <div className="w-8 flex-shrink-0" />
         </div>
 
         <div className="flex flex-1 overflow-hidden">
@@ -927,76 +892,9 @@ const WriterEngine = () => {
             </div>
           </div>
 
-          {/* Chat panel */}
-          {chatOpen && (
-            <aside className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col md:static md:inset-auto md:z-auto md:w-80 md:border-l md:border-border md:bg-card/50 md:backdrop-blur-none">
-              <div className="p-3 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={14} className="text-terracotta" />
-                  <span className="text-[12px] font-semibold">Ask ZOE</span>
-                </div>
-                <button onClick={() => setChatOpen(false)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {chatMessages.length === 0 && (
-                  <div className="text-center py-8">
-                    <Sparkles size={24} className="mx-auto text-terracotta/30 mb-3" />
-                    <p className="text-[12px] text-muted-foreground mb-2">Ask ZOE anything about your assessment.</p>
-                    <p className="text-[11px] text-muted-foreground/60">Try: "Write all sections", "Generate images", "Export"</p>
-                  </div>
-                )}
-                {chatMessages.map((msg, i) => (
-                  <div key={i} className={`text-[12px] leading-relaxed ${msg.role === "user" ? "text-right" : ""}`}>
-                    <div className={`inline-block max-w-[90%] p-2.5 rounded-lg ${
-                      msg.role === "user" ? "bg-terracotta text-white rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"
-                    }`}>
-                      {msg.role === "assistant" ? (
-                        <div className="prose prose-sm prose-slate max-w-none [&_p]:mb-1 [&_p]:mt-0 [&_ul]:my-1 [&_ol]:my-1">
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
-                        </div>
-                      ) : (
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {chatLoading && (
-                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                    <Loader2 size={12} className="animate-spin" /> ZOE is thinking…
-                  </div>
-                )}
-                <div ref={chatEndRef} />
-              </div>
-              <div className="p-3 border-t border-border">
-                <div className="flex gap-2">
-                  <label className="flex items-center justify-center w-9 h-9 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer flex-shrink-0">
-                    <Paperclip size={14} className="text-muted-foreground" />
-                    <input type="file" className="hidden" onChange={handleChatFileUpload} accept=".pdf,.docx,.doc,.txt" />
-                  </label>
-                  <input
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleChatSend()}
-                    placeholder="Ask a question…"
-                    className="flex-1 text-[12px] px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-terracotta/30"
-                  />
-                  <button
-                    onClick={handleChatSend}
-                    disabled={chatLoading || !chatInput.trim()}
-                    className="px-3 py-2 bg-terracotta text-white rounded-lg hover:bg-terracotta/90 transition-colors disabled:opacity-50 active:scale-[0.97]"
-                  >
-                    <Send size={12} />
-                  </button>
-                </div>
-              </div>
-            </aside>
-          )}
         </div>
       </div>
 
-      {!chatOpen && (
-        <DraggableChatFab onClick={() => setChatOpen(true)} />
-      )}
     </div>
   );
 };
