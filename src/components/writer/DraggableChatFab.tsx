@@ -73,7 +73,7 @@ const DraggableChatFab: React.FC<DraggableChatFabProps> = ({ onClick }) => {
       onTouchEnd={onTouchEnd}
       onClick={(e) => { e.preventDefault(); }}
       style={{ left: pos.x, top: pos.y, touchAction: "none" }}
-      className="fixed z-40 w-14 h-14 rounded-full bg-terracotta text-white shadow-lg flex items-center justify-center active:scale-[0.95] transition-shadow md:hidden"
+      className="fixed z-40 w-14 h-14 rounded-full bg-terracotta text-white shadow-lg flex items-center justify-center active:scale-[0.95] transition-shadow md:hidden animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]"
     >
       <MessageCircle size={22} />
     </button>
