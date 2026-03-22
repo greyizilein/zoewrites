@@ -164,8 +164,10 @@ const Dashboard = () => {
                     <BarChart3 size={14} /> Analytics
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="flex items-center gap-2">
-                  <Settings size={14} /> Settings
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard" className="flex items-center gap-2">
+                    <Settings size={14} /> Settings
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleSignOut} className="flex items-center gap-2 text-destructive focus:text-destructive">
                   <LogOut size={14} /> Sign Out
