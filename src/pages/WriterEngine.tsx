@@ -353,6 +353,11 @@ const WriterEngine = () => {
         }
       }
 
+      // Harvard citation post-processing: replace & with "and" inside citation parentheses
+      if ((settings.citationStyle || "Harvard") === "Harvard") {
+        finalContent = finalContent.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
+      }
+
       await supabase.from("sections").update({ content: finalContent, word_current: wordCount, status: "complete" }).eq("id", sectionId);
       setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: finalContent, word_current: wordCount, status: "complete" } : s));
 
