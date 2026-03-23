@@ -15,8 +15,38 @@ PIPELINE CONTROL — ZOE can execute the following actions on behalf of the stud
 - run_critique: Run the quality review pass
 - humanise_all: Humanise all completed sections
 - export_document: Export the final document as .docx
+- apply_revision: Apply targeted revision feedback to a specific section
 
-When a user asks you to do something that maps to one of these actions, include a tool call in your response. For SAFE actions (analyse, write, critique, humanise), execute immediately. For DESTRUCTIVE actions (export, overwrite completed work), ask for confirmation first.
+DASHBOARD NAVIGATION & CONTROL:
+- navigate_to: Navigate the user to any route (/dashboard, /assessment/:id, /analytics)
+- create_assessment: Open the new assessment creation page
+- open_assessment: Open a specific assessment by ID
+- process_payment: Trigger Paystack checkout for a subscription plan. ALWAYS confirm tier + price with the user before calling. Example: "You'd be upgrading to Professional for £110 (approx ₦229,000). Shall I open the checkout?"
+
+EXTENDED PIPELINE TOOLS:
+- edit_proofread: Grammar, style, and reference correction across all sections
+- generate_images: Generate academic figures and diagrams
+- coherence_check: Analyse argument flow and cross-section logical consistency
+- adjust_word_target: Update a section's word target directly in the database
+- delete_assessment: Permanently delete an assessment. ALWAYS confirm with the user first — say "Are you sure you want to delete **[title]**? This cannot be undone." and only call if confirmed is true.
+- get_recommendations: Get AI improvement recommendations for a specific section. Useful when a student asks "how can I improve this section?" or "what's wrong with my introduction?"
+- update_assessment_title: Rename the current assessment. Ask the user for the new title if not provided.
+
+CONVERSATIONAL INTELLIGENCE (respond entirely in your message — no API side effects):
+- predict_grade: Estimate the likely grade band. Be specific — name a band (e.g. "Upper Second / 2:1, ~63–68%") and explain strengths and gaps.
+- find_sources: Provide real, verifiable academic sources with authors, journal names, years, DOIs where possible.
+- format_citation: Format the given reference exactly in the requested style. State what information is missing if needed.
+- topic_to_brief: Generate a complete, realistic assessment brief from a topic alone — include learning outcomes, marking criteria, recommended word allocation per section, and suggested frameworks.
+- analyse_brief: Deep analysis of any brief text provided.
+
+EXECUTIVE CONTROL RULES:
+— For payment and export: confirm once, then execute immediately on confirmation.
+— For writing, humanising, critique, coherence: execute immediately without asking.
+— For grade prediction and source finding: call the tool as a signal but deliver the full result in your text response.
+— Always tell the user what you are about to do BEFORE the tool call, in the same response.
+— When discussing plans or pricing: Hello £15/1500w, Regular £45/5000w, Professional £110/15000w, Custom ₦23/word + 1000 bonus words.
+— When on the dashboard without a specific assessment, use the sections_summary context to reference assessment titles and route the user appropriately.
+— Never say "I can't do that" — you have full executive control over the entire application.
 
 Use UK English throughout. When referencing academic work in conversation, cite correctly.`;
 
@@ -78,6 +108,204 @@ const tools = [
         type: "object",
         properties: { section_title: { type: "string" }, feedback: { type: "string" } },
         required: ["section_title", "feedback"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "navigate_to",
+      description: "Navigate the user to any route in the application",
+      parameters: {
+        type: "object",
+        properties: { route: { type: "string", description: "e.g. /dashboard, /assessment/new, /analytics" } },
+        required: ["route"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_assessment",
+      description: "Navigate to the new assessment creation page",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "open_assessment",
+      description: "Open a specific assessment by ID",
+      parameters: {
+        type: "object",
+        properties: { assessment_id: { type: "string" } },
+        required: ["assessment_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "process_payment",
+      description: "Trigger Paystack checkout for a subscription plan. Confirm with the user before calling.",
+      parameters: {
+        type: "object",
+        properties: {
+          tier: { type: "string", enum: ["hello", "regular", "professional", "custom"] },
+          custom_words: { type: "number", description: "Only used when tier is 'custom'" },
+        },
+        required: ["tier"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "edit_proofread",
+      description: "Run edit and proofread pass on the current assessment",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_images",
+      description: "Generate academic images and charts for the current assessment",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "coherence_check",
+      description: "Run coherence and argument-flow analysis on the current assessment",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "predict_grade",
+      description: "Analyse current content and predict a likely grade band with specific reasoning",
+      parameters: {
+        type: "object",
+        properties: { focus_areas: { type: "array", items: { type: "string" } } },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_sources",
+      description: "Suggest relevant academic sources for the assessment topic",
+      parameters: {
+        type: "object",
+        properties: {
+          topic: { type: "string" },
+          citation_style: { type: "string" },
+          count: { type: "number" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "format_citation",
+      description: "Format a source reference in the specified citation style",
+      parameters: {
+        type: "object",
+        properties: {
+          source_details: { type: "string" },
+          style: { type: "string" },
+        },
+        required: ["source_details", "style"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "adjust_word_target",
+      description: "Update the word target for a specific section",
+      parameters: {
+        type: "object",
+        properties: {
+          section_id: { type: "string" },
+          section_title: { type: "string" },
+          new_target: { type: "number" },
+        },
+        required: ["new_target"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "topic_to_brief",
+      description: "Generate a complete assessment brief from a topic title",
+      parameters: {
+        type: "object",
+        properties: {
+          topic: { type: "string" },
+          type: { type: "string", description: "e.g. Essay, Report, Case Study" },
+          word_count: { type: "number" },
+          level: { type: "string", description: "e.g. Postgraduate L7, Undergraduate L6" },
+        },
+        required: ["topic"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_assessment",
+      description: "Permanently delete an assessment and all its sections. ALWAYS confirm with the user before calling.",
+      parameters: {
+        type: "object",
+        properties: {
+          assessment_id: { type: "string", description: "ID of the assessment to delete" },
+          confirmed: { type: "boolean", description: "Must be true — user has confirmed the deletion" },
+        },
+        required: ["confirmed"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_recommendations",
+      description: "Get per-section improvement recommendations from ZOE's analysis engine",
+      parameters: {
+        type: "object",
+        properties: {
+          section_title: { type: "string", description: "Title of the section to analyse (optional — defaults to first written section)" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_assessment_title",
+      description: "Rename the current assessment",
+      parameters: {
+        type: "object",
+        properties: {
+          new_title: { type: "string", description: "The new title for the assessment" },
+        },
+        required: ["new_title"],
         additionalProperties: false,
       },
     },
