@@ -268,6 +268,14 @@ serve(async (req) => {
     if (aErr || !assessment) throw new Error("Assessment not found");
     if (assessment.user_id !== userId) throw new Error("Forbidden");
 
+    // Determine line spacing and TOC depth from assessment settings
+    const lang = (assessment.settings as any)?.language || "UK English";
+    const bodyLineSpacing = lang.toLowerCase().includes("us") ? 360 : 480;
+    const level = (assessment.settings as any)?.level || "";
+    const tocIncludeH3 = /masters|postgraduate|l7|doctoral|phd/i.test(level);
+    const citStyle = (assessment.settings as any)?.citationStyle || "Harvard";
+    const isNumericCitStyle = /vancouver|ieee/i.test(citStyle);
+
     const { data: sections, error: sErr } = await supabase
       .from("sections").select("*").eq("assessment_id", assessment_id).order("sort_order", { ascending: true });
     if (sErr) throw sErr;
@@ -588,21 +596,48 @@ serve(async (req) => {
       }
     }
 
-    // Generate reference list
+    // Generate reference list from ## References blocks in section content (preferred)
+    // or fall back to AI generation from in-text citations
     let referenceEntries: string[] = [];
-    if (allCitations.length > 0) {
+
+    // First: extract ## References sections already written in each section's content
+    const extractedRefs = new Set<string>();
+    for (const sec of (sections || [])) {
+      if (!sec.content) continue;
+      const refIdx = sec.content.indexOf("## References");
+      if (refIdx !== -1) {
+        const refBlock = sec.content.slice(refIdx + 14).trim();
+        for (const line of refBlock.split("\n")) {
+          const t = line.trim();
+          if (t.length > 15 && !t.startsWith("#")) extractedRefs.add(t);
+        }
+      }
+    }
+    if (extractedRefs.size > 0) {
+      referenceEntries = Array.from(extractedRefs);
+    }
+
+    // Fallback: generate from in-text citations via AI
+    if (referenceEntries.length === 0 && allCitations.length > 0) {
       try {
         const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
         if (LOVABLE_API_KEY) {
-          const citStyle = (assessment.settings as any)?.citationStyle || "Harvard";
+          const etAlRule = /harvard|apa/i.test(citStyle)
+            ? "Et al. threshold: use 'et al.' for 3+ authors in-text; list ALL authors in the reference list."
+            : /mla/i.test(citStyle)
+            ? "Et al. threshold: use 'et al.' for 4+ authors in-text; list ALL authors in the reference list."
+            : "List all authors in the reference list.";
+          const orderRule = isNumericCitStyle
+            ? "Order entries sequentially by citation number (1, 2, 3...) — do NOT sort alphabetically."
+            : "Order entries alphabetically by first author surname.";
           const refResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
             method: "POST",
             headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
               model: "google/gemini-2.5-flash-lite",
               messages: [
-                { role: "system", content: `Generate a complete ${citStyle} reference list for these in-text citations. Return ONLY the reference entries, one per line. Use realistic but plausible publication details. Format strictly in ${citStyle} style.` },
-                { role: "user", content: `In-text citations found:\n${allCitations.join("\n")}` },
+                { role: "system", content: `Generate a complete ${citStyle} reference list. Return ONLY the reference entries, one per line, no numbering prefix unless the style requires it (Vancouver/IEEE use numbers). Format strictly in ${citStyle} style. ${orderRule} ${etAlRule} DOI/URLs must appear where relevant. Use "and" not "&" for Harvard. For APA 7th: include DOI as hyperlink text. All entries must be genuine and verifiable.` },
+                { role: "user", content: `In-text citations:\n${allCitations.join("\n")}` },
               ],
             }),
           });
@@ -620,18 +655,23 @@ serve(async (req) => {
 
     if (referenceEntries.length > 0) {
       sectionChildren.push(new Paragraph({ children: [new PageBreak()] }));
+      // References heading: H1 style, CENTRED, no chapter number (per spec)
       sectionChildren.push(
         new Paragraph({
           heading: HeadingLevel.HEADING_1,
+          alignment: AlignmentType.CENTER,
           spacing: { before: 480, after: 360 },
           children: [new TextRun({ text: "References", bold: true, size: 40, font: docFont })],
         })
       );
-      // Reference list entry: 11pt, 1.5× line spacing, After: 8pt(160), Hanging: 10mm(567), Justified
-      for (const ref of referenceEntries.sort()) {
+      // Sort: alphabetical for author-date styles; preserve order for Vancouver/IEEE
+      const sortedRefs = isNumericCitStyle ? referenceEntries : [...referenceEntries].sort((a, b) => a.localeCompare(b));
+      // Reference list entry: 11pt, 1.5× within entries, 6pt(120 twips) between entries, hanging 10mm(567)
+      for (const ref of sortedRefs) {
+        if (!ref.trim()) continue;
         sectionChildren.push(
           new Paragraph({
-            spacing: { after: 160, line: 360 },
+            spacing: { after: 120, line: 360 },
             alignment: AlignmentType.JUSTIFIED,
             indent: { left: 567, hanging: 567 },
             children: parseInlineFormatting(ref, docFont, 22),
@@ -639,13 +679,6 @@ serve(async (req) => {
         );
       }
     }
-
-    // Determine line spacing: UK=double(480), US=1.5x(360)
-    const lang = (assessment.settings as any)?.language || "UK English";
-    const bodyLineSpacing = lang.toLowerCase().includes("us") ? 360 : 480;
-    // TOC depth: include H3 for Masters/PhD
-    const level = (assessment.settings as any)?.level || "";
-    const tocIncludeH3 = /masters|postgraduate|l7|doctoral|phd/i.test(level);
 
     const doc = new Document({
       styles: {

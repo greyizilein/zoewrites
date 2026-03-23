@@ -173,7 +173,31 @@ export const DATA_SOURCES_BY_CATEGORY: Record<string, string[]> = {
 
 export const DATA_SOURCES = Object.values(DATA_SOURCES_BY_CATEGORY).flat();
 
-export const IMAGE_TYPES = ["Graphs", "Charts", "Infographics", "Diagrams", "Tables as Figures"];
+export const IMAGE_TYPES = [
+  // Standard academic charts
+  "Bar chart (grouped)",
+  "Bar chart (stacked)",
+  "Horizontal bar chart",
+  "Line chart",
+  "Scatter plot",
+  "Box plot",
+  "Histogram",
+  "Pie chart",
+  // Statistical / research charts
+  "Forest plot",
+  "Heatmap / Correlation matrix",
+  "Kaplan-Meier curve",
+  "ROC curve",
+  "Radar / Spider chart",
+  "Funnel plot",
+  "Treemap",
+  "Sankey / Alluvial diagram",
+  // General
+  "Infographic",
+  "Diagram",
+  "Conceptual model",
+  "Framework diagram",
+];
 
 export const defaultSettings: WriterSettings = {
   type: "",
