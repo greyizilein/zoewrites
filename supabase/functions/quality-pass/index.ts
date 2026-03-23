@@ -57,6 +57,14 @@ serve(async (req) => {
     const wordDiff = wordCount - (word_target || wordCount);
     const wordDiffPercent = word_target ? ((wordDiff / word_target) * 100).toFixed(1) : "0";
 
+    // Pre-check: em dashes
+    const emDashCount = (bodyContent.match(/[—–]/g) || []).length;
+
+    // Pre-check: paragraphs lacking citations
+    const paragraphs = bodyContent.split(/\n\n+/).filter(p => p.trim().length > 80);
+    const uncitedParas = paragraphs.filter(p => !p.includes("(") || !/\(\s*[A-Z][^)]*\d{4}/.test(p)).length;
+    const uncitedPct = paragraphs.length > 0 ? Math.round((uncitedParas / paragraphs.length) * 100) : 0;
+
     // Build framework verification context
     const frameworksInPlay: { section: string; framework: string; components: string[] }[] = [];
     if (sectionsList && Array.isArray(sectionsList)) {
@@ -95,15 +103,24 @@ For each component: is it present in the content? If missing or incomplete: flag
 
     const systemPrompt = `You are ZOE's quality assurance engine. Critically evaluate this academic work to A+ standards.
 
-EVALUATE in this priority order:
+PRE-SCAN FLAGS (from automated checks — incorporate into issues):
+- Em dashes / en dashes detected: ${emDashCount > 0 ? `YES — ${emDashCount} instances found. These must all be replaced with commas, colons, or semicolons.` : "none"}
+- Paragraphs without citations: ${uncitedParas} of ${paragraphs.length} paragraphs (${uncitedPct}%)${uncitedPct > 20 ? " — CRITICAL: too many uncited paragraphs" : uncitedPct > 0 ? " — flag each uncited paragraph" : ""}
+- Banned phrases found: ${foundBanned.length > 0 ? foundBanned.join(", ") : "none"}
+
+EVALUATE in this priority order (be EXHAUSTIVE — flag every single issue, no matter how small):
 1. FRAMEWORK COMPLETENESS — Every named framework must have ALL required components applied. Missing components = CRITICAL issues.
 2. BRIEF COMPLIANCE — Every requirement, marking criterion, and learning outcome must be fully addressed.
-3. ARGUMENT COHERENCE — Logical flow, no contradictions, each section advances the argument.
-4. EVIDENCE QUALITY — Citation density, source credibility, empirical data support.
-5. CRITICAL ANALYSIS DEPTH — Not descriptive. Evaluative. Interrogates evidence.
-6. WRITING QUALITY — Sentence variety, academic tone, no AI patterns.
-7. WORD COUNT — Target: ${word_target}, current body: ${wordCount} (${wordDiffPercent}% diff).
-8. BANNED PHRASES — Found: ${foundBanned.length > 0 ? foundBanned.join(", ") : "none"}.
+3. CITATION COVERAGE — Every paragraph must have at least 2 in-text citations. Flag EVERY uncited or under-cited paragraph as a critical issue.
+4. EMPIRICAL DATA — Every factual/statistical claim must cite a specific source with real figures. Vague generalisations ("studies show...", "research suggests...") without citations = MAJOR issues.
+5. ARGUMENT COHERENCE — Logical flow, no contradictions, each section advances the argument.
+6. EVIDENCE QUALITY — Citation density, source credibility, empirical data support.
+7. CRITICAL ANALYSIS DEPTH — Not descriptive. Evaluative. Interrogates evidence.
+8. WRITING QUALITY — Sentence variety, academic tone, no AI patterns, NO em dashes.
+9. WORD COUNT — Target: ${word_target}, current body: ${wordCount} (${wordDiffPercent}% diff).
+10. BANNED PHRASES — Found: ${foundBanned.length > 0 ? foundBanned.join(", ") : "none"}.
+
+Be EXHAUSTIVE. Flag every issue you can identify. A comprehensive scan prevents repeat revisions. Do not skip minor issues.
 ${briefCompliancePrompt}
 ${frameworkPrompt}
 

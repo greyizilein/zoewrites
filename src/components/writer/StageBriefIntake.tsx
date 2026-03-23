@@ -1,8 +1,8 @@
-import { useCallback } from "react";
-import { File, X } from "lucide-react";
+import { useCallback, useState } from "react";
+import { File, X, Search, ChevronDown, ChevronUp } from "lucide-react";
 import PersonalisePanel from "./PersonalisePanel";
 import StickyFooter from "./StickyFooter";
-import { WriterSettings, assessmentTypes, citationStyles, academicLevels, aiModels, DATA_SOURCES, IMAGE_TYPES } from "./types";
+import { WriterSettings, assessmentTypes, citationStyles, academicLevels, aiModels, DATA_SOURCES_BY_CATEGORY, IMAGE_TYPES } from "./types";
 
 interface Props {
   settings: WriterSettings;
@@ -24,6 +24,15 @@ export default function StageBriefIntake({
   uploadedFiles, onFilesChange, urlInput, onUrlChange,
   activeTab, onTabChange, onAnalyse, isProcessing,
 }: Props) {
+
+  const [sourceSearch, setSourceSearch] = useState("");
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(["International Bodies", "Statistical Databases", "Consulting & Industry Research"]));
+
+  const toggleCategory = (cat: string) => setExpandedCategories(prev => {
+    const next = new Set(prev);
+    if (next.has(cat)) next.delete(cat); else next.add(cat);
+    return next;
+  });
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -403,21 +412,88 @@ export default function StageBriefIntake({
             />
           </div>
 
-          {/* Preferred data sources */}
+          {/* Preferred data sources — 100+ with categories */}
           <div>
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Preferred Data Sources</label>
-            <p className="text-[10px] text-muted-foreground mb-1.5">ZOE will prioritise these organisations for statistics & data</p>
-            <div className="flex flex-wrap gap-1.5">
-              {DATA_SOURCES.map(src => {
-                const selected = settings.preferredDataSources.includes(src);
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Preferred Data Sources</label>
+              {settings.preferredDataSources.length > 0 && (
+                <button
+                  onClick={() => updateSetting("preferredDataSources", [])}
+                  className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  Clear all ({settings.preferredDataSources.length})
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-2">ZOE will prioritise these for statistics & data. Select from 100+ sources.</p>
+            {/* Search */}
+            <div className="relative mb-2">
+              <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+              <input
+                type="text"
+                placeholder="Search sources…"
+                value={sourceSearch}
+                onChange={e => setSourceSearch(e.target.value)}
+                className="w-full pl-7 pr-3 py-1.5 text-[11px] bg-muted/50 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-terracotta/30"
+              />
+            </div>
+            {/* Categories */}
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              {Object.entries(DATA_SOURCES_BY_CATEGORY).map(([cat, sources]) => {
+                const filtered = sourceSearch
+                  ? sources.filter(s => s.toLowerCase().includes(sourceSearch.toLowerCase()))
+                  : sources;
+                if (filtered.length === 0) return null;
+                const expanded = expandedCategories.has(cat) || !!sourceSearch;
+                const catSelected = filtered.filter(s => settings.preferredDataSources.includes(s)).length;
                 return (
-                  <button
-                    key={src}
-                    onClick={() => updateSetting("preferredDataSources", selected ? settings.preferredDataSources.filter(x => x !== src) : [...settings.preferredDataSources, src])}
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${selected ? "bg-terracotta text-white" : "border border-border text-muted-foreground hover:border-terracotta/40"}`}
-                  >
-                    {src}
-                  </button>
+                  <div key={cat} className="border border-border/50 rounded-xl overflow-hidden">
+                    <button
+                      onClick={() => toggleCategory(cat)}
+                      className="w-full flex items-center justify-between px-3 py-2 bg-muted/30 hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-semibold text-foreground">{cat}</span>
+                        {catSelected > 0 && (
+                          <span className="px-1.5 py-0.5 bg-terracotta text-white rounded-full text-[9px] font-bold">{catSelected}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            const allSelected = filtered.every(s => settings.preferredDataSources.includes(s));
+                            const updated = allSelected
+                              ? settings.preferredDataSources.filter(s => !filtered.includes(s))
+                              : [...new Set([...settings.preferredDataSources, ...filtered])];
+                            updateSetting("preferredDataSources", updated);
+                          }}
+                          className="text-[9px] font-semibold text-terracotta hover:text-terracotta/80 transition-colors"
+                        >
+                          {filtered.every(s => settings.preferredDataSources.includes(s)) ? "Deselect all" : "Select all"}
+                        </button>
+                        {expanded ? <ChevronUp size={11} className="text-muted-foreground" /> : <ChevronDown size={11} className="text-muted-foreground" />}
+                      </div>
+                    </button>
+                    {expanded && (
+                      <div className="px-3 py-2 flex flex-wrap gap-1.5">
+                        {filtered.map(src => {
+                          const selected = settings.preferredDataSources.includes(src);
+                          return (
+                            <button
+                              key={src}
+                              onClick={() => updateSetting("preferredDataSources", selected
+                                ? settings.preferredDataSources.filter(x => x !== src)
+                                : [...settings.preferredDataSources, src])}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${selected ? "bg-terracotta text-white" : "border border-border text-muted-foreground hover:border-terracotta/40"}`}
+                            >
+                              {src}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>

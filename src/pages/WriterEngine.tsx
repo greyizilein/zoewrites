@@ -324,7 +324,23 @@ const WriterEngine = () => {
   };
 
   // ─── Full document generation (sequential section-generate loop) ─────────────
-  const handleWriteDocument = async () => {
+  // Helper: fetch with retry (network errors, e.g. from background suspension)
+  const fetchWithRetry = async (url: string, opts: RequestInit, maxRetries = 3): Promise<Response> => {
+    let lastErr: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
+      try {
+        const resp = await fetch(url, opts);
+        if (resp.status === 429 || resp.status === 402) return resp; // don't retry rate limits
+        return resp;
+      } catch (e: any) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error("Network error after retries");
+  };
+
+  const handleWriteDocument = async (forceRewrite = false) => {
     if (sections.length === 0) return;
     setGenerating(true);
     setWriteError(null);
@@ -338,14 +354,35 @@ const WriterEngine = () => {
       return;
     }
 
+    // Resume: start from first section that has no content, unless forceRewrite
+    const startIdx = forceRewrite ? 0 : sections.findIndex(s => !s.content || s.content.trim().length < 50);
+    if (startIdx === -1) {
+      // All sections already written and not forced — prompt rewrite
+      setGenerating(false);
+      return;
+    }
+
+    // Pre-populate writtenContent with already-complete sections
     const writtenContent: Record<string, string> = {};
-    let displayContent = "";
+    let displayContent = sections
+      .slice(0, startIdx)
+      .filter(s => s.content && s.content.trim().length > 50)
+      .map(s => `## ${s.title}\n\n${s.content}`)
+      .join("\n\n---\n\n");
+    for (const s of sections.slice(0, startIdx)) {
+      if (s.content) writtenContent[s.id] = s.content;
+    }
+    if (displayContent) setStreamContent(displayContent);
+
     const isHarvard = (settings.citationStyle || "Harvard").toLowerCase().includes("harvard");
 
     try {
-      for (let i = 0; i < sections.length; i++) {
+      for (let i = startIdx; i < sections.length; i++) {
         const section = sections[i];
-        setProgressMessage(`Writing ${i + 1} of ${sections.length}: ${section.title}…`);
+        const isResume = i === startIdx && startIdx > 0;
+        setProgressMessage(isResume
+          ? `Resuming from section ${i + 1} of ${sections.length}: ${section.title}…`
+          : `Writing ${i + 1} of ${sections.length}: ${section.title}…`);
 
         // Build prior sections context from already-written content this run
         const priorParts = sections.slice(0, i)
@@ -353,28 +390,30 @@ const WriterEngine = () => {
           .map(s => `## ${s.title}\n${getBodyContent(writtenContent[s.id]).slice(0, 1000)}`);
         const priorSummary = priorParts.join("\n\n");
 
-        const resp = await fetch(`${CHAT_URL}/section-generate`, {
+        const reqBody = JSON.stringify({
+          section: {
+            title: section.title, word_target: section.word_target,
+            framework: section.framework, citation_count: section.citation_count,
+            a_plus_criteria: section.a_plus_criteria || "",
+            purpose_scope: section.purpose_scope || "",
+            learning_outcomes: section.learning_outcomes || "",
+            required_inputs: section.required_inputs || "",
+            structure_formatting: section.structure_formatting || "",
+            constraints_text: section.constraints_text || "",
+          },
+          execution_plan: assessment?.execution_plan || executionPlan,
+          prior_sections_summary: priorSummary,
+          citation_style: settings.citationStyle || "Harvard",
+          academic_level: settings.level || "Postgraduate L7",
+          model: selectedModel, settings,
+          brief_text: assessment?.brief_text || briefText || "",
+          topic: settings.topic || "",
+        });
+
+        const resp = await fetchWithRetry(`${CHAT_URL}/section-generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-          body: JSON.stringify({
-            section: {
-              title: section.title, word_target: section.word_target,
-              framework: section.framework, citation_count: section.citation_count,
-              a_plus_criteria: section.a_plus_criteria || "",
-              purpose_scope: section.purpose_scope || "",
-              learning_outcomes: section.learning_outcomes || "",
-              required_inputs: section.required_inputs || "",
-              structure_formatting: section.structure_formatting || "",
-              constraints_text: section.constraints_text || "",
-            },
-            execution_plan: assessment?.execution_plan || executionPlan,
-            prior_sections_summary: priorSummary,
-            citation_style: settings.citationStyle || "Harvard",
-            academic_level: settings.level || "Postgraduate L7",
-            model: selectedModel, settings,
-            brief_text: assessment?.brief_text || briefText || "",
-            topic: settings.topic || "",
-          }),
+          body: reqBody,
         });
 
         if (!resp.ok || !resp.body) {
@@ -851,7 +890,8 @@ const WriterEngine = () => {
                   generating={generating}
                   streamContent={streamContent}
                   fullDocContent={sections.filter(s => s.content && s.content.trim().length > 50).map(s => `## ${s.title}\n\n${s.content}`).join("\n\n---\n\n")}
-                  onWrite={handleWriteDocument}
+                  onWrite={() => handleWriteDocument(false)}
+                  onRewrite={() => handleWriteDocument(true)}
                   onBack={() => { setExecutionPlan(executionPlan); setStage(0); }}
                   onNext={() => setStage(2)}
                   settings={settings}
