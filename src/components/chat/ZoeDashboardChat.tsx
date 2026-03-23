@@ -675,6 +675,358 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
     }
   }, [input, loading, chatId, chatOpen, msgsMap, sections, currentAssessment, addMsg, updateMsg, executePipeline]);
 
+  // ── Tab: Chats ─────────────────────────────────────────────────────────────
+  const renderChatsTab = () => (
+    <div className="flex flex-col h-full">
+      {/* Search */}
+      <div className="px-3 py-2 flex-shrink-0">
+        <div className="flex items-center gap-2 bg-white rounded-full px-3 py-2 border border-border/50">
+          <Search size={13} className="text-muted-foreground flex-shrink-0" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search assessments…"
+            className="flex-1 text-[12px] bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
+          />
+          {search && (
+            <button onClick={() => setSearch("")}><X size={11} className="text-muted-foreground" /></button>
+          )}
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto">
+        {filteredAssessments.length === 0 && (
+          <div className="text-center py-14 px-6">
+            <MessageCircle size={32} className="mx-auto text-muted-foreground/20 mb-3" />
+            <p className="text-[13px] font-semibold text-foreground mb-1">
+              {search ? "No matches" : "No assessments yet"}
+            </p>
+            <p className="text-[11px] text-muted-foreground mb-4">
+              {search ? "Try a different search." : "Create your first assessment to start chatting with ZOE."}
+            </p>
+            {!search && (
+              <button
+                onClick={() => { navigate("/assessment/new"); setOpen(false); }}
+                className="px-4 py-2 bg-terracotta text-white text-[12px] font-bold rounded-xl"
+              >
+                New Assessment
+              </button>
+            )}
+          </div>
+        )}
+        {filteredAssessments.map(a => {
+          const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
+          const done = a.status === "complete";
+          const lastMsg = (msgsMap[a.id] || []).slice(-1)[0];
+          return (
+            <button
+              key={a.id}
+              onClick={() => setChatOpen(a.id)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/60 active:bg-white/80 transition-colors border-b border-border/30 text-left"
+            >
+              {/* Avatar — shows % */}
+              <div className={cn(
+                "w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold",
+                done ? "bg-sage" : "bg-terracotta",
+              )}>
+                {pct}%
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <p className="text-[13px] font-semibold text-foreground truncate">{a.title}</p>
+                  <span className="text-[10px] text-muted-foreground flex-shrink-0">{timeAgo(a.updated_at)}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                  {lastMsg
+                    ? lastMsg.content.slice(0, 45) + (lastMsg.content.length > 45 ? "…" : "")
+                    : `${fmt(a.word_current)}/${fmt(a.word_target)}w · ${a.status}`}
+                </p>
+              </div>
+              <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── Tab: Write ─────────────────────────────────────────────────────────────
+  const renderWriteTab = () => (
+    <div className="overflow-y-auto h-full px-3 py-3 space-y-4">
+      {/* New assessment CTA */}
+      <button
+        onClick={() => { navigate("/assessment/new"); setOpen(false); }}
+        className="w-full flex items-center gap-3 p-4 bg-terracotta text-white rounded-2xl shadow-md active:scale-[0.98] transition-transform"
+      >
+        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+          <Plus size={20} />
+        </div>
+        <div className="text-left flex-1">
+          <p className="text-[14px] font-bold">New Assessment</p>
+          <p className="text-[11px] text-white/70">Start from a brief or topic</p>
+        </div>
+        <ChevronRight size={18} className="opacity-70" />
+      </button>
+
+      {/* Recent assessments */}
+      {assessments.length > 0 && (
+        <div>
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Recent</p>
+          <div className="space-y-2">
+            {assessments.slice(0, 4).map(a => {
+              const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
+              return (
+                <div key={a.id} className="flex items-center gap-2.5 p-3 bg-white rounded-xl border border-border/40 shadow-sm">
+                  <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0",
+                    a.status === "complete" ? "bg-sage" : "bg-terracotta")}>
+                    {pct}%
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-foreground truncate">{a.title}</p>
+                    <p className="text-[10px] text-muted-foreground">{fmt(a.word_current)}/{fmt(a.word_target)}w</p>
+                  </div>
+                  <button
+                    onClick={() => { setChatOpen(a.id); handleSend(`Write all pending sections`); }}
+                    className="flex-shrink-0 px-2.5 py-1.5 bg-terracotta/10 text-terracotta text-[11px] font-semibold rounded-lg hover:bg-terracotta/20 transition-colors"
+                  >
+                    Write All
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Quick actions grid */}
+      <div>
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Quick Actions</p>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { label: "Write Section",    icon: AlignLeft,         prompt: "Which section would you like me to write?" },
+            { label: "Run Critique",     icon: ShieldCheck,       prompt: "Run a quality critique on my assessment." },
+            { label: "Humanise All",     icon: Wand2,             prompt: "Humanise all completed sections." },
+            { label: "Edit & Proofread", icon: Sparkles,          prompt: "Run an edit and proofread pass." },
+            { label: "Generate Images",  icon: Image,             prompt: "Generate academic images for my assessment." },
+            { label: "Coherence Check",  icon: Brain,             prompt: "Run a coherence check across all sections." },
+            { label: "Predict Grade",    icon: Target,            prompt: "Predict my current grade based on content so far." },
+            { label: "Find Sources",     icon: BookOpen,          prompt: "Suggest relevant academic sources for my assessment." },
+          ].map(({ label, icon: Icon, prompt }) => (
+            <button
+              key={label}
+              onClick={() => handleSend(prompt)}
+              className="flex items-center gap-2 p-3 bg-white rounded-xl border border-border/40 text-left hover:border-terracotta/30 hover:bg-terracotta/5 transition-colors active:scale-[0.97] shadow-sm"
+            >
+              <Icon size={14} className="text-terracotta flex-shrink-0" />
+              <span className="text-[11px] font-medium text-foreground leading-tight">{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Tab: Status ────────────────────────────────────────────────────────────
+  const renderStatusTab = () => {
+    const wordsUsed = profile?.words_used || 0;
+    const wordLimit = profile?.word_limit || 500;
+    const isUnlimited = wordLimit >= 1_000_000_000;
+    const wordsLeft = isUnlimited ? Infinity : Math.max(0, wordLimit - wordsUsed);
+    const quotaPct = isUnlimited ? 100 : Math.min(100, (wordsUsed / wordLimit) * 100);
+    const completed = assessments.filter(a => a.status === "complete").length;
+    const inProgress = assessments.filter(a => !["complete", "draft"].includes(a.status)).length;
+    const totalWritten = assessments.reduce((s, a) => s + a.word_current, 0);
+
+    return (
+      <div className="overflow-y-auto h-full px-3 py-3 space-y-3">
+        {/* Greeting */}
+        <div className="text-center py-2">
+          <p className="text-[15px] font-bold text-foreground">Hey, {userName}</p>
+          <p className="text-[11px] text-muted-foreground">Here's your progress overview</p>
+        </div>
+
+        {/* Quota card */}
+        <div className="bg-white rounded-2xl p-4 border border-border/40 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[12px] font-bold text-foreground">Word Quota</p>
+            <span className="text-[10px] font-semibold text-terracotta capitalize px-2 py-0.5 bg-terracotta/10 rounded-full">
+              {profile?.tier || "free"}
+            </span>
+          </div>
+          <div className="flex items-end justify-between mb-2">
+            <div>
+              <p className="text-2xl font-extrabold text-foreground tabular-nums">
+                {isUnlimited ? "∞" : fmt(wordsLeft as number)}
+              </p>
+              <p className="text-[10px] text-muted-foreground">words remaining</p>
+            </div>
+            <p className="text-[10px] text-muted-foreground">{fmt(wordsUsed)} used</p>
+          </div>
+          {!isUnlimited && (
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div className="h-full bg-terracotta rounded-full transition-all duration-500" style={{ width: `${quotaPct}%` }} />
+            </div>
+          )}
+        </div>
+
+        {/* Stats grid */}
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: "Complete",    value: completed,        color: "text-sage",             bg: "bg-sage/10" },
+            { label: "In Progress", value: inProgress,       color: "text-terracotta",       bg: "bg-terracotta/10" },
+            { label: "Total Words", value: fmt(totalWritten), color: "text-muted-foreground", bg: "bg-muted/30" },
+          ].map(s => (
+            <div key={s.label} className={cn("rounded-xl p-3 text-center", s.bg)}>
+              <p className={cn("text-xl font-extrabold tabular-nums", s.color)}>{s.value}</p>
+              <p className="text-[9px] text-muted-foreground mt-0.5">{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Activity feed */}
+        {assessments.length > 0 && (
+          <div>
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Recent Activity</p>
+            <div className="space-y-1.5">
+              {assessments.slice(0, 5).map(a => {
+                const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => setChatOpen(a.id)}
+                    className="w-full flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-border/40 text-left hover:bg-muted/20 transition-colors"
+                  >
+                    <span className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", a.status === "complete" ? "bg-sage" : "bg-terracotta")} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-medium text-foreground truncate">{a.title}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="w-20 h-1 bg-muted rounded-full overflow-hidden">
+                          <div className={cn("h-full rounded-full", a.status === "complete" ? "bg-sage" : "bg-terracotta")}
+                            style={{ width: `${Math.min(100, pct)}%` }} />
+                        </div>
+                        <span className="text-[9px] text-muted-foreground">{pct}%</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground flex-shrink-0">{timeAgo(a.updated_at)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Tab: Tools ─────────────────────────────────────────────────────────────
+  const renderToolsTab = () => (
+    <div className="overflow-y-auto h-full px-3 py-3 space-y-4">
+      {/* Pipeline tools */}
+      <div>
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pipeline Tools</p>
+        <div className="space-y-1.5">
+          {[
+            { label: "Quality Critique",   icon: ShieldCheck,       desc: "AI review of all sections",          prompt: "Run a quality critique on my current assessment." },
+            { label: "Coherence Analysis", icon: Brain,             desc: "Check argument flow & consistency",   prompt: "Run a coherence analysis." },
+            { label: "Edit & Proofread",   icon: Sparkles,          desc: "Grammar, style, references",         prompt: "Run an edit and proofread pass." },
+            { label: "Humanise Writing",   icon: Wand2,             desc: "Remove AI detection markers",        prompt: "Humanise all completed sections." },
+            { label: "Generate Images",    icon: Image,             desc: "Academic charts & diagrams",         prompt: "Generate academic images for my sections." },
+            { label: "Export Document",    icon: Download,          desc: "Export as .docx",                    prompt: "Export my document." },
+            { label: "Find Sources",       icon: BookOpen,          desc: "Suggest academic references",        prompt: "Suggest relevant academic sources." },
+            { label: "Format Citation",    icon: Quote,             desc: "Format a reference correctly",       prompt: "Help me format a citation." },
+            { label: "Predict Grade",      icon: Target,            desc: "Estimate current grade band",        prompt: "Predict my current grade." },
+            { label: "Topic to Brief",     icon: SlidersHorizontal, desc: "Generate full brief from a topic",   prompt: "Generate a full assessment brief from my topic." },
+          ].map(({ label, icon: Icon, desc, prompt }) => (
+            <button
+              key={label}
+              onClick={() => handleSend(prompt)}
+              className="w-full flex items-center gap-3 p-3 bg-white rounded-xl border border-border/40 text-left hover:border-terracotta/30 hover:bg-terracotta/5 transition-colors active:scale-[0.98] shadow-sm"
+            >
+              <div className="w-8 h-8 rounded-lg bg-terracotta/10 flex items-center justify-center flex-shrink-0">
+                <Icon size={14} className="text-terracotta" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-foreground">{label}</p>
+                <p className="text-[10px] text-muted-foreground">{desc}</p>
+              </div>
+              <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Plans */}
+      <div>
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Plans</p>
+        <div className="space-y-2">
+          {TIER_PLANS.map(plan => {
+            const ngnAmount = Math.round(plan.gbp * gbpToNgn);
+            const isCurrent = profile?.tier === plan.id;
+            return (
+              <div key={plan.id} className={cn(
+                "relative p-3.5 rounded-xl border-2 transition-colors",
+                plan.popular ? "border-terracotta bg-terracotta/5" : "border-border/40 bg-white",
+              )}>
+                {plan.popular && (
+                  <span className="absolute -top-2.5 left-3 text-[10px] font-bold text-white bg-terracotta px-2 py-0.5 rounded-full">Popular</span>
+                )}
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-[13px] font-bold text-foreground">{plan.label}</p>
+                    <p className="text-[10px] text-muted-foreground">{fmt(plan.words)} words</p>
+                    <p className="text-[10px] text-muted-foreground">£{plan.gbp} · ₦{fmt(ngnAmount)}</p>
+                  </div>
+                  {isCurrent ? (
+                    <span className="text-[10px] font-semibold text-sage bg-sage/10 px-2 py-1 rounded-lg flex-shrink-0">Current</span>
+                  ) : (
+                    <button
+                      onClick={() => executePipeline("process_payment", { tier: plan.id })}
+                      disabled={payLoading !== null}
+                      className={cn(
+                        "px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex-shrink-0",
+                        plan.popular ? "bg-terracotta text-white hover:bg-terracotta/90" : "bg-muted/60 text-foreground hover:bg-muted",
+                        payLoading === plan.id && "opacity-60 cursor-not-allowed",
+                      )}
+                    >
+                      {payLoading === plan.id ? <Loader2 size={12} className="animate-spin" /> : "Upgrade"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Custom words */}
+          <div className="p-3.5 bg-white rounded-xl border border-border/40">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-[12px] font-bold text-foreground">Custom Words</p>
+                <p className="text-[10px] text-muted-foreground">₦{NGN_PER_WORD}/word · +1,000 bonus</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={100} step={100}
+                value={customWords}
+                onChange={e => setCustomWords(Number(e.target.value))}
+                className="flex-1 px-3 py-2 rounded-lg border border-border bg-[hsl(220,20%,96%)] text-sm text-foreground outline-none"
+              />
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">₦{fmt(customWords * NGN_PER_WORD)}</span>
+            </div>
+            <button
+              onClick={() => executePipeline("process_payment", { tier: "custom", custom_words: customWords })}
+              disabled={payLoading !== null || customWords < 100}
+              className="mt-2 w-full py-2.5 bg-terracotta text-white text-[12px] font-bold rounded-xl hover:bg-terracotta/90 transition-colors disabled:opacity-50"
+            >
+              {payLoading === "custom" ? <Loader2 size={14} className="animate-spin mx-auto" /> : `Buy ${fmt(customWords)} words`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return null; // layout added next
 };
 
