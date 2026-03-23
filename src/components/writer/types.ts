@@ -102,9 +102,64 @@ export const aiModels = [
 
 export const stageLabels = ["Brief", "Write", "Review", "Export"];
 
-export const DATA_SOURCES = [
-  "Statista", "Gartner", "World Bank", "IMF", "OECD", "Bloomberg", "McKinsey", "Reuters",
-];
+export const DATA_SOURCES_BY_CATEGORY: Record<string, string[]> = {
+  "International Bodies": [
+    "IMF", "World Bank", "OECD", "UN Statistics", "UNESCO", "WHO", "WTO", "ILO", "FAO",
+    "UNICEF", "UNEP", "ITU", "UNCTAD", "WIPO", "BIS", "IFC", "EBRD", "ADB",
+    "G20", "WEF — World Economic Forum",
+  ],
+  "Statistical Databases": [
+    "Statista", "Our World in Data", "FRED — Federal Reserve Economic Data",
+    "Eurostat", "UK ONS", "US Census Bureau", "UN Data", "Gapminder",
+    "Knoema", "World Development Indicators", "Global Carbon Project",
+    "Climate Watch", "Human Development Reports",
+  ],
+  "Finance & Economics": [
+    "Bloomberg", "Reuters", "Financial Times", "Wall Street Journal",
+    "S&P Global", "Moody's", "Fitch Ratings", "Morningstar",
+    "European Central Bank", "US Federal Reserve", "Bank of England",
+    "UK HM Treasury", "US Congressional Budget Office",
+  ],
+  "Consulting & Industry Research": [
+    "McKinsey Global Institute", "Deloitte Insights", "PwC Research",
+    "KPMG Insights", "EY Research", "BCG Research",
+    "Gartner", "Forrester", "IDC", "Nielsen", "Ipsos",
+    "Euromonitor", "IBISWorld", "Mintel", "Kantar", "YouGov",
+    "Pew Research Center", "Gallup",
+  ],
+  "Technology": [
+    "IEEE Xplore", "ACM Digital Library", "MIT Technology Review",
+    "Wired", "TechCrunch", "VentureBeat", "CB Insights", "Crunchbase",
+  ],
+  "Health & Medicine": [
+    "WHO Global Health Observatory", "CDC", "NIH", "NHS Digital",
+    "NICE", "Lancet", "NEJM", "BMJ", "JAMA", "PubMed",
+  ],
+  "Environment & Energy": [
+    "IPCC", "IEA — International Energy Agency", "Carbon Disclosure Project (CDP)",
+    "WWF", "IRENA", "Global Footprint Network",
+    "US EPA", "UK Environment Agency",
+  ],
+  "Business & Management": [
+    "CIPD", "SHRM", "CMI — Chartered Management Institute",
+    "CIM — Chartered Institute of Marketing", "ICAEW", "CIMA",
+    "Harvard Business Review", "MIT Sloan Management Review",
+    "Academy of Management", "Strategic Management Journal",
+  ],
+  "Academic Publishers": [
+    "JSTOR", "Scopus", "Web of Science", "Google Scholar", "SSRN",
+    "SpringerLink", "Elsevier ScienceDirect", "Wiley Online Library",
+    "Taylor & Francis", "Oxford Academic", "Cambridge Core",
+    "Sage Journals", "Emerald Insight",
+  ],
+  "Government & Policy": [
+    "UK Government (GOV.UK)", "EU Commission", "US Government (USA.GOV)",
+    "USDA", "Companies House", "UK Parliament", "US Congress",
+    "Transparency International", "Freedom House",
+  ],
+};
+
+export const DATA_SOURCES = Object.values(DATA_SOURCES_BY_CATEGORY).flat();
 
 export const IMAGE_TYPES = ["Graphs", "Charts", "Infographics", "Diagrams", "Tables as Figures"];
 

@@ -233,6 +233,12 @@ Produce a rigorous academic response written in formal UK English, maintaining a
 
 Numbers must be written in numerals (1, 2, 3, percentages as %) not words — except when a number begins a sentence. Abbreviations such as "e.g.", "i.e.", and "etc." must be avoided. Do not use bullet points or lists anywhere in this section. All analytical content must be expressed in fully developed paragraphs.
 
+PUNCTUATION — NON-NEGOTIABLE: NEVER use em dashes (—) or en dashes (–) as punctuation substitutes. Where a comma, colon, semicolon, or parenthetical clause is appropriate, use those instead. Use only: commas, full stops, colons, semicolons, parentheses, and hyphens for compound words.
+
+CITATION COVERAGE — NON-NEGOTIABLE: EVERY paragraph must contain at least two in-text citations. No paragraph may be left uncited. Do not write entire paragraphs of analysis without citing the sources that support the claims being made. A paragraph that asserts facts, findings, or theoretical positions without citations will fail at A+ standard.
+
+EMPIRICAL DATA — MANDATORY: Every factual or statistical claim must be backed by a specific cited figure from a verifiable source. Do not write "studies show..." or "research suggests..." without citing the specific study, author, and year. Where data exists from statistical organisations (${preferredDataSources.length > 0 ? preferredDataSources.slice(0, 5).join(", ") : "Statista, World Bank, OECD, IMF"}), use it with precise figures (e.g. "GDP growth fell to 2.3% in 2023 (IMF, 2024)"). Vague generalisations unsupported by data are not acceptable.
+
 ${firstPerson ? 'First person is permitted where appropriate: "I argue", "I contend", "this analysis suggests" — use authorial voice where it adds precision.' : 'Strictly third-person voice throughout. No "I", "we", "my", "our" unless directly quoting a source.'}
 
 Passive voice must not exceed 30% of sentences. Prefer active constructions with a clear human agent performing the action. Do not write "This essay will..." or "This section examines..." outside the Introduction section.

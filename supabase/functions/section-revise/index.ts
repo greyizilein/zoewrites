@@ -46,6 +46,17 @@ Every single item in the feedback list below MUST be addressed in this revision.
 NON-REGRESSION RULE — NEVER BREAK WHAT IS ALREADY CORRECT:
 Do NOT introduce new errors while fixing existing ones. Preserve all correctly-placed citations. Do not remove or alter content that was not specifically flagged for change. Do not change the section structure unless the feedback explicitly requires it. Do not reduce word count below the tolerance unless over-word-count was a specific feedback item. The revision must be strictly better than the original in every respect — nothing that was good should be worse after revision.
 
+SELF-CHECK BEFORE OUTPUTTING — MANDATORY:
+Before outputting the revision, internally verify:
+1. Every feedback point has been addressed — check each item one by one
+2. No new uncited paragraphs have been introduced — every paragraph must have at least two in-text citations
+3. No em dashes (—) or en dashes (–) have been introduced — use commas, colons, semicolons instead
+4. No banned AI phrases have been introduced (see list below)
+5. Word count is within ±1% of target
+6. All existing correct citations are preserved
+7. No new factual errors have been introduced
+If any check fails, fix it before outputting. Do not output until all 7 checks pass.
+
 WORD COUNT — MAINTAIN EXACTLY:
 Keep this section at exactly ${word_target} words (±1%: ${Math.floor(word_target * 0.99)}–${Math.ceil(word_target * 1.01)} words). If adding content per feedback causes the count to rise above the ceiling, trim less analytically significant prose proportionally. If feedback requires removal of content, add compensating analysis to maintain the word count. Do not fall short and do not exceed. Count your words.
 
@@ -66,6 +77,9 @@ WRITING STANDARDS:
 - Vary sentence lengths aggressively — do not write 3 consecutive sentences of similar length (±5 words). Mix short punchy sentences (6–12 words) with longer analytical ones (25–45 words).
 - Begin sentences with different words and structures — never the same opening twice in a row
 - Numbers must be written in numerals (1, 2, 3, percentages as %) not words, except when a number begins a sentence
+- NEVER use em dashes (—) or en dashes (–) as punctuation — use commas, colons, or semicolons instead
+- EVERY paragraph must have at least two in-text citations — no uncited paragraphs permitted
+- EVERY factual or statistical claim must cite a specific source with real figures — no vague "studies show..."
 
 BANNED PHRASES — NEVER USE ANY OF THESE:
 "utilise", "utilize", "multifaceted", "furthermore", "it is worth noting", "it is important to", "in today's world", "plays a crucial role", "leveraging", "synergies", "paradigm shift", "holistic approach", "robust framework", "comprehensive analysis", "nuanced understanding", "delve into", "shed light on", "pave the way", "at the end of the day", "undeniable", "indispensable", "cutting-edge", "game-changer", "groundbreaking", "tapestry", "in the realm of", "it is evident that", "myriad", "plethora", "advent of"

@@ -10,6 +10,7 @@ interface Props {
   streamContent: string;
   fullDocContent: string;
   onWrite: () => void;
+  onRewrite?: () => void;
   onBack: () => void;
   onNext: () => void;
   settings: WriterSettings;
@@ -24,18 +25,19 @@ function fmt(n: number) {
 
 export default function StageWrite({
   sections, generating, streamContent, fullDocContent,
-  onWrite, onBack, onNext, settings, writeError, onClearError,
+  onWrite, onRewrite, onBack, onNext, settings, writeError, onClearError,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const totalTarget = sections.reduce((a, s) => a + s.word_target, 0);
+  const completedSections = sections.filter(s => s.content && s.content.trim().length > 50);
+  const isPartial = completedSections.length > 0 && completedSections.length < sections.length;
+  const isComplete = !generating && completedSections.length === sections.length && sections.length > 0;
 
   // Approximate word count from live stream or stored full doc
   const liveText = generating ? streamContent : fullDocContent;
   const liveWords = liveText ? liveText.split(/\s+/).filter(Boolean).length : 0;
   const progress = totalTarget > 0 ? Math.min(100, Math.round((liveWords / totalTarget) * 100)) : 0;
-
-  const isComplete = !generating && fullDocContent && fullDocContent.trim().length > 100;
 
   // Auto-scroll to bottom while streaming
   useEffect(() => {
@@ -51,7 +53,7 @@ export default function StageWrite({
         <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 2 of 4</p>
         <h1 className="text-[22px] font-bold tracking-tight mb-0.5">Write</h1>
         <p className="text-[13px] text-muted-foreground">
-          {generating ? "ZOE is writing your document live…" : isComplete ? "Document written — review or proceed to quality check." : "ZOE will write your complete document in one pass."}
+          {generating ? "ZOE is writing your document live…" : isComplete ? "Document written — review or proceed to quality check." : isPartial ? "Writing interrupted — resume to continue from where it stopped." : "ZOE will write your complete document in one pass."}
         </p>
       </div>
 
@@ -60,21 +62,31 @@ export default function StageWrite({
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-[12px] font-semibold text-foreground">
-              {generating ? "Writing…" : isComplete ? "Complete" : `${sections.length} section${sections.length !== 1 ? "s" : ""} planned`}
+              {generating ? "Writing…" : isComplete ? `Complete — ${completedSections.length}/${sections.length} sections` : isPartial ? `${completedSections.length}/${sections.length} sections written` : `${sections.length} section${sections.length !== 1 ? "s" : ""} planned`}
             </p>
             <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
               {fmt(liveWords)} / {fmt(totalTarget)} words {generating && <span className="text-terracotta animate-pulse">●</span>}
             </p>
           </div>
           {!generating && (
-            <button
-              onClick={() => { onClearError?.(); onWrite(); }}
-              disabled={sections.length === 0}
-              className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-xl text-[13px] font-bold hover:bg-terracotta/90 transition-all active:scale-[0.97] disabled:opacity-40 shadow-sm"
-            >
-              <Zap size={14} />
-              {isComplete ? "Rewrite" : "Write Document"}
-            </button>
+            <div className="flex items-center gap-2">
+              {isPartial && onRewrite && (
+                <button
+                  onClick={() => { onClearError?.(); onRewrite(); }}
+                  className="px-3 py-1.5 border border-border rounded-xl text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all active:scale-[0.97]"
+                >
+                  Rewrite all
+                </button>
+              )}
+              <button
+                onClick={() => { onClearError?.(); onWrite(); }}
+                disabled={sections.length === 0}
+                className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-xl text-[13px] font-bold hover:bg-terracotta/90 transition-all active:scale-[0.97] disabled:opacity-40 shadow-sm"
+              >
+                <Zap size={14} />
+                {isComplete ? "Rewrite" : isPartial ? "Resume Writing" : "Write Document"}
+              </button>
+            </div>
           )}
           {generating && (
             <div className="flex items-center gap-1.5 text-terracotta">
