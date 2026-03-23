@@ -249,6 +249,112 @@ const MsgBubble: React.FC<{ msg: ZoeChatMsg }> = ({ msg }) => {
   );
 };
 
-// ── Placeholder export (expanded incrementally) ─────────────────────────────
-const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = () => null;
+// ── Main component ───────────────────────────────────────────────────────────
+const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
+  assessments, profile, userName, onRefresh,
+}) => {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  // ── Panel state ────────────────────────────────────────────────────────────
+  const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>("chats");
+  const [chatOpen, setChatOpen] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  // ── Chat state ─────────────────────────────────────────────────────────────
+  const [msgsMap, setMsgsMap] = useState<Record<string, ZoeChatMsg[]>>({});
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // ── Sections (loaded per open assessment) ──────────────────────────────────
+  const [sections, setSections] = useState<Section[]>([]);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+
+  // ── Payment state ──────────────────────────────────────────────────────────
+  const [gbpToNgn, setGbpToNgn] = useState(2083);
+  const [payLoading, setPayLoading] = useState<string | null>(null);
+  const [customWords, setCustomWords] = useState(500);
+
+  // ── Refs ───────────────────────────────────────────────────────────────────
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Effects ────────────────────────────────────────────────────────────────
+
+  // Fetch live GBP→NGN rate once on first open
+  useEffect(() => {
+    if (!open) return;
+    supabase.functions.invoke("currency-rate").then(({ data }) => {
+      if (data?.gbp_to_ngn) setGbpToNgn(data.gbp_to_ngn);
+    });
+  }, [open]);
+
+  // Load sections whenever the user enters an assessment chat
+  useEffect(() => {
+    if (!chatOpen) { setSections([]); return; }
+    setSectionsLoading(true);
+    supabase
+      .from("sections")
+      .select("id, title, word_target, word_current, status, content, sort_order")
+      .eq("assessment_id", chatOpen)
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        setSections(data || []);
+        setSectionsLoading(false);
+      });
+  }, [chatOpen]);
+
+  // Scroll to bottom when messages update
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgsMap, chatOpen]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  }, [input]);
+
+  // Focus textarea when entering a chat
+  useEffect(() => {
+    if (chatOpen && open) {
+      setTimeout(() => textareaRef.current?.focus(), 150);
+    }
+  }, [chatOpen, open]);
+
+  // ── Message helpers ────────────────────────────────────────────────────────
+  const addMsg = useCallback((
+    chatId: string,
+    msg: Omit<ZoeChatMsg, "id" | "ts">,
+  ): string => {
+    const id = uid();
+    setMsgsMap(prev => ({
+      ...prev,
+      [chatId]: [...(prev[chatId] || []), { ...msg, id, ts: Date.now() }],
+    }));
+    return id;
+  }, []);
+
+  const updateMsg = useCallback((chatId: string, msgId: string, patch: Partial<ZoeChatMsg>) => {
+    setMsgsMap(prev => ({
+      ...prev,
+      [chatId]: (prev[chatId] || []).map(m => m.id === msgId ? { ...m, ...patch } : m),
+    }));
+  }, []);
+
+  // ── Derived values ─────────────────────────────────────────────────────────
+  const chatId = chatOpen || "dashboard";
+  const currentMsgs = msgsMap[chatId] || [];
+  const currentAssessment = chatOpen ? assessments.find(a => a.id === chatOpen) : null;
+  const filteredAssessments = assessments.filter(a =>
+    a.title.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return null; // layout added next
+};
+
 export default ZoeDashboardChat;
