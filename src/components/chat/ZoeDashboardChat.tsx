@@ -116,6 +116,139 @@ const timeAgo = (dateStr: string): string => {
   return new Date(dateStr).toLocaleDateString("en", { month: "short", day: "numeric" });
 };
 
+// ── ReactMarkdown component overrides ───────────────────────────────────────
+const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2 rounded-lg border border-border/40">
+      <table className="w-full text-[11px] border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-muted/40">{children}</thead>,
+  th: ({ children }) => (
+    <th className="px-3 py-2 text-left font-semibold text-foreground border-b border-border/40">{children}</th>
+  ),
+  td: ({ children }) => (
+    <td className="px-3 py-2 border-b border-border/20 text-muted-foreground">{children}</td>
+  ),
+  tr: ({ children }) => <tr className="hover:bg-muted/20 transition-colors">{children}</tr>,
+  code: ({ className, children, ...props }: any) => {
+    const isBlock = Boolean(className);
+    if (!isBlock) {
+      return (
+        <code className="px-1 py-0.5 rounded bg-terracotta/10 font-mono text-[11px] text-terracotta" {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <div className="my-2 rounded-lg overflow-hidden border border-border/40">
+        <div className="bg-[hsl(24,14%,12%)] px-3 py-1.5">
+          <span className="text-[9px] text-white/40 font-mono uppercase tracking-wider">
+            {className?.replace("language-", "") || "code"}
+          </span>
+        </div>
+        <pre className="p-3 bg-[hsl(24,14%,10%)] overflow-x-auto">
+          <code className="text-[11px] font-mono text-white/90 leading-relaxed">{children}</code>
+        </pre>
+      </div>
+    );
+  },
+  h1: ({ children }) => <h1 className="text-[15px] font-bold text-foreground mt-3 mb-1.5 leading-tight">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-[14px] font-bold text-foreground mt-2.5 mb-1 leading-tight">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-[13px] font-semibold text-foreground mt-2 mb-1">{children}</h3>,
+  ul: ({ children }) => <ul className="my-1.5 space-y-0.5 pl-4 list-disc marker:text-terracotta">{children}</ul>,
+  ol: ({ children }) => <ol className="my-1.5 space-y-0.5 pl-4 list-decimal marker:text-terracotta">{children}</ol>,
+  li: ({ children }) => <li className="text-[13px] leading-relaxed">{children}</li>,
+  p: ({ children }) => <p className="text-[13px] leading-relaxed mb-1.5 last:mb-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  em: ({ children }) => <em className="italic text-muted-foreground/90">{children}</em>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-2 pl-3 border-l-2 border-terracotta/60 text-muted-foreground italic">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-2 border-border/40" />,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      className="text-terracotta underline underline-offset-2 hover:text-terracotta/80">
+      {children}
+    </a>
+  ),
+};
+
+// ── MsgBubble ────────────────────────────────────────────────────────────────
+const MsgBubble: React.FC<{ msg: ZoeChatMsg }> = ({ msg }) => {
+  // Action pill — centered status indicator
+  if (msg.role === "action") {
+    const meta = ACTION_META[msg.actionType || "processing"];
+    return (
+      <div className="flex justify-center my-1">
+        <span className={cn(
+          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium",
+          meta.bg, meta.text,
+        )}>
+          {(msg.actionType === "processing" || msg.actionType === "writing" ||
+            msg.actionType === "humanising" || msg.actionType === "critiquing" ||
+            msg.actionType === "generating" || msg.actionType === "checking" ||
+            msg.actionType === "payment" || msg.actionType === "exporting") && (
+            <Loader2 size={10} className="animate-spin flex-shrink-0" />
+          )}
+          {msg.actionType === "success" && <CheckCircle size={10} className="flex-shrink-0" />}
+          {msg.actionType === "error" && <AlertCircle size={10} className="flex-shrink-0" />}
+          {msg.actionType === "navigating" && <ChevronRight size={10} className="flex-shrink-0" />}
+          {msg.content || meta.label}
+        </span>
+      </div>
+    );
+  }
+
+  // User bubble — right aligned, terracotta
+  if (msg.role === "user") {
+    return (
+      <div className="flex justify-end mb-1">
+        <div className="max-w-[80%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-terracotta text-white text-[13px] leading-relaxed shadow-sm">
+          {msg.content}
+        </div>
+      </div>
+    );
+  }
+
+  // Assistant bubble — left aligned, white card with ZOE avatar
+  const isEmpty = !msg.content && msg.streaming;
+  return (
+    <div className="flex items-end gap-2 mb-1 max-w-[88%]">
+      {/* ZOE avatar dot */}
+      <div className="w-6 h-6 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0 self-end mb-0.5">
+        <span className="text-white text-[7px] font-extrabold">Z</span>
+      </div>
+      <div className={cn(
+        "px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-white border border-border/40 shadow-sm text-[13px] leading-relaxed text-foreground min-w-[60px]",
+        msg.streaming && "opacity-90",
+      )}>
+        {isEmpty ? (
+          /* Typing indicator — 3 bouncing dots */
+          <span className="flex gap-1 py-0.5">
+            {[0, 1, 2].map(i => (
+              <span
+                key={i}
+                className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce"
+                style={{ animationDelay: `${i * 0.15}s` }}
+              />
+            ))}
+          </span>
+        ) : (
+          <>
+            <ReactMarkdown components={mdComponents}>{msg.content}</ReactMarkdown>
+            {msg.streaming && (
+              <span className="inline-block w-0.5 h-3.5 bg-terracotta animate-pulse ml-0.5 align-middle" />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── Placeholder export (expanded incrementally) ─────────────────────────────
 const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = () => null;
 export default ZoeDashboardChat;
