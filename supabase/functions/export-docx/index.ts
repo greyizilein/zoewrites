@@ -8,71 +8,110 @@ const corsHeaders = {
 };
 
 /** Parse inline markdown formatting into TextRun objects */
-function parseInlineFormatting(text: string): TextRun[] {
+function parseInlineFormatting(text: string, font = "Calibri", size = 24): TextRun[] {
   const runs: TextRun[] = [];
   // Match **bold**, *italic*, ***bold+italic***
   const regex = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|([^*]+))/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     if (match[2]) {
-      // ***bold+italic***
-      runs.push(new TextRun({ text: match[2], bold: true, italics: true, size: 24, font: "Arial" }));
+      runs.push(new TextRun({ text: match[2], bold: true, italics: true, size, font }));
     } else if (match[3]) {
-      // **bold**
-      runs.push(new TextRun({ text: match[3], bold: true, size: 24, font: "Arial" }));
+      runs.push(new TextRun({ text: match[3], bold: true, size, font }));
     } else if (match[4]) {
-      // *italic*
-      runs.push(new TextRun({ text: match[4], italics: true, size: 24, font: "Arial" }));
+      runs.push(new TextRun({ text: match[4], italics: true, size, font }));
     } else if (match[5]) {
-      // plain text
-      runs.push(new TextRun({ text: match[5], size: 24, font: "Arial" }));
+      runs.push(new TextRun({ text: match[5], size, font }));
     }
   }
   if (runs.length === 0) {
-    runs.push(new TextRun({ text, size: 24, font: "Arial" }));
+    runs.push(new TextRun({ text, size, font }));
   }
   return runs;
 }
 
-/** Parse a line of content and return appropriate paragraph(s) */
-function parseContentLine(line: string): Paragraph | null {
+/** Parse a line of content and return appropriate paragraph(s).
+ *  font: doc font (Calibri default), lineSpacing: 480=double, 360=1.5x
+ */
+function parseContentLine(line: string, font = "Calibri", lineSpacing = 480): Paragraph | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
-  // Heading detection: ## or ###
-  const h2Match = trimmed.match(/^##\s+(.+)$/);
-  if (h2Match) {
+  // H4: #### heading
+  const h4Match = trimmed.match(/^####\s+(.+)$/);
+  if (h4Match) {
     return new Paragraph({
-      heading: HeadingLevel.HEADING_2,
+      heading: HeadingLevel.HEADING_4,
       spacing: { before: 240, after: 120 },
-      children: [new TextRun({ text: h2Match[1].replace(/\*+/g, ""), bold: true, size: 26, font: "Arial" })],
+      children: [new TextRun({ text: h4Match[1].replace(/\*+/g, ""), bold: true, italics: true, size: 24, font })],
     });
   }
+  // H3: ###
   const h3Match = trimmed.match(/^###\s+(.+)$/);
   if (h3Match) {
     return new Paragraph({
       heading: HeadingLevel.HEADING_3,
-      spacing: { before: 200, after: 100 },
-      children: [new TextRun({ text: h3Match[1].replace(/\*+/g, ""), bold: true, size: 24, font: "Arial" })],
+      spacing: { before: 280, after: 160 },
+      children: [new TextRun({ text: h3Match[1].replace(/\*+/g, ""), bold: true, size: 26, font })],
     });
   }
+  // H2: ##
+  const h2Match = trimmed.match(/^##\s+(.+)$/);
+  if (h2Match) {
+    return new Paragraph({
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 360, after: 200 },
+      children: [new TextRun({ text: h2Match[1].replace(/\*+/g, ""), bold: true, size: 32, font })],
+    });
+  }
+  // H1: #
   const h1Match = trimmed.match(/^#\s+(.+)$/);
   if (h1Match) {
     return new Paragraph({
       heading: HeadingLevel.HEADING_1,
-      spacing: { before: 360, after: 200 },
-      children: [new TextRun({ text: h1Match[1].replace(/\*+/g, ""), bold: true, size: 28, font: "Arial" })],
+      spacing: { before: 480, after: 360 },
+      children: [new TextRun({ text: h1Match[1].replace(/\*+/g, ""), bold: true, size: 40, font })],
+    });
+  }
+
+  // Block quotation: > text
+  const blockQuoteMatch = trimmed.match(/^>\s+(.+)$/);
+  if (blockQuoteMatch) {
+    return new Paragraph({
+      spacing: { before: 240, after: 240, line: 360 },
+      alignment: AlignmentType.JUSTIFIED,
+      indent: { left: 567, right: 567 },
+      children: parseInlineFormatting(blockQuoteMatch[1], font, 22),
+    });
+  }
+
+  // Figure caption: "Figure N:" or "Fig. N:"
+  const figCapMatch = trimmed.match(/^(Figure|Fig\.)\s+\d+[:.]/i);
+  if (figCapMatch) {
+    return new Paragraph({
+      spacing: { before: 120, after: 240, line: 240 },
+      alignment: AlignmentType.CENTER,
+      children: parseInlineFormatting(trimmed.replace(/\*+/g, ""), font, 20),
+    });
+  }
+
+  // Table caption: "Table N:"
+  const tableCapMatch = trimmed.match(/^Table\s+\d+[:.]/i);
+  if (tableCapMatch) {
+    return new Paragraph({
+      spacing: { before: 240, after: 120, line: 240 },
+      alignment: AlignmentType.LEFT,
+      children: [new TextRun({ text: trimmed.replace(/\*+/g, ""), bold: true, size: 20, font })],
     });
   }
 
   // Bullet list: - item or * item
   const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
   if (bulletMatch) {
-    const content = bulletMatch[1];
     return new Paragraph({
       spacing: { after: 80 },
       indent: { left: 720, hanging: 360 },
-      children: [new TextRun({ text: "• ", size: 24, font: "Arial" }), ...parseInlineFormatting(content)],
+      children: [new TextRun({ text: "• ", size: 24, font }), ...parseInlineFormatting(bulletMatch[1], font)],
     });
   }
 
@@ -82,25 +121,25 @@ function parseContentLine(line: string): Paragraph | null {
     return new Paragraph({
       spacing: { after: 80 },
       indent: { left: 720, hanging: 360 },
-      children: [new TextRun({ text: `${numMatch[1]}. `, size: 24, font: "Arial" }), ...parseInlineFormatting(numMatch[2])],
+      children: [new TextRun({ text: `${numMatch[1]}. `, size: 24, font }), ...parseInlineFormatting(numMatch[2], font)],
     });
   }
 
-  // Figure heading
-  const isFigureHeading = /^(Figure|Table)\s+\d+/i.test(trimmed);
-  if (isFigureHeading) {
+  // [FIGURE X: ...] placeholder line
+  const figPlaceholder = trimmed.match(/^\[FIGURE\s+\d+:/i);
+  if (figPlaceholder) {
     return new Paragraph({
-      spacing: { after: 200, line: 360 },
+      spacing: { before: 120, after: 120, line: 240 },
       alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: trimmed.replace(/\*+/g, ""), size: 24, font: "Arial", bold: true, italics: true })],
+      children: [new TextRun({ text: trimmed, size: 20, font, italics: true, color: "888888" })],
     });
   }
 
-  // Regular paragraph with inline formatting — justified
+  // Regular body paragraph — double line spacing, justified
   return new Paragraph({
-    spacing: { after: 200, line: 360 },
+    spacing: { after: 240, line: lineSpacing },
     alignment: AlignmentType.JUSTIFIED,
-    children: parseInlineFormatting(trimmed),
+    children: parseInlineFormatting(trimmed, font),
   });
 }
 
@@ -133,7 +172,7 @@ function parseMarkdownTables(text: string): (string | { type: "table"; rows: str
   return parts;
 }
 
-function buildDocxTable(rows: string[][]): Table {
+function buildDocxTable(rows: string[][], font = "Calibri"): Table {
   const colCount = Math.max(...rows.map(r => r.length));
   const tableWidth = 9026;
   const colWidth = Math.floor(tableWidth / colCount);
@@ -152,7 +191,7 @@ function buildDocxTable(rows: string[][]): Table {
             shading: ri === 0 ? { fill: "E8E7E4", type: ShadingType.CLEAR } : undefined,
             margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [new Paragraph({
-              children: parseInlineFormatting(row[ci] || ""),
+              children: parseInlineFormatting(row[ci] || "", font),
             })],
           })
         ),
@@ -280,61 +319,133 @@ serve(async (req) => {
     }
     titlePageChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
+    // Collect figures and tables from all sections for List of Figures/Tables
+    const allFigures: { secNum: number; num: number; caption: string }[] = [];
+    const allTables: { secNum: number; num: number; caption: string }[] = [];
+    let figGlobal = 0, tableGlobal = 0;
+    let scanSecNum = 0;
+    for (const sec of (sections || [])) {
+      scanSecNum++;
+      if (!sec.content) continue;
+      const lines = sec.content.split("\n");
+      for (const line of lines) {
+        const t = line.trim();
+        const fcap = t.match(/^(Figure|Fig\.)\s+(\d+)[:.]\s*(.*)$/i);
+        if (fcap) { figGlobal++; allFigures.push({ secNum: scanSecNum, num: figGlobal, caption: fcap[3] || t }); }
+        const tcap = t.match(/^Table\s+(\d+)[:.]\s*(.*)$/i);
+        if (tcap) { tableGlobal++; allTables.push({ secNum: scanSecNum, num: tableGlobal, caption: tcap[2] || t }); }
+      }
+    }
+    // Add images from DB to figure list
+    for (const img of images) {
+      if (img.caption) { figGlobal++; allFigures.push({ secNum: 0, num: figGlobal, caption: img.caption }); }
+    }
+
     // Build manual TOC from sections (reliable across all viewers, no Word field dependency)
     const tocEntries: any[] = [];
     tocEntries.push(
       new Paragraph({
         heading: HeadingLevel.HEADING_1,
         spacing: { before: 0, after: 300 },
-        children: [new TextRun({ text: "Table of Contents", bold: true, size: 28, font: docFont })],
+        children: [new TextRun({ text: "Table of Contents", bold: true, size: 40, font: docFont })],
       })
     );
     let sectionNum = 0;
     for (const sec of (sections || [])) {
       sectionNum++;
-      // Heading 1 entry for each section
       tocEntries.push(
         new Paragraph({
           spacing: { after: 80 },
-          children: [
-            new TextRun({ text: `${sectionNum}.  ${sec.title}`, size: 22, font: docFont, bold: false }),
-          ],
           tabStops: [{ type: "right" as any, position: 9000, leader: "dot" as any }],
+          children: [new TextRun({ text: `${sectionNum}.  ${sec.title}`, size: 22, font: docFont, bold: true })],
         })
       );
-      // Parse sub-headings from content (## lines become 1.1, 1.2 etc.)
+      // H2 sub-headings
       if (sec.content) {
-        const subHeadings = sec.content.split("\n").filter((l: string) => /^##\s/.test(l.trim()));
+        const h2Lines = sec.content.split("\n").filter((l: string) => /^##\s/.test(l.trim()));
         let subNum = 0;
-        for (const sh of subHeadings) {
+        for (const sh of h2Lines) {
           subNum++;
           const subTitle = sh.replace(/^##\s+/, "").replace(/\*+/g, "").trim();
           tocEntries.push(
             new Paragraph({
               spacing: { after: 60 },
               indent: { left: 360 },
-              children: [
-                new TextRun({ text: `${sectionNum}.${subNum}  ${subTitle}`, size: 20, font: docFont, color: "444444" }),
-              ],
+              tabStops: [{ type: "right" as any, position: 8640, leader: "dot" as any }],
+              children: [new TextRun({ text: `${sectionNum}.${subNum}  ${subTitle}`, size: 20, font: docFont, color: "333333" })],
             })
           );
+          // H3 included for Masters/PhD per spec
+          if (tocIncludeH3) {
+            const h3Lines = sec.content.split("\n").filter((l: string) => /^###\s/.test(l.trim()));
+            let sub3Num = 0;
+            for (const s3 of h3Lines) {
+              sub3Num++;
+              const sub3Title = s3.replace(/^###\s+/, "").replace(/\*+/g, "").trim();
+              tocEntries.push(
+                new Paragraph({
+                  spacing: { after: 40 },
+                  indent: { left: 720 },
+                  tabStops: [{ type: "right" as any, position: 8280, leader: "dot" as any }],
+                  children: [new TextRun({ text: `${sectionNum}.${subNum}.${sub3Num}  ${sub3Title}`, size: 18, font: docFont, color: "555555" })],
+                })
+              );
+            }
+          }
         }
-        // H3 sub-sub-headings
-        const subSubHeadings = sec.content.split("\n").filter((l: string) => /^###\s/.test(l.trim()));
-        // Note: we don't number these separately since we'd need context — just list them indented
-        // (skip for clean TOC)
       }
     }
-    // Add References entry
+    // References entry
     if ((sections || []).some((s: any) => s.content)) {
       tocEntries.push(
         new Paragraph({
           spacing: { after: 80, before: 80 },
-          children: [new TextRun({ text: "References", size: 22, font: docFont, bold: false })],
+          tabStops: [{ type: "right" as any, position: 9000, leader: "dot" as any }],
+          children: [new TextRun({ text: "References", size: 22, font: docFont, bold: true })],
         })
       );
     }
     tocEntries.push(new Paragraph({ children: [new PageBreak()] }));
+
+    // List of Figures (if any)
+    if (allFigures.length > 0) {
+      tocEntries.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          spacing: { before: 0, after: 200 },
+          children: [new TextRun({ text: "List of Figures", bold: true, size: 32, font: docFont })],
+        })
+      );
+      for (const fig of allFigures) {
+        tocEntries.push(new Paragraph({
+          spacing: { after: 80 },
+          tabStops: [{ type: "right" as any, position: 9000, leader: "dot" as any }],
+          children: [new TextRun({ text: `Figure ${fig.num}: ${fig.caption}`, size: 20, font: docFont })],
+        }));
+      }
+      tocEntries.push(new Paragraph({ spacing: { after: 200 }, children: [] }));
+    }
+
+    // List of Tables (if any)
+    if (allTables.length > 0) {
+      tocEntries.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          spacing: { before: 0, after: 200 },
+          children: [new TextRun({ text: "List of Tables", bold: true, size: 32, font: docFont })],
+        })
+      );
+      for (const tbl of allTables) {
+        tocEntries.push(new Paragraph({
+          spacing: { after: 80 },
+          tabStops: [{ type: "right" as any, position: 9000, leader: "dot" as any }],
+          children: [new TextRun({ text: `Table ${tbl.num}: ${tbl.caption}`, size: 20, font: docFont })],
+        }));
+      }
+      tocEntries.push(new Paragraph({ children: [new PageBreak()] }));
+    } else if (allFigures.length > 0) {
+      tocEntries.push(new Paragraph({ children: [new PageBreak()] }));
+    }
 
     const tocChildren = tocEntries;
 
@@ -345,11 +456,15 @@ serve(async (req) => {
 
     for (const section of (sections || [])) {
       bodySecNum++;
+      // H1 chapter title: 20pt Bold, new page via page break before (except first)
+      if (bodySecNum > 1) {
+        sectionChildren.push(new Paragraph({ children: [new PageBreak()] }));
+      }
       sectionChildren.push(
         new Paragraph({
           heading: HeadingLevel.HEADING_1,
-          spacing: { before: 360, after: 200 },
-          children: [new TextRun({ text: `${bodySecNum}. ${section.title}`, bold: true, size: 28, font: "Arial" })],
+          spacing: { before: 480, after: 360 },
+          children: [new TextRun({ text: `${bodySecNum}. ${section.title}`, bold: true, size: 40, font: docFont })],
         })
       );
 
@@ -359,6 +474,7 @@ serve(async (req) => {
 
         let h2Count = 0;
         let h3Count = 0;
+        let h4Count = 0;
 
         const parts = parseMarkdownTables(section.content);
         for (const part of parts) {
@@ -366,35 +482,50 @@ serve(async (req) => {
             const lines = part.split("\n");
             for (const line of lines) {
               const trimmed = line.trim();
-              // Inject section numbering into headings
+              // H4: #### (12pt Bold Italic)
+              const h4Match = trimmed.match(/^####\s+(.+)$/);
+              if (h4Match) {
+                h4Count++;
+                const numberedTitle = `${bodySecNum}.${h2Count || 1}.${h3Count || 1}.${h4Count} ${h4Match[1].replace(/\*+/g, "")}`;
+                sectionChildren.push(new Paragraph({
+                  heading: HeadingLevel.HEADING_4,
+                  spacing: { before: 240, after: 120 },
+                  children: [new TextRun({ text: numberedTitle, bold: true, italics: true, size: 24, font: docFont })],
+                }));
+                continue;
+              }
+              // H3: ### (13pt Bold)
+              const h3Match = trimmed.match(/^###\s+(.+)$/);
+              if (h3Match) {
+                h3Count++;
+                h4Count = 0;
+                const numberedTitle = `${bodySecNum}.${h2Count || 1}.${h3Count} ${h3Match[1].replace(/\*+/g, "")}`;
+                sectionChildren.push(new Paragraph({
+                  heading: HeadingLevel.HEADING_3,
+                  spacing: { before: 280, after: 160 },
+                  children: [new TextRun({ text: numberedTitle, bold: true, size: 26, font: docFont })],
+                }));
+                continue;
+              }
+              // H2: ## (16pt Bold)
               const h2Match = trimmed.match(/^##\s+(.+)$/);
               if (h2Match) {
                 h2Count++;
                 h3Count = 0;
+                h4Count = 0;
                 const numberedTitle = `${bodySecNum}.${h2Count} ${h2Match[1].replace(/\*+/g, "")}`;
                 sectionChildren.push(new Paragraph({
                   heading: HeadingLevel.HEADING_2,
-                  spacing: { before: 240, after: 120 },
-                  children: [new TextRun({ text: numberedTitle, bold: true, size: 26, font: "Arial" })],
+                  spacing: { before: 360, after: 200 },
+                  children: [new TextRun({ text: numberedTitle, bold: true, size: 32, font: docFont })],
                 }));
                 continue;
               }
-              const h3Match = trimmed.match(/^###\s+(.+)$/);
-              if (h3Match) {
-                h3Count++;
-                const numberedTitle = `${bodySecNum}.${h2Count || 1}.${h3Count} ${h3Match[1].replace(/\*+/g, "")}`;
-                sectionChildren.push(new Paragraph({
-                  heading: HeadingLevel.HEADING_3,
-                  spacing: { before: 200, after: 100 },
-                  children: [new TextRun({ text: numberedTitle, bold: true, size: 24, font: "Arial" })],
-                }));
-                continue;
-              }
-              const para = parseContentLine(line);
+              const para = parseContentLine(line, docFont, bodyLineSpacing);
               if (para) sectionChildren.push(para);
             }
           } else {
-            sectionChildren.push(buildDocxTable(part.rows));
+            sectionChildren.push(buildDocxTable(part.rows, docFont));
             sectionChildren.push(new Paragraph({ spacing: { after: 200 }, children: [] }));
           }
         }
@@ -434,13 +565,13 @@ serve(async (req) => {
               })],
             }));
 
-            // Figure heading below
+            // Figure caption below — 10pt Italic, centred
             sectionChildren.push(new Paragraph({
               alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
+              spacing: { before: 120, after: 240, line: 240 },
               children: [new TextRun({
                 text: `Figure ${img.figure_number || ""}: ${img.caption || ""}`.trim(),
-                size: 22, font: "Arial", italics: true, color: "555555",
+                size: 20, font: docFont, italics: true, color: "555555",
               })],
             }));
           } catch (e) {
@@ -492,34 +623,50 @@ serve(async (req) => {
       sectionChildren.push(
         new Paragraph({
           heading: HeadingLevel.HEADING_1,
-          spacing: { before: 360, after: 300 },
-          children: [new TextRun({ text: "References", bold: true, size: 28, font: "Arial" })],
+          spacing: { before: 480, after: 360 },
+          children: [new TextRun({ text: "References", bold: true, size: 40, font: docFont })],
         })
       );
+      // Reference list entry: 11pt, 1.5× line spacing, After: 8pt(160), Hanging: 10mm(567), Justified
       for (const ref of referenceEntries.sort()) {
         sectionChildren.push(
           new Paragraph({
-            spacing: { after: 120 },
-            indent: { left: 720, hanging: 720 },
-            children: parseInlineFormatting(ref),
+            spacing: { after: 160, line: 360 },
+            alignment: AlignmentType.JUSTIFIED,
+            indent: { left: 567, hanging: 567 },
+            children: parseInlineFormatting(ref, docFont, 22),
           })
         );
       }
     }
 
+    // Determine line spacing: UK=double(480), US=1.5x(360)
+    const lang = (assessment.settings as any)?.language || "UK English";
+    const bodyLineSpacing = lang.toLowerCase().includes("us") ? 360 : 480;
+    // TOC depth: include H3 for Masters/PhD
+    const level = (assessment.settings as any)?.level || "";
+    const tocIncludeH3 = /masters|postgraduate|l7|doctoral|phd/i.test(level);
+
     const doc = new Document({
       styles: {
         default: { document: { run: { font: docFont, size: docFontSizePt } } },
         paragraphStyles: [
+          // H1/Chapter: 20pt Bold, Before: 24pt(480), After: 18pt(360)
           { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
-            run: { size: 28, bold: true, font: docFont },
-            paragraph: { spacing: { before: 360, after: 200 }, outlineLevel: 0 } },
+            run: { size: 40, bold: true, font: docFont },
+            paragraph: { spacing: { before: 480, after: 360 }, outlineLevel: 0 } },
+          // H2/Major section: 16pt Bold, Before: 18pt(360), After: 10pt(200)
           { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
-            run: { size: 26, bold: true, font: docFont },
-            paragraph: { spacing: { before: 240, after: 120 }, outlineLevel: 1 } },
+            run: { size: 32, bold: true, font: docFont },
+            paragraph: { spacing: { before: 360, after: 200 }, outlineLevel: 1 } },
+          // H3/Sub-section: 13pt Bold, Before: 14pt(280), After: 8pt(160)
           { id: "Heading3", name: "Heading 3", basedOn: "Normal", next: "Normal", quickFormat: true,
-            run: { size: 24, bold: true, font: docFont },
-            paragraph: { spacing: { before: 200, after: 100 }, outlineLevel: 2 } },
+            run: { size: 26, bold: true, font: docFont },
+            paragraph: { spacing: { before: 280, after: 160 }, outlineLevel: 2 } },
+          // H4/Paragraph heading: 12pt Bold Italic, Before: 12pt(240), After: 6pt(120)
+          { id: "Heading4", name: "Heading 4", basedOn: "Normal", next: "Normal", quickFormat: true,
+            run: { size: 24, bold: true, italics: true, font: docFont },
+            paragraph: { spacing: { before: 240, after: 120 }, outlineLevel: 3 } },
         ]
       },
       sections: [{
@@ -533,7 +680,7 @@ serve(async (req) => {
           default: new Header({
             children: [new Paragraph({
               alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: assessment.title, size: 18, font: "Arial", color: "999999" })],
+              children: [new TextRun({ text: assessment.title, size: 20, font: docFont, color: "999999" })],
             })],
           }),
         },
@@ -541,7 +688,7 @@ serve(async (req) => {
           default: new Footer({
             children: [new Paragraph({
               alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: "Page ", size: 18, font: "Arial", color: "999999" }), new TextRun({ children: [PageNumber.CURRENT], size: 18, font: "Arial", color: "999999" })],
+              children: [new TextRun({ text: "Page ", size: 20, font: docFont, color: "999999" }), new TextRun({ children: [PageNumber.CURRENT], size: 20, font: docFont, color: "999999" })],
             })],
           }),
         },

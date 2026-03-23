@@ -53,6 +53,7 @@ export interface WriterSettings {
   transitionStyle: string;
   paragraphLength: string;
   analysisDepth: string;
+  technicalDensity: number;
   // Content & quality settings
   totalCitations: number;
   includeImages: boolean;
@@ -81,7 +82,18 @@ export const assessmentTypes = [
 ];
 
 export const citationStyles = [
-  "Harvard (UK)", "APA 7th", "APA 6th", "MLA 9th", "Chicago", "Vancouver", "IEEE", "OSCOLA",
+  "Harvard",
+  "APA 7th",
+  "APA 6th",
+  "MLA 9th",
+  "Chicago 17 (Author-Date)",
+  "Chicago 17 (Notes-Bibliography)",
+  "Vancouver",
+  "IEEE",
+  "OSCOLA",
+  "AGLC 4",
+  "AMA",
+  "Turabian",
 ];
 
 export const academicLevels = [
@@ -168,7 +180,7 @@ export const defaultSettings: WriterSettings = {
   topic: "",
   module: "",
   wordCount: "",
-  citationStyle: "Harvard (UK)",
+  citationStyle: "Harvard",
   level: "Postgraduate L7",
   language: "UK English",
   model: "google/gemini-2.5-pro",
@@ -187,6 +199,7 @@ export const defaultSettings: WriterSettings = {
   transitionStyle: "Formal connectors",
   paragraphLength: "Medium",
   analysisDepth: "Deep Critical",
+  technicalDensity: 3,
   totalCitations: 0,
   includeImages: true,
   imageCount: 0,

@@ -173,6 +173,7 @@ serve(async (req) => {
     const sourceDateTo = settings?.sourceDateTo || "2025";
     const useSeminalSources = settings?.useSeminalSources !== false;
     const analysisDepth = settings?.analysisDepth || "Deep Critical";
+    const technicalDensity = settings?.technicalDensity || 3;
     // Content & quality settings
     const totalCitationsOverride = settings?.totalCitations > 0 ? settings.totalCitations : null;
     const includeImages = settings?.includeImages !== false;
@@ -338,6 +339,7 @@ AI writing is statistically very predictable — each word tends to be the most 
 Sentence complexity preference: ${sentenceComplexity}
 Hedging intensity: ${hedgingIntensity} — ${hedgingIntensity === "Low" ? "make direct claims with minimal hedging" : hedgingIntensity === "High" ? "use frequent, varied hedging (appears to suggest, may indicate, it could be argued, evidence seems to point toward)" : "balance direct claims with appropriate academic hedging"}
 Formality level: ${formalityLevel}/5 (1 = conversational academic, 5 = highly formal)
+Technical density: ${technicalDensity}/5 — ${technicalDensity <= 1 ? "write for a general educated audience; minimise jargon and define all specialist terms on first use" : technicalDensity === 2 ? "light use of field-specific terms; define uncommon jargon and avoid heavy technical language" : technicalDensity === 3 ? "standard academic technical register; use discipline-specific vocabulary appropriately without over-explanation" : technicalDensity === 4 ? "high technical density; assume reader familiarity with core disciplinary concepts and methodologies; use precise technical vocabulary throughout" : "specialist-level density; assume expert readership; deploy advanced terminology, field-specific shorthand, and discipline-specific methodological language without definition"}
 
 ═══════════════════════════════════════════════
 QUALITY CRITERIA — ALL MUST BE MET
