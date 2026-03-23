@@ -74,6 +74,42 @@ const WriterEngine = () => {
 
   const [recentAssessments, setRecentAssessments] = useState<{ id: string; title: string; status: string }[]>([]);
   const [profile, setProfile] = useState<{ full_name: string | null; tier: string } | null>(null);
+  const wakeLockRef = useRef<any>(null);
+
+  // ─── Wake lock + visibility: keep alive during AI generation ────────────────
+  const isActivelyGenerating = generating || writingAll || autopilotRunning;
+
+  useEffect(() => {
+    const acquireWakeLock = async () => {
+      if (!isActivelyGenerating) return;
+      try {
+        if ("wakeLock" in navigator && wakeLockRef.current === null) {
+          wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+          wakeLockRef.current.addEventListener("release", () => { wakeLockRef.current = null; });
+        }
+      } catch { /* wake lock not supported */ }
+    };
+    const releaseWakeLock = () => {
+      if (wakeLockRef.current) { wakeLockRef.current.release(); wakeLockRef.current = null; }
+    };
+    if (isActivelyGenerating) { acquireWakeLock(); }
+    else { releaseWakeLock(); }
+    return () => { releaseWakeLock(); };
+  }, [isActivelyGenerating]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && isActivelyGenerating) {
+        toast({
+          title: "Tab is hidden — AI generation may slow",
+          description: "Keep this tab active for best results. Progress is saved per section.",
+          variant: "destructive",
+        });
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [isActivelyGenerating]);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,8 +216,8 @@ const WriterEngine = () => {
       if (planError) throw planError;
 
       setExecutionPlan(planData?.plan);
-      setStage(1);
-      toast({ title: "Plan ready" });
+      // Stay at stage 0 — routing shows StageExecutionTable automatically
+      toast({ title: "Plan ready — review before writing" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
@@ -469,18 +505,21 @@ const WriterEngine = () => {
   };
 
   // ─── Review: Fix all issues from quality report ───
-  const handleFixAllIssues = async () => {
+  const handleFixAllIssues = async (customInstructions?: string) => {
     const issues = qualityReport?.report?.issues || [];
-    if (issues.length === 0) { toast({ title: "No issues to fix" }); return; }
-    const feedback = issues
-      .map((i: any) => `[${i.severity?.toUpperCase()}] ${i.description}${i.suggestion ? ` — ${i.suggestion}` : ""}`)
-      .join("\n");
+    const hasIssues = issues.length > 0;
+    const hasCustom = !!customInstructions?.trim();
+    if (!hasIssues && !hasCustom) { toast({ title: "No issues to fix" }); return; }
+    const issueFeedback = hasIssues
+      ? issues.map((i: any) => `[${i.severity?.toUpperCase()}] ${i.description}${i.suggestion ? ` — ${i.suggestion}` : ""}`).join("\n")
+      : "";
+    const feedback = [issueFeedback, hasCustom ? `ADDITIONAL INSTRUCTIONS:\n${customInstructions}` : ""].filter(Boolean).join("\n\n");
     setIsProcessing(true);
     try {
       for (const s of sections.filter(s => s.content)) {
         await streamSection(s.id, true, feedback);
       }
-      toast({ title: "Issues applied to all sections", description: "Run Re-scan to verify." });
+      toast({ title: "All revisions applied", description: "Run Re-scan to verify." });
     } catch (e: any) {
       toast({ title: "Fix failed", description: e.message, variant: "destructive" });
     }

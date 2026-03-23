@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, TableOfContents, Header, Footer, PageNumber, PageBreak, Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, ImageRun } from "https://esm.sh/docx@8.5.0";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Header, Footer, PageNumber, PageBreak, Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, ImageRun } from "https://esm.sh/docx@8.5.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -280,25 +280,76 @@ serve(async (req) => {
     }
     titlePageChildren.push(new Paragraph({ children: [new PageBreak()] }));
 
-    const tocChildren = [
+    // Build manual TOC from sections (reliable across all viewers, no Word field dependency)
+    const tocEntries: any[] = [];
+    tocEntries.push(
       new Paragraph({
         heading: HeadingLevel.HEADING_1,
-        children: [new TextRun({ text: "Table of Contents", bold: true, font: "Arial" })],
-      }),
-      new TableOfContents("Table of Contents", { hyperlink: true, headingStyleRange: "1-3" }),
-      new Paragraph({ children: [new PageBreak()] }),
-    ];
+        spacing: { before: 0, after: 300 },
+        children: [new TextRun({ text: "Table of Contents", bold: true, size: 28, font: docFont })],
+      })
+    );
+    let sectionNum = 0;
+    for (const sec of (sections || [])) {
+      sectionNum++;
+      // Heading 1 entry for each section
+      tocEntries.push(
+        new Paragraph({
+          spacing: { after: 80 },
+          children: [
+            new TextRun({ text: `${sectionNum}.  ${sec.title}`, size: 22, font: docFont, bold: false }),
+          ],
+          tabStops: [{ type: "right" as any, position: 9000, leader: "dot" as any }],
+        })
+      );
+      // Parse sub-headings from content (## lines become 1.1, 1.2 etc.)
+      if (sec.content) {
+        const subHeadings = sec.content.split("\n").filter((l: string) => /^##\s/.test(l.trim()));
+        let subNum = 0;
+        for (const sh of subHeadings) {
+          subNum++;
+          const subTitle = sh.replace(/^##\s+/, "").replace(/\*+/g, "").trim();
+          tocEntries.push(
+            new Paragraph({
+              spacing: { after: 60 },
+              indent: { left: 360 },
+              children: [
+                new TextRun({ text: `${sectionNum}.${subNum}  ${subTitle}`, size: 20, font: docFont, color: "444444" }),
+              ],
+            })
+          );
+        }
+        // H3 sub-sub-headings
+        const subSubHeadings = sec.content.split("\n").filter((l: string) => /^###\s/.test(l.trim()));
+        // Note: we don't number these separately since we'd need context — just list them indented
+        // (skip for clean TOC)
+      }
+    }
+    // Add References entry
+    if ((sections || []).some((s: any) => s.content)) {
+      tocEntries.push(
+        new Paragraph({
+          spacing: { after: 80, before: 80 },
+          children: [new TextRun({ text: "References", size: 22, font: docFont, bold: false })],
+        })
+      );
+    }
+    tocEntries.push(new Paragraph({ children: [new PageBreak()] }));
+
+    const tocChildren = tocEntries;
 
     // Section content with proper markdown parsing
     const sectionChildren: any[] = [];
     const allCitations: string[] = [];
+    let bodySecNum = 0;
 
     for (const section of (sections || [])) {
+      bodySecNum++;
       sectionChildren.push(
         new Paragraph({
           heading: HeadingLevel.HEADING_1,
           spacing: { before: 360, after: 200 },
-          children: [new TextRun({ text: section.title, bold: true, size: 28, font: "Arial" })],
+          children: [new TextRun({ text: `${bodySecNum}. ${section.title}`, bold: true, size: 28, font: "Arial" })],
         })
       );
 
@@ -306,12 +357,39 @@ serve(async (req) => {
         const sectionCites = extractCitations(section.content);
         for (const c of sectionCites) { if (!allCitations.includes(c)) allCitations.push(c); }
 
+        let h2Count = 0;
+        let h3Count = 0;
+
         const parts = parseMarkdownTables(section.content);
         for (const part of parts) {
           if (typeof part === "string") {
-            // Parse each line for headings, lists, and inline formatting
             const lines = part.split("\n");
             for (const line of lines) {
+              const trimmed = line.trim();
+              // Inject section numbering into headings
+              const h2Match = trimmed.match(/^##\s+(.+)$/);
+              if (h2Match) {
+                h2Count++;
+                h3Count = 0;
+                const numberedTitle = `${bodySecNum}.${h2Count} ${h2Match[1].replace(/\*+/g, "")}`;
+                sectionChildren.push(new Paragraph({
+                  heading: HeadingLevel.HEADING_2,
+                  spacing: { before: 240, after: 120 },
+                  children: [new TextRun({ text: numberedTitle, bold: true, size: 26, font: "Arial" })],
+                }));
+                continue;
+              }
+              const h3Match = trimmed.match(/^###\s+(.+)$/);
+              if (h3Match) {
+                h3Count++;
+                const numberedTitle = `${bodySecNum}.${h2Count || 1}.${h3Count} ${h3Match[1].replace(/\*+/g, "")}`;
+                sectionChildren.push(new Paragraph({
+                  heading: HeadingLevel.HEADING_3,
+                  spacing: { before: 200, after: 100 },
+                  children: [new TextRun({ text: numberedTitle, bold: true, size: 24, font: "Arial" })],
+                }));
+                continue;
+              }
               const para = parseContentLine(line);
               if (para) sectionChildren.push(para);
             }

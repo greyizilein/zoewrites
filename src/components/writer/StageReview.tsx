@@ -1,5 +1,8 @@
-import { useState } from "react";
-import { Loader2, Check, AlertTriangle, AlertCircle, RefreshCw, ChevronDown, ChevronUp, Wrench, Send } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  Loader2, Check, AlertTriangle, AlertCircle, RefreshCw,
+  ChevronDown, ChevronUp, Wrench, Send, Image, Table2, Plus,
+} from "lucide-react";
 import { Section } from "./types";
 
 interface Issue {
@@ -8,12 +11,15 @@ interface Issue {
   suggestion?: string;
 }
 
+// State per issue: null=visible, "fixing"=in-progress, "fixed"=green, "done"=dismissed
+type IssueState = null | "fixing" | "fixed" | "done";
+
 interface Props {
   sections: Section[];
   qualityReport: any;
   isProcessing: boolean;
   onRunScan: () => Promise<any>;
-  onFixAllIssues: () => Promise<void>;
+  onFixAllIssues: (customInstructions?: string) => Promise<void>;
   onApplySectionFeedback: (sectionId: string, feedback: string) => Promise<void>;
   onBack: () => void;
   onNext: () => void;
@@ -38,14 +44,25 @@ export default function StageReview({
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [fixing, setFixing] = useState(false);
-  const [dismissedIssues, setDismissedIssues] = useState<Set<number>>(new Set());
+  const [customInstructions, setCustomInstructions] = useState("");
+  const [issueStates, setIssueStates] = useState<IssueState[]>([]);
+  const [addContentSectionId, setAddContentSectionId] = useState<string | null>(null);
+  const [addContentType, setAddContentType] = useState<"table" | "figure" | null>(null);
+  const [addContentDesc, setAddContentDesc] = useState("");
+  const [applyingContent, setApplyingContent] = useState(false);
 
   const report = qualityReport?.report;
   const grade = report?.grade || null;
   const allIssues: Issue[] = report?.issues || [];
-  const issues = allIssues.filter((_, i) => !dismissedIssues.has(i));
-  const criticalCount = issues.filter(i => i.severity === "critical").length;
-  const warningCount = issues.filter(i => i.severity === "warning").length;
+
+  // Sync issueStates when qualityReport changes (fresh scan)
+  useEffect(() => {
+    setIssueStates(allIssues.map(() => null));
+  }, [qualityReport]);
+
+  const visibleIssues = allIssues.filter((_, i) => issueStates[i] !== "done");
+  const criticalCount = visibleIssues.filter(i => i.severity === "critical").length;
+  const warningCount = visibleIssues.filter(i => i.severity === "warning").length;
 
   const totalWords = sections.reduce((a, s) => a + s.word_current, 0);
   const totalTarget = sections.reduce((a, s) => a + s.word_target, 0);
@@ -53,16 +70,46 @@ export default function StageReview({
 
   const handleScan = async () => {
     setScanning(true);
-    setDismissedIssues(new Set()); // reset dismissed on fresh scan
+    setIssueStates([]);
     try { await onRunScan(); } finally { setScanning(false); }
   };
 
+  const animateFix = (indices: number[]) => {
+    // Step 1: set all to "fixing"
+    setIssueStates(prev => {
+      const next = [...prev];
+      indices.forEach(i => { next[i] = "fixing"; });
+      return next;
+    });
+  };
+
+  const animateFixed = (indices: number[]) => {
+    // Step 2: set to "fixed" (green)
+    setIssueStates(prev => {
+      const next = [...prev];
+      indices.forEach(i => { next[i] = "fixed"; });
+      return next;
+    });
+    // Step 3: after 1.2s, dismiss
+    setTimeout(() => {
+      setIssueStates(prev => {
+        const next = [...prev];
+        indices.forEach(i => { next[i] = "done"; });
+        return next;
+      });
+    }, 1200);
+  };
+
   const handleFixAll = async () => {
+    const indicesToFix = allIssues
+      .map((_, i) => i)
+      .filter(i => issueStates[i] !== "done");
+    animateFix(indicesToFix);
     setFixing(true);
     try {
-      await onFixAllIssues();
-      // Dismiss all current issues from the list — they've been addressed
-      setDismissedIssues(new Set(issues.map((_, i) => i)));
+      await onFixAllIssues(customInstructions || undefined);
+      animateFixed(indicesToFix);
+      if (customInstructions) setCustomInstructions("");
     } finally {
       setFixing(false);
     }
@@ -80,13 +127,29 @@ export default function StageReview({
     }
   };
 
+  const handleAddContent = async (sectionId: string) => {
+    if (!addContentType || !addContentDesc.trim()) return;
+    const instruction = addContentType === "table"
+      ? `Add a formatted markdown table to this section: ${addContentDesc}. Place it at the most analytically appropriate point in the section. Add a caption above: "Table X: [title]".`
+      : `Add a figure placeholder to this section: ${addContentDesc}. Write the placeholder as [FIGURE X: ${addContentDesc} — ${addContentDesc}] and follow with caption "Figure X: [descriptive title]". Embed it at the most analytically relevant point.`;
+    setApplyingContent(true);
+    try {
+      await onApplySectionFeedback(sectionId, instruction);
+      setAddContentSectionId(null);
+      setAddContentType(null);
+      setAddContentDesc("");
+    } finally {
+      setApplyingContent(false);
+    }
+  };
+
   return (
     <div className="max-w-[640px] mx-auto">
       {/* Header */}
       <div className="mb-5">
         <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 3 of 4</p>
         <h1 className="text-[22px] font-bold tracking-tight mb-0.5">Review</h1>
-        <p className="text-[13px] text-muted-foreground">Check your draft, fix issues, and refine sections before export.</p>
+        <p className="text-[13px] text-muted-foreground">Check your draft, fix issues, and refine before export.</p>
       </div>
 
       {/* Stats bar */}
@@ -129,54 +192,91 @@ export default function StageReview({
         </div>
       </div>
 
-      {/* Fix All Issues + Re-scan buttons */}
+      {/* Custom instructions */}
+      <div className="bg-card border border-border/50 rounded-2xl p-4 mb-4 shadow-sm">
+        <p className="text-[12px] font-bold text-foreground mb-2">Additional Instructions</p>
+        <p className="text-[10px] text-muted-foreground mb-2.5">Tell ZOE what else to fix or improve across all sections. These will be applied alongside any scan issues.</p>
+        <textarea
+          value={customInstructions}
+          onChange={e => setCustomInstructions(e.target.value)}
+          placeholder="e.g. Add more statistics. Ensure all framework criteria are fully covered. Strengthen the conclusion argument…"
+          rows={3}
+          className="w-full text-[12px] bg-muted/40 border border-border rounded-xl px-3 py-2.5 resize-none placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-terracotta/40"
+        />
+      </div>
+
+      {/* Action buttons */}
       <div className="flex gap-2.5 mb-4">
-        {issues.length > 0 && (
+        {(visibleIssues.length > 0 || customInstructions.trim()) && (
           <button
             onClick={handleFixAll}
             disabled={fixing || isProcessing}
             className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-terracotta text-white rounded-xl text-[13px] font-bold hover:bg-terracotta/90 transition-all active:scale-[0.97] disabled:opacity-50 shadow-sm"
           >
             {fixing ? <Loader2 size={14} className="animate-spin" /> : <Wrench size={14} />}
-            Fix All Issues
+            {customInstructions.trim() && visibleIssues.length > 0
+              ? "Fix All + Apply Instructions"
+              : customInstructions.trim()
+                ? "Apply Instructions"
+                : "Fix All Issues"}
           </button>
         )}
         <button
           onClick={handleScan}
           disabled={scanning || isProcessing}
-          className={`flex items-center justify-center gap-1.5 py-3 px-4 border border-border rounded-xl text-[13px] font-semibold text-foreground hover:bg-muted/50 transition-all active:scale-[0.97] disabled:opacity-50 ${issues.length === 0 ? "flex-1" : ""}`}
+          className={`flex items-center justify-center gap-1.5 py-3 px-4 border border-border rounded-xl text-[13px] font-semibold text-foreground hover:bg-muted/50 transition-all active:scale-[0.97] disabled:opacity-50 ${!visibleIssues.length && !customInstructions.trim() ? "flex-1" : ""}`}
         >
           {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           {qualityReport ? "Re-scan" : "Run Scan"}
         </button>
       </div>
 
-      {/* Issues list */}
-      {issues.length > 0 && (
+      {/* Issues list with animation */}
+      {visibleIssues.length > 0 && (
         <div className="bg-card border border-border/50 rounded-2xl shadow-sm overflow-hidden mb-4">
           <div className="px-4 py-3 border-b border-border/50">
-            <p className="text-[12px] font-bold text-foreground">Issues Found</p>
+            <p className="text-[12px] font-bold text-foreground">Issues Found ({visibleIssues.length})</p>
           </div>
           <div className="divide-y divide-border/50">
-            {issues.map((issue, i) => (
-              <div key={i} className="flex items-start gap-2.5 px-4 py-3">
-                {issue.severity === "critical"
-                  ? <AlertCircle size={13} className="text-destructive flex-shrink-0 mt-0.5" />
-                  : <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                }
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-semibold text-foreground">{issue.description}</p>
-                  {issue.suggestion && (
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{issue.suggestion}</p>
+            {allIssues.map((issue, i) => {
+              const state = issueStates[i] ?? null;
+              if (state === "done") return null;
+              const isFixing = state === "fixing";
+              const isFixed = state === "fixed";
+              return (
+                <div
+                  key={i}
+                  className={`flex items-start gap-2.5 px-4 py-3 transition-all duration-500 ${
+                    isFixed ? "bg-sage/10" : isFixing ? "bg-muted/40" : ""
+                  }`}
+                  style={{ opacity: isFixed ? 0.7 : 1 }}
+                >
+                  {isFixing ? (
+                    <Loader2 size={13} className="text-muted-foreground flex-shrink-0 mt-0.5 animate-spin" />
+                  ) : isFixed ? (
+                    <Check size={13} className="text-sage flex-shrink-0 mt-0.5" />
+                  ) : issue.severity === "critical" ? (
+                    <AlertCircle size={13} className="text-destructive flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
                   )}
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-[11px] font-semibold ${isFixed ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                      {issue.description}
+                    </p>
+                    {issue.suggestion && !isFixed && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{issue.suggestion}</p>
+                    )}
+                  </div>
+                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 transition-all ${
+                    isFixed ? "bg-sage/20 text-sage" :
+                    issue.severity === "critical" ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600"
+                  }`}>
+                    {isFixed ? "fixed" : issue.severity}
+                  </span>
                 </div>
-                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                  issue.severity === "critical" ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600"
-                }`}>
-                  {issue.severity}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -192,6 +292,7 @@ export default function StageReview({
           const underTarget = pct < 95;
           const isExpanded = expandedSectionId === s.id;
           const isApplying = applyingId === s.id;
+          const showAddContent = addContentSectionId === s.id;
 
           return (
             <div key={s.id} className={idx > 0 ? "border-t border-border/50" : ""}>
@@ -215,22 +316,22 @@ export default function StageReview({
               </button>
 
               {isExpanded && (
-                <div className="px-4 pb-4 space-y-3">
+                <div className="px-4 pb-4 space-y-3 border-t border-border/30">
                   {/* Content preview */}
                   {s.content && (
-                    <div className="bg-muted/40 rounded-xl p-3 max-h-44 overflow-y-auto">
+                    <div className="bg-muted/40 rounded-xl p-3 max-h-44 overflow-y-auto mt-3">
                       <p className="text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap">
                         {s.content.slice(0, 800)}{s.content.length > 800 ? "…" : ""}
                       </p>
                     </div>
                   )}
 
-                  {/* Custom feedback */}
+                  {/* Custom feedback for this section */}
                   <div className="flex gap-2">
                     <textarea
                       value={sectionFeedback[s.id] || ""}
                       onChange={e => setSectionFeedback(prev => ({ ...prev, [s.id]: e.target.value }))}
-                      placeholder="Add revision feedback for this section…"
+                      placeholder="Add specific revision instructions for this section…"
                       rows={2}
                       className="flex-1 text-[11px] bg-muted/40 border border-border rounded-xl px-3 py-2 resize-none placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-terracotta/40"
                     />
@@ -241,6 +342,56 @@ export default function StageReview({
                     >
                       {isApplying ? <Loader2 size={13} className="text-terracotta animate-spin" /> : <Send size={13} className="text-terracotta" />}
                     </button>
+                  </div>
+
+                  {/* Add content (table or figure) */}
+                  <div>
+                    <button
+                      onClick={() => {
+                        setAddContentSectionId(showAddContent ? null : s.id);
+                        setAddContentType(null);
+                        setAddContentDesc("");
+                      }}
+                      className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Plus size={12} /> Add table or figure to this section
+                    </button>
+
+                    {showAddContent && (
+                      <div className="mt-2 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setAddContentType("table")}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all ${addContentType === "table" ? "bg-terracotta text-white border-terracotta" : "border-border text-muted-foreground hover:border-terracotta/30"}`}
+                          >
+                            <Table2 size={12} /> Table
+                          </button>
+                          <button
+                            onClick={() => setAddContentType("figure")}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all ${addContentType === "figure" ? "bg-terracotta text-white border-terracotta" : "border-border text-muted-foreground hover:border-terracotta/30"}`}
+                          >
+                            <Image size={12} /> Figure
+                          </button>
+                        </div>
+                        {addContentType && (
+                          <div className="flex gap-2">
+                            <input
+                              value={addContentDesc}
+                              onChange={e => setAddContentDesc(e.target.value)}
+                              placeholder={addContentType === "table" ? "e.g. Comparison of PESTLE factors with impact ratings" : "e.g. Porter's Five Forces diagram for industry X"}
+                              className="flex-1 text-[11px] bg-muted/40 border border-border rounded-xl px-3 py-2 placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-terracotta/40"
+                            />
+                            <button
+                              onClick={() => handleAddContent(s.id)}
+                              disabled={!addContentDesc.trim() || applyingContent}
+                              className="flex-shrink-0 px-3 py-2 bg-terracotta text-white rounded-xl text-[11px] font-bold hover:bg-terracotta/90 disabled:opacity-40 active:scale-[0.97] transition-all"
+                            >
+                              {applyingContent ? <Loader2 size={12} className="animate-spin" /> : "Add"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
