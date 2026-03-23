@@ -325,7 +325,7 @@ export default function StageWriteHumanise({
         </div>
       )}
 
-      <StickyFooter leftLabel="← Plan" onLeft={onBack} rightLabel={imagesGated ? undefined : "Self-Critique →"} onRight={imagesGated ? undefined : onNext} />
+      <StickyFooter leftLabel="← Plan" onLeft={onBack} rightLabel={imagesGated ? "" : "Self-Critique →"} onRight={imagesGated ? () => {} : onNext} />
     </div>
   );
 }
