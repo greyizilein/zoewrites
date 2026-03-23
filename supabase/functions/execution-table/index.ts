@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getZoeBrain } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +16,9 @@ serve(async (req) => {
 
     const aiModel = model || "google/gemini-2.5-flash";
 
-    const systemPrompt = `You are ZOE — an elite academic AI writer. Your task is to create the EXECUTION TABLE: a comprehensive, highly detailed writing blueprint that will be used as the SOLE prompt for generating each section.
+    const systemPrompt = `${getZoeBrain("plan")}
+
+Your immediate task: create the EXECUTION TABLE — a comprehensive, highly detailed writing blueprint that will be used as the SOLE prompt for generating each section.
 
 THIS IS THE MOST CRITICAL STEP. The quality of the final work depends ENTIRELY on the detail in this table. Every cell must be specific, non-generic, and extremely detailed and technical. Generic instructions produce generic work.
 

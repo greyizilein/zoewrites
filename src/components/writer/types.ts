@@ -53,6 +53,9 @@ export interface WriterSettings {
   transitionStyle: string;
   paragraphLength: string;
   analysisDepth: string;
+  technicalDensity: number;
+  chartComplexity: number;
+  figureNumbering: string;
   // Content & quality settings
   totalCitations: number;
   includeImages: boolean;
@@ -81,7 +84,18 @@ export const assessmentTypes = [
 ];
 
 export const citationStyles = [
-  "Harvard (UK)", "APA 7th", "APA 6th", "MLA 9th", "Chicago", "Vancouver", "IEEE", "OSCOLA",
+  "Harvard",
+  "APA 7th",
+  "APA 6th",
+  "MLA 9th",
+  "Chicago 17 (Author-Date)",
+  "Chicago 17 (Notes-Bibliography)",
+  "Vancouver",
+  "IEEE",
+  "OSCOLA",
+  "AGLC 4",
+  "AMA",
+  "Turabian",
 ];
 
 export const academicLevels = [
@@ -161,14 +175,38 @@ export const DATA_SOURCES_BY_CATEGORY: Record<string, string[]> = {
 
 export const DATA_SOURCES = Object.values(DATA_SOURCES_BY_CATEGORY).flat();
 
-export const IMAGE_TYPES = ["Graphs", "Charts", "Infographics", "Diagrams", "Tables as Figures"];
+export const IMAGE_TYPES = [
+  // Standard academic charts
+  "Bar chart (grouped)",
+  "Bar chart (stacked)",
+  "Horizontal bar chart",
+  "Line chart",
+  "Scatter plot",
+  "Box plot",
+  "Histogram",
+  "Pie chart",
+  // Statistical / research charts
+  "Forest plot",
+  "Heatmap / Correlation matrix",
+  "Kaplan-Meier curve",
+  "ROC curve",
+  "Radar / Spider chart",
+  "Funnel plot",
+  "Treemap",
+  "Sankey / Alluvial diagram",
+  // General
+  "Infographic",
+  "Diagram",
+  "Conceptual model",
+  "Framework diagram",
+];
 
 export const defaultSettings: WriterSettings = {
   type: "",
   topic: "",
   module: "",
   wordCount: "",
-  citationStyle: "Harvard (UK)",
+  citationStyle: "Harvard",
   level: "Postgraduate L7",
   language: "UK English",
   model: "google/gemini-2.5-pro",
@@ -187,6 +225,9 @@ export const defaultSettings: WriterSettings = {
   transitionStyle: "Formal connectors",
   paragraphLength: "Medium",
   analysisDepth: "Deep Critical",
+  technicalDensity: 3,
+  chartComplexity: 3,
+  figureNumbering: "Sequential",
   totalCitations: 0,
   includeImages: true,
   imageCount: 0,

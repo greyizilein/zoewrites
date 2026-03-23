@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getZoeBrain } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -131,6 +132,253 @@ VALUE CHAIN ANALYSIS — APPLICATION:
 - Evaluate margin implications
 - Link to cost drivers and differentiation opportunities`;
 
+  // ── QUANTITATIVE ANALYSIS METHODS ──────────────────────────────────────────
+
+  if (f.includes("descriptive statistic")) return `
+DESCRIPTIVE STATISTICS — APPLICATION:
+- Report mean, median, mode, standard deviation, range, min/max for all continuous variables
+- Include frequency distribution tables for categorical variables
+- Present a summary statistics table — properly formatted with variable names, N, Mean, SD, Min, Max
+- Include a frequency distribution table or histogram where appropriate
+- Discuss the distribution shape: skewness, kurtosis, normality assessment
+- Every figure must be cited with its source data; interpret what the statistics reveal about the research question`;
+
+  if (f.includes("t-test") || f.includes("independent samples") || f.includes("paired samples")) return `
+T-TEST ANALYSIS — APPLICATION:
+${f.includes("paired") ? "PAIRED SAMPLES T-TEST:" : "INDEPENDENT SAMPLES T-TEST:"}
+- State the null and alternative hypotheses explicitly
+- Report: t-statistic, degrees of freedom (df), p-value, Cohen's d (effect size), 95% CI of mean difference
+- Present results in APA format: t(df) = X.XX, p = .XXX, d = X.XX, 95% CI [X.XX, X.XX]
+- ${f.includes("paired") ? "Include a pre-post comparison table showing means and SDs for each time point" : "Include a group comparison table showing means, SDs, and sample sizes per group"}
+- ${f.includes("paired") ? "Plot a pre-post line chart showing change per condition" : "Include a grouped bar chart or box plot comparing the two groups"}
+- Verify and report assumption checks: normality (Shapiro-Wilk), ${f.includes("paired") ? "normality of differences" : "homogeneity of variance (Levene's test)"}
+- Interpret the effect size: small (d<0.2), medium (d=0.5), large (d>0.8) by Cohen's convention
+- Conclude whether the null hypothesis is rejected and what this means for the research question`;
+
+  if (f.includes("one-way anova") || f.includes("anova")) return `
+${f.includes("two-way") ? "TWO-WAY ANOVA" : "ONE-WAY ANOVA"} — APPLICATION:
+- State hypotheses for ${f.includes("two-way") ? "main effects of each IV and the interaction effect" : "the group comparison"}
+- Report: F-statistic (between/within df), p-value, partial η² (effect size)
+${f.includes("two-way") ? "- Report main effects F/p for each IV, and the interaction effect F/p and partial η²\n- Describe the interaction: does the effect of one IV depend on the level of the other?" : "- If significant, run post-hoc tests (Tukey HSD recommended) and report pairwise comparisons"}
+- Present a summary ANOVA table: Source, SS, df, MS, F, p, partial η²
+- ${f.includes("two-way") ? "Plot an interaction plot (line chart with two factors)" : "Plot a grouped bar chart with error bars (95% CI)"}
+- Report assumption checks: normality per group, homogeneity of variance (Levene's)
+- Interpret effect size: small (η²<0.01), medium (η²=0.06), large (η²>0.14)`;
+
+  if (f.includes("pearson") || f.includes("correlation")) return `
+${f.includes("spearman") ? "SPEARMAN RANK CORRELATION" : "PEARSON CORRELATION"} — APPLICATION:
+- State the null hypothesis: no significant ${f.includes("spearman") ? "rank" : "linear"} relationship between variables
+- Report: ${f.includes("spearman") ? "ρ (rho)" : "r"} coefficient, p-value, sample size (n), ${f.includes("spearman") ? "confidence interval where possible" : "95% CI of r, r²"}
+- Present a correlation matrix if multiple variables are analysed
+- ${f.includes("spearman") ? "Plot a scatter plot with rank labels" : "Plot a scatter plot with regression line and confidence band"}
+- Interpret direction (positive/negative) and strength: |r|<0.3 weak, 0.3–0.7 moderate, >0.7 strong
+- Report r² to indicate proportion of variance explained (Pearson only)
+- Check assumptions: ${f.includes("spearman") ? "ordinal data or non-normal distributions" : "bivariate normality, linearity, homoscedasticity"}`;
+
+  if (f.includes("regression") && !f.includes("logistic")) return `
+${f.includes("multiple") ? "MULTIPLE" : "SIMPLE"} LINEAR REGRESSION — APPLICATION:
+- State the null hypothesis for ${f.includes("multiple") ? "each predictor" : "the slope"}
+- Report: R², ${f.includes("multiple") ? "adjusted R², " : ""}F-statistic (ANOVA table), and for each predictor: B coefficient, SE, β (standardised), t, p
+- ${f.includes("multiple") ? "Check and report VIF for multicollinearity (VIF>10 indicates serious multicollinearity)" : "Report the regression equation: Ŷ = a + bX"}
+- Present a regression coefficients table with all statistics
+- ${f.includes("multiple") ? "Plot a coefficient plot (lollipop chart) showing standardised betas" : "Plot the regression line with confidence band on a scatter plot"}
+- Report assumption checks: linearity, normality of residuals (Q-Q plot), homoscedasticity, independence
+- Interpret R² (variance explained) and the practical significance of coefficients`;
+
+  if (f.includes("logistic regression") || f.includes("binary logistic")) return `
+BINARY LOGISTIC REGRESSION — APPLICATION:
+- State the null hypothesis for each predictor
+- Report: Nagelkerke R², χ² (model fit), classification accuracy table
+- For each predictor report: B, SE, Wald statistic, p-value, OR (Odds Ratio), 95% CI for OR
+- Present a coefficient table with all statistics
+- Plot a ROC curve and report AUC; plot an odds ratio forest plot
+- Report assumption checks: linearity of log odds (Box-Tidwell), absence of multicollinearity (VIF), sample size (≥10 events per predictor)
+- Interpret ORs: OR>1 increases odds of outcome, OR<1 decreases odds`;
+
+  if (f.includes("chi-square") || f.includes("chi square")) return `
+CHI-SQUARE TEST — APPLICATION:
+- State the null hypothesis: no significant association between the two categorical variables
+- Report: χ² statistic, df, p-value, Cramér's V (effect size), cross-tabulation table
+- Present a cross-tabulation with observed and expected frequencies
+- Plot a clustered bar chart or mosaic plot
+- Report assumption checks: expected cell count ≥5 in ≥80% of cells; if violated, use Fisher's Exact Test
+- Interpret Cramér's V: V<0.1 negligible, 0.1–0.3 small, 0.3–0.5 moderate, >0.5 large`;
+
+  if (f.includes("mann-whitney")) return `
+MANN-WHITNEY U TEST — APPLICATION:
+- State null hypothesis: no difference in median ranks between the two groups
+- Report: U statistic, Z (or exact p), p-value, effect size r (r = Z/√N), median and IQR per group
+- Present a group comparison table with median, IQR, n per group
+- Plot a box plot comparing the two groups
+- Explain why the non-parametric test was chosen (normality violation or ordinal data)
+- Interpret effect size r: r=0.1 small, r=0.3 medium, r=0.5 large`;
+
+  if (f.includes("kruskal-wallis") || f.includes("kruskal wallis")) return `
+KRUSKAL-WALLIS TEST — APPLICATION:
+- State null hypothesis: no significant difference in median ranks across groups
+- Report: H statistic, df, p-value; post-hoc Dunn's test with Bonferroni correction if significant
+- Present a group comparison table with medians and IQRs
+- Plot a notched box plot comparing all groups
+- Explain choice of non-parametric test (>2 groups, normality violated)
+- Report post-hoc pairwise comparisons with adjusted p-values`;
+
+  if (f.includes("factor analysis") || f.includes("efa")) return `
+EXPLORATORY FACTOR ANALYSIS (EFA) — APPLICATION:
+- Report KMO statistic (should be ≥0.6) and Bartlett's test of sphericity (should be significant)
+- Report eigenvalues and present a scree plot to justify factor retention
+- Present a factor loadings matrix; cross-loadings should be discussed
+- Report total variance explained per factor and cumulative variance
+- Plot a factor loading heatmap
+- Interpret each factor based on the items that load on it (loadings ≥0.4 conventionally)
+- Discuss rotation method used (Varimax for orthogonal, Oblimin for correlated factors)`;
+
+  if (f.includes("cronbach") || f.includes("reliability")) return `
+CRONBACH'S ALPHA — RELIABILITY ANALYSIS — APPLICATION:
+- Report overall α value per subscale (α≥0.7 considered acceptable; ≥0.8 good; ≥0.9 excellent)
+- Present item-total correlation for each item
+- Report α-if-item-deleted for each item and flag any items that substantially improve reliability if removed
+- Plot an item reliability bar chart
+- Discuss implications for scale validity and suggest items for removal or revision if needed`;
+
+  if (f.includes("structural equation") || f.includes("sem")) return `
+STRUCTURAL EQUATION MODELLING (SEM) — APPLICATION:
+- Report model fit indices: CFI (≥0.95 good), TLI (≥0.95), RMSEA (≤0.06 good, ≤0.08 acceptable), SRMR (≤0.08)
+- Report χ²/df ratio (≤3 acceptable)
+- Present path coefficients (standardised β) and loadings with significance (p-values)
+- Describe the SEM path diagram textually (nodes = latent variables, arrows = paths, coefficients labelled)
+- Report direct, indirect, and total effects for mediation paths where applicable
+- Discuss model modifications (modification indices) and respecification rationale`;
+
+  if (f.includes("cluster analysis") || f.includes("clustering")) return `
+CLUSTER ANALYSIS — APPLICATION:
+- Justify clustering method (k-means for spherical clusters, hierarchical for unknown k, DBSCAN for density-based)
+- Describe dendrogram (for hierarchical) or silhouette score to determine optimal k
+- Report silhouette coefficient per cluster and overall (>0.5 = reasonable, >0.7 = strong structure)
+- Present a cluster profile table: mean values per variable for each cluster, with cluster labels
+- Discuss each cluster's distinctive characteristics relative to others
+- Evaluate business/research implications of cluster membership`;
+
+  if (f.includes("time series")) return `
+TIME SERIES ANALYSIS — APPLICATION:
+- Decompose series into: trend, seasonality, and residual/irregular components
+- Plot time series line chart with trend line overlay
+- Report autocorrelation (ACF) and partial autocorrelation (PACF) plots to identify patterns
+- If forecasting: report ARIMA model parameters (p,d,q) with AIC/BIC for model selection
+- Report forecast accuracy: RMSE, MAE, MAPE
+- Discuss stationarity (ADF test) and any differencing applied`;
+
+  if (f.includes("survival analysis") || f.includes("kaplan-meier") || f.includes("kaplan meier")) return `
+SURVIVAL ANALYSIS (KAPLAN-MEIER) — APPLICATION:
+- Report median survival time with 95% CI for each group
+- Present Kaplan-Meier survival curve — described textually and rendered as figure
+- Report log-rank test p-value for between-group comparison
+- Report hazard ratio (HR) with 95% CI if Cox regression is included
+- Discuss censoring: how many observations were censored and why
+- Interpret survival probability at key time points`;
+
+  if (f.includes("meta-analysis") || f.includes("meta analysis")) return `
+META-ANALYSIS — APPLICATION:
+- Report pooled effect size (Cohen's d or OR/RR) with 95% CI using random-effects model
+- Report I² statistic (heterogeneity): I²<25% low, 25–75% moderate, >75% high
+- Report τ² (between-study variance) and Cochrane Q test for heterogeneity
+- Present a forest plot described textually (effect size squares + whiskers + diamond for pooled estimate)
+- Assess publication bias: Funnel plot asymmetry, Egger's test
+- Conduct subgroup analysis if heterogeneity is high
+- In Word export, forest plot is rendered as a data table; in PDF as a chart`;
+
+  // ── QUALITATIVE ANALYSIS METHODS ────────────────────────────────────────────
+
+  if (f.includes("thematic analysis") || (f.includes("braun") && f.includes("clarke"))) return `
+THEMATIC ANALYSIS (BRAUN & CLARKE 2006) — APPLICATION:
+- Follow all 6 phases: (1) familiarisation, (2) generating codes, (3) searching for themes, (4) reviewing themes, (5) defining and naming themes, (6) writing up
+- Present 3–5 themes with names, definitions, and supporting participant quotes (in quotation marks with pseudonym/ID)
+- Include a theme frequency table: how many participants mentioned each theme (n = X)
+- Apply reflexive approach — acknowledge researcher positionality and interpretive choices
+- Use inductive coding (data-driven) or deductive (theory-driven) as appropriate and state which
+- Demonstrate analytical depth: go beyond description to explain what themes reveal about the research question`;
+
+  if (f.includes("framework analysis")) return `
+FRAMEWORK ANALYSIS — APPLICATION:
+- Describe the analytical framework used and its origin
+- Present a framework matrix: rows = participants/cases, columns = framework categories
+- Populate matrix with participant responses and conduct cell-by-cell analysis
+- Identify patterns, exceptions, and deviant cases
+- Useful for applied policy and health research with predefined categories`;
+
+  if (f.includes("content analysis")) return `
+CONTENT ANALYSIS — APPLICATION:
+- Describe the coding scheme: categories, definitions, and decision rules
+- Report inter-rater reliability: Cohen's κ (κ≥0.6 acceptable; ≥0.8 good)
+- Present a coding category table with frequency counts and percentages
+- Distinguish manifest (surface) from latent (interpretive) content analysis
+- Report unit of analysis (word, sentence, paragraph, document)
+- Discuss the representativeness of the sample of texts analysed`;
+
+  if (f.includes("grounded theory")) return `
+GROUNDED THEORY — APPLICATION:
+- Describe the coding process: open codes → axial codes → selective codes
+- Present core category and explain how it integrates the theory
+- Report theoretical saturation: at what point did new data stop producing new codes?
+- Discuss constant comparative method throughout data collection
+- Identify the emergent substantive theory and its relationship to existing literature
+- Describe memoing and reflexivity practices used`;
+
+  if (f.includes("interpretive phenomenological") || f.includes("ipa")) return `
+INTERPRETIVE PHENOMENOLOGICAL ANALYSIS (IPA) — APPLICATION:
+- Justify sample size: IPA uses small, purposive samples (6–15 participants typical)
+- Present superordinate and subordinate themes for each participant or across participants
+- Include rich textual descriptions for each theme with verbatim participant quotes
+- Apply double hermeneutic: researcher interpreting participant making sense of experience
+- Acknowledge researcher's own perspective and how it shaped interpretation
+- Present themes with supporting evidence: quotes, frequency of mention, variation across cases`;
+
+  if (f.includes("discourse analysis")) return `
+DISCOURSE ANALYSIS — APPLICATION:
+- Identify discursive strategies used in the text/speech
+- Analyse subject positions: how speakers position themselves and others
+- Identify ideological assumptions embedded in language choices
+- Discuss power relations constructed through discourse
+- Apply specific tradition (Foucauldian, Critical Discourse Analysis, Conversation Analysis) as stated
+- Quote and analyse specific linguistic features: nominalisations, modality, presuppositions`;
+
+  if (f.includes("narrative analysis") || f.includes("narrative inquiry")) return `
+NARRATIVE ANALYSIS — APPLICATION:
+- Identify narrative structure: orientation, complication, resolution (Labov's model)
+- Apply thematic narrative coding: what are the recurring narrative elements?
+- Discuss narrative identity: how does the narrator construct their sense of self?
+- Address performative aspects: what does the narrator want the listener to believe?
+- Present representative narrative segments with analysis
+- Discuss how individual narratives relate to collective or cultural narratives`;
+
+  if (f.includes("ethnograph")) return `
+ETHNOGRAPHIC ANALYSIS — APPLICATION:
+- Describe cultural themes identified from immersive fieldwork data
+- Analyse patterns of behaviour and their cultural meaning
+- Apply insider/outsider perspective: what did participant observation reveal that interviews would not?
+- Present thick description: detailed contextualised accounts of observed events
+- Discuss researcher positionality and reflexivity throughout
+- Connect micro-level observations to macro-level cultural patterns`;
+
+  if (f.includes("case study")) return `
+CASE STUDY ANALYSIS — APPLICATION:
+- Conduct within-case analysis for each case before cross-case comparison
+- Present a cross-case comparison table: rows = cases, columns = key dimensions/themes
+- Apply pattern matching: do patterns in each case match the theoretical propositions?
+- Discuss rival explanations and why the chosen interpretation is most plausible
+- Address boundaries of the case: what is inside and outside the case?
+- Generalise analytically (to theory) not statistically (to populations)`;
+
+  // ── MIXED METHODS ────────────────────────────────────────────────────────────
+
+  if (f.includes("sequential explanatory") || f.includes("mixed method")) return `
+MIXED METHODS — APPLICATION:
+- Clearly state the integration strategy: Sequential Explanatory (quant→qual explains), Sequential Exploratory (qual→quant tests), Concurrent Triangulation, or Embedded Design
+- Present quantitative findings first (with all statistical outputs as specified for that method)
+- Present qualitative findings second, explicitly connecting them to quantitative results
+- Include an integration/triangulation chapter or section that explains convergences and discrepancies
+- For Sequential Exploratory: describe how qualitative themes were translated into survey items or hypotheses
+- Discuss the weighting: which strand is primary and how results are synthesised`;
+
   // Generic framework guidance
   if (framework && framework !== "none specified" && framework !== "N/A") return `
 FRAMEWORK APPLICATION — "${framework}":
@@ -173,6 +421,7 @@ serve(async (req) => {
     const sourceDateTo = settings?.sourceDateTo || "2025";
     const useSeminalSources = settings?.useSeminalSources !== false;
     const analysisDepth = settings?.analysisDepth || "Deep Critical";
+    const technicalDensity = settings?.technicalDensity || 3;
     // Content & quality settings
     const totalCitationsOverride = settings?.totalCitations > 0 ? settings.totalCitations : null;
     const includeImages = settings?.includeImages !== false;
@@ -182,15 +431,18 @@ serve(async (req) => {
     const tableCount = settings?.tableCount || 0;
     const statisticalSourceCount = settings?.statisticalSourceCount || 0;
     const preferredDataSources: string[] = settings?.preferredDataSources || [];
+    const chartComplexity = settings?.chartComplexity || 3;
+    const figureNumbering = settings?.figureNumbering || "Sequential";
 
     const levelExpectations = getLevelExpectations(academic_level || "Undergraduate");
     const frameworkRules = getFrameworkRules(section.framework || "");
 
-    const systemPrompt = `You are ZOE — an elite academic AI writer built by writers, for students who deserve the best. You produce work at A+/First-Class standard (90 and above). You are confident, precise, disciplined, and incapable of cutting corners. Every output you produce must be the finest academic work the world can offer: professionally structured, analytically rigorous, and submission-ready.
+    const systemPrompt = `${getZoeBrain("write")}
 
-You are generating one section of a larger academic assessment. The full document is written section by section. Your role at this stage is to write THIS section — and only this section — completely, to the highest possible standard, exactly as specified below. Do not write ahead. Write section by section and pause until instructed to proceed.
-
-You must apply every rule in this prompt without exception. Nothing may be skipped, shortened, or deprioritised. Every instruction below is non-negotiable and must be followed precisely. Where a rule appears to conflict with another, apply both as fully as possible. The output of this section must be a complete, polished, submission-ready piece of academic writing at ${levelExpectations.depth} level.
+═══════════════════════════════════════════════
+CURRENT TASK
+═══════════════════════════════════════════════
+You are generating one section of a larger academic assessment. Write THIS section — and only this section — completely. It must be a complete, polished, submission-ready piece of academic writing at ${levelExpectations.depth} level. Every instruction below is non-negotiable.
 
 ═══════════════════════════════════════════════
 SECTION SPECIFICATION
@@ -235,7 +487,7 @@ Numbers must be written in numerals (1, 2, 3, percentages as %) not words — ex
 
 PUNCTUATION — NON-NEGOTIABLE: NEVER use em dashes (—) or en dashes (–) as punctuation substitutes. Where a comma, colon, semicolon, or parenthetical clause is appropriate, use those instead. Use only: commas, full stops, colons, semicolons, parentheses, and hyphens for compound words.
 
-CITATION COVERAGE — NON-NEGOTIABLE: EVERY paragraph must contain at least two in-text citations. No paragraph may be left uncited. Do not write entire paragraphs of analysis without citing the sources that support the claims being made. A paragraph that asserts facts, findings, or theoretical positions without citations will fail at A+ standard.
+CITATION COVERAGE — NON-NEGOTIABLE: 90% of all content must be cited. You must cite any information, idea, theory, statistic, or material that did not originate from you — unless it is common knowledge (widely known facts, generally accepted information, well-established historical facts). EVERY sentence that contains borrowed material must be cited. Place citations IMMEDIATELY after the information they support, before the full stop. If an entire paragraph draws on one source, still cite within every 1–2 sentences — do not leave a single citation at the end as if it covers the whole paragraph. At least 2 in every 3 paragraphs must contain citations. A paragraph that asserts facts, theories, or findings without citation will fail at A+ standard.
 
 EMPIRICAL DATA — MANDATORY: Every factual or statistical claim must be backed by a specific cited figure from a verifiable source. Do not write "studies show..." or "research suggests..." without citing the specific study, author, and year. Where data exists from statistical organisations (${preferredDataSources.length > 0 ? preferredDataSources.slice(0, 5).join(", ") : "Statista, World Bank, OECD, IMF"}), use it with precise figures (e.g. "GDP growth fell to 2.3% in 2023 (IMF, 2024)"). Vague generalisations unsupported by data are not acceptable.
 
@@ -246,16 +498,35 @@ Passive voice must not exceed 30% of sentences. Prefer active constructions with
 ═══════════════════════════════════════════════
 CITATION REQUIREMENTS — NON-NEGOTIABLE
 ═══════════════════════════════════════════════
-All sources must be genuine, verifiable, and searchable via Google. Fictional, fabricated, or unverifiable references are strictly prohibited. This is a hard rule with no exceptions.
+All sources must be genuine, verifiable, and searchable via Google. Fictional, fabricated, or unverifiable references are strictly prohibited. No exceptions.
 
-Citation density for this section type:
+THE 90% RULE — MANDATORY BUT HONEST:
+90% of all content in this section must be cited. Academic writing is built on evidence from others — any idea, finding, statistic, theory, claim, interpretation, or argument that did not originate in your own analysis MUST be cited. Uncited prose is a failure at A+ standard.
+
+CRITICAL BALANCE — QUALITY OVER MECHANICAL COMPLIANCE:
+The 90% rule means "wherever there is borrowed material, cite it honestly" — NOT "insert citations into every sentence regardless of whether they genuinely support the claim." Do NOT fabricate, force, or misrepresent citations to hit a number. Every citation must genuinely support the specific point being made: the cited source must actually say what you are claiming it says. A citation that misrepresents, stretches, or has nothing to do with the source is an academic integrity violation and is worse than no citation at all. Your own analytical conclusions drawn from evidence you have already cited do not need a second citation — that is your own thinking. Logical transitions, syntheses of previously-cited ideas, and interpretive commentary are yours and should not be artificially padded with citations.
+
+CITATION DENSITY — TARGET:
 — Minimum: ${density.min} citations per 1,000 words
 — Recommended: ${density.recommended} citations per 1,000 words
-— Maximum: ${density.max} citations per 1,000 words
 — Target for this section (${section.word_target} words): ${citMin}–${citMax} in-text citations, aiming for ~${citTarget}
+— At least 2 in every 3 consecutive paragraphs must contain citations. No paragraph that makes factual or theoretical claims may be left entirely uncited.
 
-Every sentence must be supported analytically by an academic source, clearly identified within the sentence. Citations must be varied in format and integrated naturally into the prose using constructions such as:
-— "(Author, Year)"
+WHEN TO CITE — APPLY EVERY RULE:
+1. IMMEDIATELY after the information: place the citation directly after the word, phrase, or sentence it supports — BEFORE the full stop where possible. Example: "Revenue grew by 14% (IMF, 2023)." not "Revenue grew by 14%. (IMF, 2023)"
+2. IN EVERY SENTENCE CONTAINING BORROWED MATERIAL: if a paragraph summarises or paraphrases one source throughout, still cite every 1–2 sentences within that paragraph — do NOT leave a citation only at the end.
+3. WHEN IN DOUBT: if you are uncertain whether information is common knowledge, cite it. The cost of an unnecessary citation is zero; the cost of a missing one is a fail.
+4. EVERY in-text citation in this section must have a corresponding entry in the reference list.
+
+WHAT DOES NOT NEED A CITATION (common knowledge only):
+— Widely known facts: "The sun rises in the east."
+— Generally accepted information: "Smoking can be harmful to health."
+— Well-established historical overviews that appear in dozens of sources without dispute: "George Washington was the first US President."
+— Your own original synthesis, interpretation, or analytical conclusion drawn from the evidence you have already cited.
+Everything else — every theory, every framework, every statistic, every empirical claim, every research finding — MUST be cited.
+
+Citations must be varied in format and integrated naturally into the prose using constructions such as:
+— "(Author, Year)" — parenthetical, before full stop
 — "Author (Year) argued that…"
 — "Author (Year) contended that…"
 — "Author (Year) demonstrated that…"
@@ -265,9 +536,16 @@ Every sentence must be supported analytically by an academic source, clearly ide
 — "Author (Year) revealed how…"
 — "Author (Year) emphasised that…"
 
-Citations must be substantively integrated into the analytical discussion. They must not always appear in brackets at the end of a sentence or paragraph. Vary their placement throughout the prose.
+Citations must be substantively integrated into the analytical discussion — not always at the end of a sentence. Vary placement: mid-sentence, at the end before the full stop, and as narrative subject ("Smith (2021) demonstrated that..."). Never stack two citations consecutively without analysis between them.
 
 In Harvard style, always use "and" rather than "&" for multiple authors (e.g., "Smith and Jones, 2020" — never "Smith & Jones, 2020").
+
+ET AL. THRESHOLD:
+— Harvard/APA: Use "et al." for 3+ authors in-text (e.g., "Smith et al., 2021"). List ALL authors in the reference list.
+— MLA: Use "et al." for 4+ authors in-text. List all authors in the reference list.
+— Vancouver/IEEE: Cite by number [1]; list all authors in the reference list.
+— OSCOLA/Chicago Notes: List all authors in footnotes; use shortened form on repeat citation.
+— 'Ibid.' is only permitted in Chicago Notes-Bibliography style. All other styles must repeat the full in-text citation on every use.
 
 Source quality:
 — Peer-reviewed journals: 50–60% of sources
@@ -301,10 +579,23 @@ Figures and tables (where applicable):
 — Sequence: (1) analytical paragraph introducing the figure/table → (2) heading → (3) figure/table content → (4) interpretation → (5) continuation of analysis
 — Number figures and tables in sequence: Figure 1, Figure 2, Table 1, Table 2, etc.
 ${includeImages
-  ? `— FIGURES: ${imageCount > 0 ? `Include approximately ${imageCount} figure${imageCount > 1 ? "s" : ""}` : "Include figures where they meaningfully add analytical value"}.${imageTypes.length > 0 ? ` Preferred types: ${imageTypes.join(", ")}.` : ""} Write a placeholder on its own line: [FIGURE X: brief description — type], followed by the caption: "Figure X: [full descriptive title]".`
+  ? `— FIGURES: ${imageCount > 0 ? `Include approximately ${imageCount} figure${imageCount > 1 ? "s" : ""}` : "Include figures where they meaningfully add analytical value"}.${imageTypes.length > 0 ? ` Preferred types: ${imageTypes.join(", ")}.` : ""}
+  Write a placeholder on its own line: [FIGURE X: brief description — chart type], followed immediately by the caption BELOW the placeholder: "Figure X. [Descriptive title]. [Source: cite source]. N = [sample size if applicable]."
+  FIGURE NUMBERING: Use ${figureNumbering === "Chapter-based" ? "chapter-based numbering (e.g. Figure 3.1, Figure 3.2 for chapter 3)" : "sequential numbering across the whole document (Figure 1, Figure 2, Figure 3...)"}.
+  CROSS-REFERENCE LANGUAGE: When introducing a figure in text, write "As illustrated in Figure X..." or "Figure X presents..." or "As shown in Figure X..." — never place a figure without a textual introduction.
+  CHART COMPLEXITY LEVEL: ${chartComplexity} — ${
+    chartComplexity <= 1
+      ? "MINIMAL: Clean chart, no gridlines, minimal axis labels, title only."
+      : chartComplexity === 2
+      ? "STANDARD: Gridlines at major intervals, labelled axes with units, data value labels on key elements, legend, title, figure number."
+      : chartComplexity === 3
+      ? "FULL ACADEMIC: All Standard elements plus error bars (95% CI), significance brackets with p-values or asterisks (* p<0.05, ** p<0.01, *** p<0.001), sample size annotations (n=X), source note below caption."
+      : "PUBLICATION-READY: All Full Academic elements. State that the chart must be in vector SVG format with CMYK colour mode option, font embedded, and scalable without quality loss — submission-ready for academic journals."
+  } Describe the required complexity level in the figure placeholder.
+  AUTO-SELECT THE CORRECT CHART TYPE: Bar chart (grouped) for group comparisons/ANOVA/t-test; Bar chart (stacked) for composition over categories; Line chart for time series/longitudinal/trends; Scatter plot for correlation/regression (add regression line and confidence band); Box plot for group distributions and non-parametric comparisons; Histogram for frequency distributions (add normal curve overlay if testing normality); Forest plot for meta-analysis effect sizes; Heatmap/correlation matrix for factor analysis and correlation tables; Kaplan-Meier curve for survival analysis; ROC curve for logistic regression; Radar/Spider chart for multi-attribute comparisons; Funnel plot for meta-analysis publication bias; Sankey/Alluvial diagram for flow between categories. Always state the chart type in the figure placeholder.`
   : "— Do NOT include figures or images in this section."}
 ${includeTables
-  ? `— TABLES: ${tableCount > 0 ? `Include approximately ${tableCount} formatted table${tableCount > 1 ? "s" : ""}` : "Include tables where data comparison or structured information genuinely adds value"}. Use markdown table format with clear column headers and a caption above: "Table X: [title]".`
+  ? `— TABLES: ${tableCount > 0 ? `Include approximately ${tableCount} formatted table${tableCount > 1 ? "s" : ""}` : "Include tables where data comparison or structured information genuinely adds value"}. Use markdown table format with clear column headers. Place the caption ABOVE the table (academic convention): "Table X. [Descriptive title]." Use ${figureNumbering === "Chapter-based" ? "chapter-based numbering (Table 3.1, Table 3.2...)" : "sequential numbering (Table 1, Table 2...)"}. When introducing a table in text, write "Table X presents..." or "As shown in Table X..." — always cross-reference before the table appears.`
   : "— Do not include tables in this section unless absolutely essential for data presentation."}
 
 ═══════════════════════════════════════════════
@@ -338,6 +629,7 @@ AI writing is statistically very predictable — each word tends to be the most 
 Sentence complexity preference: ${sentenceComplexity}
 Hedging intensity: ${hedgingIntensity} — ${hedgingIntensity === "Low" ? "make direct claims with minimal hedging" : hedgingIntensity === "High" ? "use frequent, varied hedging (appears to suggest, may indicate, it could be argued, evidence seems to point toward)" : "balance direct claims with appropriate academic hedging"}
 Formality level: ${formalityLevel}/5 (1 = conversational academic, 5 = highly formal)
+Technical density: ${technicalDensity}/5 — ${technicalDensity <= 1 ? "write for a general educated audience; minimise jargon and define all specialist terms on first use" : technicalDensity === 2 ? "light use of field-specific terms; define uncommon jargon and avoid heavy technical language" : technicalDensity === 3 ? "standard academic technical register; use discipline-specific vocabulary appropriately without over-explanation" : technicalDensity === 4 ? "high technical density; assume reader familiarity with core disciplinary concepts and methodologies; use precise technical vocabulary throughout" : "specialist-level density; assume expert readership; deploy advanced terminology, field-specific shorthand, and discipline-specific methodological language without definition"}
 
 ═══════════════════════════════════════════════
 QUALITY CRITERIA — ALL MUST BE MET

@@ -281,6 +281,9 @@ export default function StageBriefIntake({
           { label: "Transitions", type: "select", options: ["Formal connectors", "Casual bridges", "Implicit"], value: settings.transitionStyle, key: "transitionStyle" },
           { label: "Paragraph Length", type: "select", options: ["Short", "Medium", "Long"], value: settings.paragraphLength, key: "paragraphLength" },
           { label: "Analysis Depth", type: "select", options: ["Overview", "Standard", "Deep Critical"], value: settings.analysisDepth, key: "analysisDepth" },
+          { label: "Technical Density", type: "select", options: ["1 — Accessible", "2 — Light", "3 — Moderate", "4 — Technical", "5 — Specialist"], value: `${settings.technicalDensity} — ${["Accessible", "Light", "Moderate", "Technical", "Specialist"][settings.technicalDensity - 1]}`, key: "technicalDensity" },
+          { label: "Chart Complexity", type: "select", options: ["1 — Minimal", "2 — Standard", "3 — Full Academic", "4 — Publication-Ready"], value: `${settings.chartComplexity} — ${["Minimal", "Standard", "Full Academic", "Publication-Ready"][settings.chartComplexity - 1]}`, key: "chartComplexity" },
+          { label: "Figure Numbering", type: "select", options: ["Sequential", "Chapter-based"], value: settings.figureNumbering, key: "figureNumbering" },
         ]}
         onApply={(values) => {
           const updated = { ...settings };
@@ -291,6 +294,12 @@ export default function StageBriefIntake({
             } else if (key === "formalityLevel") {
               const num = parseInt(String(val));
               (updated as any).formalityLevel = isNaN(num) ? 4 : num;
+            } else if (key === "technicalDensity") {
+              const num = parseInt(String(val));
+              (updated as any).technicalDensity = isNaN(num) ? 3 : num;
+            } else if (key === "chartComplexity") {
+              const num = parseInt(String(val));
+              (updated as any).chartComplexity = isNaN(num) ? 3 : num;
             } else {
               (updated as any)[key] = val;
             }
