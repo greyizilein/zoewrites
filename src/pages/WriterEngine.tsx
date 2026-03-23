@@ -64,6 +64,7 @@ const WriterEngine = () => {
 
   const [generating, setGenerating] = useState(false);
   const [streamContent, setStreamContent] = useState("");
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   const [imageVariants, setImageVariants] = useState<any[]>([]);
   const [imagesSkipped, setImagesSkipped] = useState(false);
@@ -322,64 +323,94 @@ const WriterEngine = () => {
     if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
   };
 
-  // ─── Full document generation ────────────────────────────────────────────────
+  // ─── Full document generation (sequential section-generate loop) ─────────────
   const handleWriteDocument = async () => {
-    if (sections.length === 0) {
-      toast({ title: "No sections", description: "Confirm your plan first.", variant: "destructive" }); return;
-    }
+    if (sections.length === 0) return;
     setGenerating(true);
+    setWriteError(null);
     setStreamContent("");
-    setProgressMessage("ZOE is writing your document…");
-    try {
-      const session = await supabase.auth.getSession();
-      const accessToken = session.data.session?.access_token;
-      if (!accessToken) throw new Error("Session expired. Please sign in again.");
 
-      const resp = await fetch(`${CHAT_URL}/document-generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          sections: sections.map(s => ({
-            title: s.title, word_target: s.word_target, framework: s.framework,
-            citation_count: s.citation_count, a_plus_criteria: s.a_plus_criteria || "",
-            purpose_scope: s.purpose_scope || "", learning_outcomes: s.learning_outcomes || "",
-            required_inputs: s.required_inputs || "", structure_formatting: s.structure_formatting || "",
-            constraints_text: s.constraints_text || "",
-          })),
-          execution_plan: assessment?.execution_plan || executionPlan,
-          citation_style: settings.citationStyle || "Harvard",
-          academic_level: settings.level || "Postgraduate L7",
-          model: selectedModel, settings,
-          brief_text: assessment?.brief_text || briefText || "",
-          topic: settings.topic || "",
-        }),
-      });
-      if (!resp.ok || !resp.body) {
-        if (resp.status === 429) throw new Error("Rate limited. Please wait.");
-        if (resp.status === 402) throw new Error("Credits exhausted.");
-        throw new Error(`Generation failed: ${resp.status}`);
-      }
-      const fullContent = await readContentStream(resp.body, setStreamContent);
-      if (fullContent) {
-        const parsed = parseFullDocument(fullContent);
-        await saveParsedSections(parsed);
-        // Harvard &→and fix
-        if ((settings.citationStyle || "Harvard") === "Harvard") {
-          for (const s of sections) {
-            const c = parsed[s.id];
-            if (!c) continue;
-            const fixed = c.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
-            if (fixed !== c) {
-              const wc = countBodyWords(fixed);
-              await supabase.from("sections").update({ content: fixed, word_current: wc }).eq("id", s.id);
-              setSections(prev => prev.map(x => x.id === s.id ? { ...x, content: fixed, word_current: wc } : x));
-            }
-          }
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token;
+    if (!accessToken) {
+      setWriteError("Session expired — please sign in again.");
+      setGenerating(false);
+      return;
+    }
+
+    const writtenContent: Record<string, string> = {};
+    let displayContent = "";
+    const isHarvard = (settings.citationStyle || "Harvard").toLowerCase().includes("harvard");
+
+    try {
+      for (let i = 0; i < sections.length; i++) {
+        const section = sections[i];
+        setProgressMessage(`Writing ${i + 1} of ${sections.length}: ${section.title}…`);
+
+        // Build prior sections context from already-written content this run
+        const priorParts = sections.slice(0, i)
+          .filter(s => writtenContent[s.id])
+          .map(s => `## ${s.title}\n${getBodyContent(writtenContent[s.id]).slice(0, 1000)}`);
+        const priorSummary = priorParts.join("\n\n");
+
+        const resp = await fetch(`${CHAT_URL}/section-generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({
+            section: {
+              title: section.title, word_target: section.word_target,
+              framework: section.framework, citation_count: section.citation_count,
+              a_plus_criteria: section.a_plus_criteria || "",
+              purpose_scope: section.purpose_scope || "",
+              learning_outcomes: section.learning_outcomes || "",
+              required_inputs: section.required_inputs || "",
+              structure_formatting: section.structure_formatting || "",
+              constraints_text: section.constraints_text || "",
+            },
+            execution_plan: assessment?.execution_plan || executionPlan,
+            prior_sections_summary: priorSummary,
+            citation_style: settings.citationStyle || "Harvard",
+            academic_level: settings.level || "Postgraduate L7",
+            model: selectedModel, settings,
+            brief_text: assessment?.brief_text || briefText || "",
+            topic: settings.topic || "",
+          }),
+        });
+
+        if (!resp.ok || !resp.body) {
+          if (resp.status === 429) throw new Error("Rate limited — please wait a moment.");
+          if (resp.status === 402) throw new Error("Credits exhausted.");
+          throw new Error(`Write failed (${resp.status})`);
         }
-        toast({ title: "Document complete!", description: `${sections.length} sections written.` });
+
+        const sectionPrefix = (displayContent ? "\n\n---\n\n" : "") + `## ${section.title}\n\n`;
+        const baseDisplay = displayContent + sectionPrefix;
+
+        const sectionBody = await readContentStream(resp.body, (chunk) => {
+          setStreamContent(baseDisplay + chunk);
+        });
+
+        // Apply Harvard citation fix
+        let fixedBody = sectionBody;
+        if (isHarvard) {
+          fixedBody = sectionBody.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
+        }
+
+        writtenContent[section.id] = fixedBody;
+        displayContent = baseDisplay + fixedBody;
+
+        // Save section to DB
+        const wc = countBodyWords(fixedBody);
+        await supabase.from("sections").update({ content: fixedBody, word_current: wc, status: "complete" }).eq("id", section.id);
+        setSections(prev => prev.map(s => s.id === section.id ? { ...s, content: fixedBody, word_current: wc, status: "complete" } : s));
       }
+
+      // Update total word count on assessment
+      const newTotal = Object.values(writtenContent).reduce((a, c) => a + countBodyWords(c), 0);
+      if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
+
     } catch (e: any) {
-      toast({ title: "Generation failed", description: e.message, variant: "destructive" });
+      setWriteError(e.message || "Generation failed");
     } finally {
       setGenerating(false);
       setStreamContent("");
@@ -387,51 +418,78 @@ const WriterEngine = () => {
     }
   };
 
-  // ─── Full document revision ───────────────────────────────────────────────────
+  // ─── Full document revision (sequential section-revise loop) ─────────────────
   const handleReviseDocument = async (feedback: string) => {
     if (!feedback.trim()) return;
     const contentSections = sections.filter(s => s.content && s.content.trim().length > 50);
     if (contentSections.length === 0) {
-      toast({ title: "Nothing to revise", variant: "destructive" }); return;
+      toast({ title: "Nothing to revise — write the document first.", variant: "destructive" }); return;
     }
-    const fullDocContent = contentSections
-      .map(s => `## ${s.title}\n\n${s.content}`)
-      .join("\n\n---\n\n");
 
     setGenerating(true);
+    setWriteError(null);
     setStreamContent("");
-    setProgressMessage("Revising document…");
-    try {
-      const session = await supabase.auth.getSession();
-      const accessToken = session.data.session?.access_token;
-      if (!accessToken) throw new Error("Session expired.");
 
-      const resp = await fetch(`${CHAT_URL}/document-revise`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          content: fullDocContent, feedback,
-          word_target: totalTarget,
-          sections: sections.map(s => ({ title: s.title, word_target: s.word_target })),
-          model: selectedModel, settings,
-          brief_text: assessment?.brief_text || briefText || "",
-          topic: settings.topic || "",
-          citation_style: settings.citationStyle || "Harvard",
-        }),
-      });
-      if (!resp.ok || !resp.body) {
-        if (resp.status === 429) throw new Error("Rate limited. Please wait.");
-        if (resp.status === 402) throw new Error("Credits exhausted.");
-        throw new Error(`Revision failed: ${resp.status}`);
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token;
+    if (!accessToken) {
+      setWriteError("Session expired — please sign in again.");
+      setGenerating(false);
+      return;
+    }
+
+    let displayContent = "";
+    const isHarvard = (settings.citationStyle || "Harvard").toLowerCase().includes("harvard");
+
+    try {
+      for (let i = 0; i < contentSections.length; i++) {
+        const section = contentSections[i];
+        setProgressMessage(`Revising ${i + 1} of ${contentSections.length}: ${section.title}…`);
+
+        const resp = await fetch(`${CHAT_URL}/section-revise`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({
+            content: section.content,
+            feedback,
+            word_target: section.word_target,
+            section_title: section.title,
+            model: selectedModel, settings,
+            brief_text: assessment?.brief_text || briefText || "",
+            topic: settings.topic || "",
+          }),
+        });
+
+        if (!resp.ok || !resp.body) {
+          if (resp.status === 429) throw new Error("Rate limited — please wait a moment.");
+          if (resp.status === 402) throw new Error("Credits exhausted.");
+          throw new Error(`Revision failed (${resp.status})`);
+        }
+
+        const sectionPrefix = (displayContent ? "\n\n---\n\n" : "") + `## ${section.title}\n\n`;
+        const baseDisplay = displayContent + sectionPrefix;
+
+        const sectionBody = await readContentStream(resp.body, (chunk) => {
+          setStreamContent(baseDisplay + chunk);
+        });
+
+        let fixedBody = sectionBody;
+        if (isHarvard) {
+          fixedBody = sectionBody.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
+        }
+
+        displayContent = baseDisplay + fixedBody;
+
+        const wc = countBodyWords(fixedBody);
+        await supabase.from("sections").update({ content: fixedBody, word_current: wc }).eq("id", section.id);
+        setSections(prev => prev.map(s => s.id === section.id ? { ...s, content: fixedBody, word_current: wc } : s));
       }
-      const revisedContent = await readContentStream(resp.body, setStreamContent);
-      if (revisedContent) {
-        const parsed = parseFullDocument(revisedContent);
-        await saveParsedSections(parsed);
-        toast({ title: "Revision complete", description: "Run Re-scan to verify improvements." });
-      }
+
+      const newTotal = contentSections.reduce((a, s) => a + countBodyWords(s.content || ""), 0);
+      if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
+
     } catch (e: any) {
-      toast({ title: "Revision failed", description: e.message, variant: "destructive" });
+      setWriteError(e.message || "Revision failed");
     } finally {
       setGenerating(false);
       setStreamContent("");
@@ -700,6 +758,8 @@ const WriterEngine = () => {
                   onBack={() => { setExecutionPlan(executionPlan); setStage(0); }}
                   onNext={() => setStage(2)}
                   settings={settings}
+                  writeError={writeError}
+                  onClearError={() => setWriteError(null)}
                 />
               )}
 
@@ -713,8 +773,10 @@ const WriterEngine = () => {
                   isProcessing={isProcessing}
                   generating={generating}
                   streamContent={streamContent}
+                  writeError={writeError}
                   onRunScan={handleRunScan}
                   onReviseDocument={handleReviseDocument}
+                  onClearError={() => setWriteError(null)}
                   onBack={() => setStage(1)}
                   onNext={() => setStage(3)}
                 />

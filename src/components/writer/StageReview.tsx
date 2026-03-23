@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Loader2, Check, AlertTriangle, AlertCircle, RefreshCw,
-  Wrench, Link2, FileText, ChevronDown, ChevronUp,
+  Wrench, Link2, FileText, ChevronDown, ChevronUp, X,
 } from "lucide-react";
 import { Section } from "./types";
 
@@ -38,8 +38,10 @@ interface Props {
   isProcessing: boolean;
   generating: boolean;
   streamContent: string;
+  writeError?: string | null;
   onRunScan: () => Promise<any>;
   onReviseDocument: (feedback: string) => Promise<void>;
+  onClearError?: () => void;
   onBack: () => void;
   onNext: () => void;
 }
@@ -56,7 +58,7 @@ const gradeColor: Record<string, string> = {
 
 export default function StageReview({
   sections, fullDocContent, qualityReport, coherenceReport, isProcessing, generating, streamContent,
-  onRunScan, onReviseDocument, onBack, onNext,
+  writeError, onRunScan, onReviseDocument, onClearError, onBack, onNext,
 }: Props) {
   const [scanning, setScanning] = useState(false);
   const [revising, setRevising] = useState(false);
@@ -411,6 +413,19 @@ export default function StageReview({
                 {fullDocContent}
               </pre>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline revision error */}
+      {writeError && (
+        <div className="flex items-start gap-2.5 bg-destructive/8 border border-destructive/20 rounded-xl px-4 py-3">
+          <AlertCircle size={15} className="text-destructive flex-shrink-0 mt-0.5" />
+          <p className="text-[12px] text-destructive flex-1 leading-relaxed">{writeError}</p>
+          {onClearError && (
+            <button onClick={onClearError} className="text-destructive/60 hover:text-destructive flex-shrink-0">
+              <X size={13} />
+            </button>
           )}
         </div>
       )}
