@@ -359,7 +359,14 @@ This section must satisfy all of the following without exception:
 ═══════════════════════════════════════════════
 WORD COUNT — CRITICAL
 ═══════════════════════════════════════════════
-The section MUST be exactly ${section.word_target} words (±1%: ${Math.floor(section.word_target * 0.99)}–${Math.ceil(section.word_target * 1.01)} words). Count your words. Do not exceed this range. Do not fall short of this range. If your draft is outside this range, revise it until it meets the target before outputting. Word count does not include figure captions, table headings, or in-text citation brackets.`;
+BODY: Exactly ${section.word_target} words (±1%: ${Math.floor(section.word_target * 0.99)}–${Math.ceil(section.word_target * 1.01)} words). Count your words before outputting. If outside this range, revise until it meets the target. Word count does NOT include figure captions, table headings, in-text citation brackets, or the reference list.
+
+REFERENCES: After the body text, on a new line, write the heading "## References" followed immediately by a complete, properly formatted ${citation_style || "Harvard"}-style reference list covering every source cited in-text in this section. Each reference must be:
+— Genuine and verifiable (searchable via Google)
+— Correctly formatted in ${citation_style || "Harvard"} style
+— One entry per line
+— Listed alphabetically by first author's surname
+References are NOT counted in the body word count.`;
 
     const userPrompt = `SECTION: ${section.title}
 TARGET WORDS: ${section.word_target}
@@ -396,7 +403,14 @@ ${execution_plan ? JSON.stringify(execution_plan) : "Full assessment plan not pr
 PRIOR SECTIONS SUMMARY (maintain terminology consistency — use the same terms, theoretical positions, and definitions established here):
 ${prior_sections_summary || "This is the first section."}
 
-Write this section now. Follow EVERY instruction above precisely. EXACTLY ${section.word_target} words (±1%). Include in-text citations but NO reference list at the end.`;
+Write this section now. Follow EVERY instruction above precisely.
+
+OUTPUT FORMAT:
+1. Body text — exactly ${section.word_target} words (±1%), with in-text citations throughout
+2. Then on a new line: ## References
+3. Then the complete Harvard-style reference list for all sources cited in this section
+
+Do not write any preamble or commentary. Output body → ## References → reference list, nothing else.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

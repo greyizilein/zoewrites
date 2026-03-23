@@ -1,6 +1,16 @@
+/** Strips the ## References block from content, returning body text only. */
+export function getBodyContent(content: string): string {
+  return content.replace(/\n## References[\s\S]*$/i, "").trim();
+}
+
 /** Counts whitespace-delimited words in a string. */
 export function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
+}
+
+/** Counts body words only — excludes the ## References block. */
+export function countBodyWords(text: string): number {
+  return countWords(getBodyContent(text));
 }
 
 /**
