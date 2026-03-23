@@ -28,6 +28,9 @@ EXTENDED PIPELINE TOOLS:
 - generate_images: Generate academic figures and diagrams
 - coherence_check: Analyse argument flow and cross-section logical consistency
 - adjust_word_target: Update a section's word target directly in the database
+- delete_assessment: Permanently delete an assessment. ALWAYS confirm with the user first — say "Are you sure you want to delete **[title]**? This cannot be undone." and only call if confirmed is true.
+- get_recommendations: Get AI improvement recommendations for a specific section. Useful when a student asks "how can I improve this section?" or "what's wrong with my introduction?"
+- update_assessment_title: Rename the current assessment. Ask the user for the new title if not provided.
 
 CONVERSATIONAL INTELLIGENCE (respond entirely in your message — no API side effects):
 - predict_grade: Estimate the likely grade band. Be specific — name a band (e.g. "Upper Second / 2:1, ~63–68%") and explain strengths and gaps.
@@ -258,6 +261,51 @@ const tools = [
           level: { type: "string", description: "e.g. Postgraduate L7, Undergraduate L6" },
         },
         required: ["topic"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_assessment",
+      description: "Permanently delete an assessment and all its sections. ALWAYS confirm with the user before calling.",
+      parameters: {
+        type: "object",
+        properties: {
+          assessment_id: { type: "string", description: "ID of the assessment to delete" },
+          confirmed: { type: "boolean", description: "Must be true — user has confirmed the deletion" },
+        },
+        required: ["confirmed"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_recommendations",
+      description: "Get per-section improvement recommendations from ZOE's analysis engine",
+      parameters: {
+        type: "object",
+        properties: {
+          section_title: { type: "string", description: "Title of the section to analyse (optional — defaults to first written section)" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_assessment_title",
+      description: "Rename the current assessment",
+      parameters: {
+        type: "object",
+        properties: {
+          new_title: { type: "string", description: "The new title for the assessment" },
+        },
+        required: ["new_title"],
         additionalProperties: false,
       },
     },

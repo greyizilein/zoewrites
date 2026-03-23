@@ -5,10 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import {
   MessageCircle, X, ArrowLeft, Search, Send,
-  Plus, FileText, Zap, BarChart3, Settings, CreditCard,
+  Plus, BarChart3, Settings,
   CheckCircle, AlertCircle, Loader2, ChevronRight, Wand2,
   Sparkles, ShieldCheck, Download, Image, BookOpen,
-  AlignLeft, Target, Brain, Quote, SlidersHorizontal, RefreshCw,
+  AlignLeft, Target, Brain, Quote, SlidersHorizontal,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -55,6 +55,9 @@ interface Section {
   status: string;
   content: string | null;
   sort_order: number;
+  learning_outcomes?: string | null;
+  a_plus_criteria?: string | null;
+  constraints_text?: string | null;
 }
 
 interface ZoeChatMsg {
@@ -272,6 +275,9 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
   const [sections, setSections] = useState<Section[]>([]);
   const [sectionsLoading, setSectionsLoading] = useState(false);
 
+  // ── Deferred send (avoids state-batching race on Write All) ────────────────
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+
   // ── Payment state ──────────────────────────────────────────────────────────
   const [gbpToNgn, setGbpToNgn] = useState(2083);
   const [payLoading, setPayLoading] = useState<string | null>(null);
@@ -297,11 +303,11 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
     setSectionsLoading(true);
     supabase
       .from("sections")
-      .select("id, title, word_target, word_current, status, content, sort_order")
+      .select("id, title, word_target, word_current, status, content, sort_order, learning_outcomes, a_plus_criteria, constraints_text")
       .eq("assessment_id", chatOpen)
       .order("sort_order", { ascending: true })
       .then(({ data }) => {
-        setSections(data || []);
+        setSections((data || []) as Section[]);
         setSectionsLoading(false);
       });
   }, [chatOpen]);
@@ -325,6 +331,16 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       setTimeout(() => textareaRef.current?.focus(), 150);
     }
   }, [chatOpen, open]);
+
+  // Fire deferred send once chatOpen is committed (fixes Write All race condition)
+  useEffect(() => {
+    if (!chatOpen || !pendingPrompt) return;
+    const prompt = pendingPrompt;
+    setPendingPrompt(null);
+    // Wait a tick for sections to begin loading before handleSend reads them
+    setTimeout(() => handleSend(prompt), 50);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatOpen, pendingPrompt]);
 
   // ── Message helpers ────────────────────────────────────────────────────────
   const addMsg = useCallback((
@@ -427,11 +443,20 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
 
       case "write_all": {
         if (!activeAssessmentId) { addMsg(activeChatId, { role: "action", content: "No assessment selected.", actionType: "error" }); break; }
-        const pending = sections.filter(s => s.status !== "complete");
+        // Live-fetch sections if not yet loaded (avoids stale-empty-array bug)
+        let liveSectionsWA = sections;
+        if (liveSectionsWA.length === 0) {
+          const { data } = await supabase.from("sections")
+            .select("id, title, word_target, word_current, status, content, sort_order")
+            .eq("assessment_id", activeAssessmentId).order("sort_order", { ascending: true });
+          liveSectionsWA = (data || []) as Section[];
+          if (liveSectionsWA.length) setSections(liveSectionsWA);
+        }
+        const pending = liveSectionsWA.filter(s => s.status !== "complete");
         if (pending.length === 0) { addMsg(activeChatId, { role: "action", content: "All sections already complete.", actionType: "success" }); break; }
         addMsg(activeChatId, { role: "action", content: `Writing ${pending.length} section${pending.length > 1 ? "s" : ""}…`, actionType: "writing" });
         let done = 0;
-        for (const sec of pending) {
+        for (const sec of liveSectionsWA.filter(s => s.status !== "complete")) {
           try {
             const resp = await fetch(`${CHAT_URL}/section-generate`, {
               method: "POST",
@@ -454,8 +479,16 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
 
       case "write_section": {
         if (!activeAssessmentId) { addMsg(activeChatId, { role: "action", content: "No assessment selected.", actionType: "error" }); break; }
+        let liveSectionsWS = sections;
+        if (liveSectionsWS.length === 0) {
+          const { data } = await supabase.from("sections")
+            .select("id, title, word_target, word_current, status, content, sort_order")
+            .eq("assessment_id", activeAssessmentId).order("sort_order", { ascending: true });
+          liveSectionsWS = (data || []) as Section[];
+          if (liveSectionsWS.length) setSections(liveSectionsWS);
+        }
         const needle = (args.section_title || "").toLowerCase();
-        const sec = sections.find(s => s.title.toLowerCase() === needle) || sections.find(s => s.title.toLowerCase().includes(needle));
+        const sec = liveSectionsWS.find(s => s.title.toLowerCase() === needle) || liveSectionsWS.find(s => s.title.toLowerCase().includes(needle));
         if (!sec) { addMsg(activeChatId, { role: "action", content: `Section "${args.section_title}" not found.`, actionType: "error" }); break; }
         addMsg(activeChatId, { role: "action", content: `Writing "${sec.title}"…`, actionType: "writing" });
         try {
@@ -518,7 +551,15 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
 
       case "humanise_all": {
         if (!activeAssessmentId) break;
-        const complete = sections.filter(s => s.status === "complete" && s.content);
+        let liveSectionsH = sections;
+        if (liveSectionsH.length === 0) {
+          const { data } = await supabase.from("sections")
+            .select("id, title, word_target, word_current, status, content, sort_order")
+            .eq("assessment_id", activeAssessmentId).order("sort_order", { ascending: true });
+          liveSectionsH = (data || []) as Section[];
+          if (liveSectionsH.length) setSections(liveSectionsH);
+        }
+        const complete = liveSectionsH.filter(s => s.status === "complete" && s.content);
         if (!complete.length) { addMsg(activeChatId, { role: "action", content: "No completed sections to humanise.", actionType: "error" }); break; }
         addMsg(activeChatId, { role: "action", content: `Humanising ${complete.length} section${complete.length > 1 ? "s" : ""}…`, actionType: "humanising" });
         let ok = 0;
@@ -546,7 +587,15 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
 
       case "generate_images": {
         if (!activeAssessmentId) break;
-        const withContent = sections.filter(s => s.content);
+        let liveSectionsG = sections;
+        if (liveSectionsG.length === 0) {
+          const { data } = await supabase.from("sections")
+            .select("id, title, word_target, word_current, status, content, sort_order")
+            .eq("assessment_id", activeAssessmentId).order("sort_order", { ascending: true });
+          liveSectionsG = (data || []) as Section[];
+          if (liveSectionsG.length) setSections(liveSectionsG);
+        }
+        const withContent = liveSectionsG.filter(s => s.content);
         if (!withContent.length) { addMsg(activeChatId, { role: "action", content: "No written sections to generate images for.", actionType: "error" }); break; }
         addMsg(activeChatId, { role: "action", content: "Generating academic images…", actionType: "generating" });
         const { error } = await supabase.functions.invoke("generate-images", { body: { assessment_id: activeAssessmentId, sections: withContent.map(s => ({ id: s.id, title: s.title, content: s.content })) } });
@@ -570,8 +619,85 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
           addMsg(activeChatId, { role: "assistant", content: "Are you sure you want to export as **.docx**? Reply **yes, export** to confirm." });
           break;
         }
-        addMsg(activeChatId, { role: "action", content: "Opening export…", actionType: "exporting" });
-        setTimeout(() => { navigate(`/assessment/${activeAssessmentId}`); setOpen(false); }, 500);
+        addMsg(activeChatId, { role: "action", content: "Generating .docx file…", actionType: "exporting" });
+        const { data: exportData, error: exportError } = await supabase.functions.invoke("export-docx", {
+          body: { assessment_id: activeAssessmentId },
+        });
+        if (exportError || !exportData?.url) {
+          addMsg(activeChatId, { role: "action", content: "Export failed. Try from the assessment workspace.", actionType: "error" });
+        } else {
+          window.open(exportData.url, "_blank");
+          addMsg(activeChatId, { role: "action", content: "Document exported — download started.", actionType: "success" });
+        }
+        break;
+      }
+
+      case "delete_assessment": {
+        const target = args.assessment_id
+          ? assessments.find(a => a.id === args.assessment_id)
+          : currentAssessment;
+        if (!target) { addMsg(activeChatId, { role: "action", content: "No assessment specified.", actionType: "error" }); break; }
+        if (!args.confirmed) {
+          addMsg(activeChatId, { role: "assistant", content: `Are you sure you want to permanently delete **${target.title}**? This cannot be undone. Reply **yes, delete** to confirm.` });
+          break;
+        }
+        addMsg(activeChatId, { role: "action", content: `Deleting "${target.title}"…`, actionType: "processing" });
+        await supabase.from("sections").delete().eq("assessment_id", target.id);
+        const { error: delError } = await supabase.from("assessments").delete().eq("id", target.id);
+        if (delError) {
+          addMsg(activeChatId, { role: "action", content: "Delete failed. Please try again.", actionType: "error" });
+        } else {
+          if (chatOpen === target.id) setChatOpen(null);
+          addMsg("dashboard", { role: "action", content: `"${target.title}" deleted.`, actionType: "success" });
+          onRefresh();
+        }
+        break;
+      }
+
+      case "get_recommendations": {
+        if (!activeAssessmentId) break;
+        let liveSectionsR = sections;
+        if (liveSectionsR.length === 0) {
+          const { data } = await supabase.from("sections")
+            .select("id, title, word_target, word_current, status, content, sort_order")
+            .eq("assessment_id", activeAssessmentId).order("sort_order", { ascending: true });
+          liveSectionsR = (data || []) as Section[];
+          if (liveSectionsR.length) setSections(liveSectionsR);
+        }
+        const needle = (args.section_title || "").toLowerCase();
+        const recSec = needle
+          ? liveSectionsR.find(s => s.title.toLowerCase().includes(needle))
+          : liveSectionsR.find(s => s.content);
+        if (!recSec?.content) {
+          addMsg(activeChatId, { role: "action", content: "No written section found to analyse.", actionType: "error" });
+          break;
+        }
+        addMsg(activeChatId, { role: "action", content: `Getting recommendations for "${recSec.title}"…`, actionType: "checking" });
+        const { data: recData, error: recError } = await supabase.functions.invoke("zoe-recommend", {
+          body: { section_id: recSec.id, content: recSec.content },
+        });
+        if (recError || !recData) {
+          addMsg(activeChatId, { role: "action", content: "Recommendations unavailable.", actionType: "error" });
+        } else {
+          addMsg(activeChatId, { role: "action", content: "Recommendations ready.", actionType: "success" });
+          if (recData.recommendations) {
+            const text = (recData.recommendations as string[]).map((r: string) => `- ${r}`).join("\n");
+            addMsg(activeChatId, { role: "assistant", content: `**Recommendations for "${recSec.title}"**\n\n${text}` });
+          }
+        }
+        break;
+      }
+
+      case "update_assessment_title": {
+        if (!activeAssessmentId || !args.new_title) break;
+        const { error: titleError } = await supabase.from("assessments")
+          .update({ title: args.new_title }).eq("id", activeAssessmentId);
+        if (titleError) {
+          addMsg(activeChatId, { role: "action", content: "Rename failed.", actionType: "error" });
+        } else {
+          addMsg(activeChatId, { role: "action", content: `Assessment renamed to "${args.new_title}".`, actionType: "success" });
+          onRefresh();
+        }
         break;
       }
 
@@ -615,9 +741,14 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
     history.push({ role: "user", content: text });
 
-    // Context for the edge function
+    // Context for the edge function — include rich section metadata when available
     const sectionsSummary = sections.length > 0
-      ? sections.map(s => `${s.title}: ${s.word_current}/${s.word_target}w [${s.status}]`).join("\n")
+      ? sections.map(s => [
+          `${s.title}: ${s.word_current}/${s.word_target}w [${s.status}]`,
+          s.learning_outcomes  ? `  Outcomes: ${s.learning_outcomes}`   : "",
+          s.a_plus_criteria    ? `  A+ Criteria: ${s.a_plus_criteria}`  : "",
+          s.constraints_text   ? `  Constraints: ${s.constraints_text}` : "",
+        ].filter(Boolean).join("\n")).join("\n\n")
       : undefined;
 
     // Streaming placeholder
@@ -787,7 +918,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                     <p className="text-[10px] text-muted-foreground">{fmt(a.word_current)}/{fmt(a.word_target)}w</p>
                   </div>
                   <button
-                    onClick={() => { setChatOpen(a.id); handleSend(`Write all pending sections`); }}
+                    onClick={() => { setChatOpen(a.id); setPendingPrompt("Write all pending sections"); }}
                     className="flex-shrink-0 px-2.5 py-1.5 bg-terracotta/10 text-terracotta text-[11px] font-semibold rounded-lg hover:bg-terracotta/20 transition-colors"
                   >
                     Write All
