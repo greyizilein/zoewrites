@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Plus, LogOut, Home, Loader2, Trash2,
   BarChart3, MoreHorizontal, PenSquare, RefreshCw, ChevronDown,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,6 +14,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import ZoeDashboardChat from "@/components/chat/ZoeDashboardChat";
 
 interface Assessment {
   id: string;
@@ -133,24 +135,22 @@ const Dashboard = () => {
     full_name: string | null; tier: string; words_used: number; word_limit: number;
   } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const fetchData = async () => {
-      if (!user) return;
-      const [{ data: ad }, { data: pd }] = await Promise.all([
-        supabase.from("assessments").select("id, title, type, word_current, word_target, status, updated_at")
-          .eq("user_id", user.id).order("updated_at", { ascending: false }),
-        supabase.from("profiles").select("full_name, tier, words_used, word_limit")
-          .eq("user_id", user.id).single(),
-      ]);
-      if (cancelled) return;
-      setAssessments(ad || []);
-      setProfile(pd as any);
-      setLoading(false);
-    };
-    fetchData();
-    return () => { cancelled = true; };
+  const refreshData = useCallback(async () => {
+    if (!user) return;
+    const [{ data: ad }, { data: pd }] = await Promise.all([
+      supabase.from("assessments").select("id, title, type, word_current, word_target, status, updated_at")
+        .eq("user_id", user.id).order("updated_at", { ascending: false }),
+      supabase.from("profiles").select("full_name, tier, words_used, word_limit")
+        .eq("user_id", user.id).single(),
+    ]);
+    setAssessments(ad || []);
+    setProfile(pd as any);
+    setLoading(false);
   }, [user]);
+
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
 
   const handleSignOut = async () => { await signOut(); navigate("/"); };
 
@@ -268,7 +268,7 @@ const Dashboard = () => {
               ))}
             </div>
             <button
-              onClick={() => window.location.reload()}
+              onClick={refreshData}
               className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground shadow-sm active:scale-95 transition-transform"
             >
               <RefreshCw size={13} />
@@ -295,7 +295,7 @@ const Dashboard = () => {
             </Link>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => window.location.reload()}
+                onClick={refreshData}
                 className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground shadow-sm active:scale-95 transition-transform"
               >
                 <RefreshCw size={13} />
@@ -619,6 +619,13 @@ const Dashboard = () => {
           </div>
         </nav>
       </div>
+
+      <ZoeDashboardChat
+        assessments={assessments}
+        profile={profile}
+        userName={userName}
+        onRefresh={refreshData}
+      />
     </div>
   );
 
