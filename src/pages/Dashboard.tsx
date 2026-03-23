@@ -210,32 +210,34 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-[hsl(220,20%,96%)] flex">
       {/* ── Desktop Sidebar ─────────────────────────────────── */}
-      <aside className="w-56 border-r border-border bg-card p-4 hidden md:flex flex-col">
-        <Link to="/" className="flex items-center gap-2 mb-8">
-          <div className="w-8 h-8 rounded-full bg-terracotta flex items-center justify-center">
-            <span className="text-white text-[11px] font-extrabold">ZW</span>
-          </div>
-          <span className="text-base font-extrabold text-foreground tracking-tight">ZOE Writes</span>
-        </Link>
-        <nav className="space-y-1 flex-1">
-          <Link to="/dashboard" className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-terracotta/10 text-terracotta">
+      <aside className="w-56 border-r border-border bg-card hidden md:flex flex-col flex-shrink-0 sticky top-0 h-screen">
+        <div className="p-5 pb-4 border-b border-border">
+          <Link to="/" className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-terracotta flex items-center justify-center">
+              <span className="text-white text-[11px] font-extrabold">ZW</span>
+            </div>
+            <span className="text-base font-extrabold text-foreground tracking-tight">ZOE Writes</span>
+          </Link>
+        </div>
+        <nav className="p-3 space-y-0.5 flex-1">
+          <Link to="/dashboard" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold bg-terracotta/10 text-terracotta">
             <Home size={15} /> Dashboard
           </Link>
-          <Link to="/assessment/new" className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
+          <Link to="/assessment/new" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
             <Plus size={15} /> New Assessment
           </Link>
-          <Link to="/analytics" className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
+          <Link to="/analytics" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
             <BarChart3 size={15} /> Analytics
           </Link>
         </nav>
-        <div className="border-t border-border pt-4 space-y-1">
-          <button onClick={handleSignOut} className="flex items-center gap-2.5 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors w-full text-left">
+        <div className="p-3 border-t border-border space-y-0.5">
+          <button onClick={handleSignOut} className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl transition-colors w-full text-left">
             <LogOut size={15} /> Sign Out
           </button>
-          <div className="flex items-center gap-2 px-3 py-2 mt-1">
-            <div className="w-7 h-7 rounded-full bg-terracotta/15 flex items-center justify-center text-[10px] font-semibold text-terracotta">{initials}</div>
+          <div className="flex items-center gap-2.5 px-3 py-2.5 mt-1">
+            <div className="w-7 h-7 rounded-full bg-terracotta/15 flex items-center justify-center text-[10px] font-semibold text-terracotta flex-shrink-0">{initials}</div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-foreground truncate">{userName}</p>
+              <p className="text-xs font-semibold text-foreground truncate">{userName}</p>
               <p className="text-[10px] text-muted-foreground capitalize">{profile?.tier || "free"} tier</p>
             </div>
           </div>
@@ -243,11 +245,45 @@ const Dashboard = () => {
       </aside>
 
       {/* ── Main ────────────────────────────────────────────── */}
-      <div className="flex-1 pb-20 md:pb-6 overflow-y-auto">
-        {/* Top bar */}
-        <header className="sticky top-0 z-40 bg-[hsl(220,20%,96%)]/90 backdrop-blur-sm pt-safe">
+      <div className="flex-1 min-w-0 pb-20 md:pb-0 overflow-y-auto">
+
+        {/* ── Desktop header ── */}
+        <header className="hidden md:flex items-center justify-between px-8 py-4 sticky top-0 z-40 bg-[hsl(220,20%,96%)]/95 backdrop-blur-sm border-b border-border">
+          <div>
+            <h1 className="text-lg font-bold text-foreground">Dashboard</h1>
+            <p className="text-[11px] text-muted-foreground">{assessments.length} assessments · {profile?.tier || "free"} tier</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex bg-card border border-border rounded-full p-0.5 shadow-sm">
+              {(["week", "all"] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setTimeRange(r)}
+                  className={`px-4 py-1.5 rounded-full text-[11px] font-semibold transition-all ${
+                    timeRange === r ? "bg-terracotta text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {r === "week" ? "This Week" : "All Time"}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground shadow-sm active:scale-95 transition-transform"
+            >
+              <RefreshCw size={13} />
+            </button>
+            <Link to="/assessment/new">
+              <button className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-xl text-[12px] font-bold hover:bg-terracotta/90 active:scale-[0.97] transition-all shadow-sm">
+                <Plus size={13} /> New Assessment
+              </button>
+            </Link>
+          </div>
+        </header>
+
+        {/* ── Mobile header ── */}
+        <header className="md:hidden sticky top-0 z-40 bg-[hsl(220,20%,96%)]/90 backdrop-blur-sm pt-safe">
           <div className="max-w-lg mx-auto px-4 pt-3 pb-2 flex items-center justify-between">
-            {/* Brand — links to homepage */}
             <Link to="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity active:scale-[0.97]">
               <div className="w-8 h-8 rounded-full bg-terracotta flex items-center justify-center shadow-sm">
                 <span className="text-white text-[10px] font-extrabold">ZW</span>
@@ -257,7 +293,6 @@ const Dashboard = () => {
                 <p className="text-[10px] text-muted-foreground mt-0.5">{assessments.length} Assessments</p>
               </div>
             </Link>
-            {/* Right actions */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => window.location.reload()}
@@ -286,8 +321,6 @@ const Dashboard = () => {
               </DropdownMenu>
             </div>
           </div>
-
-          {/* Time toggle */}
           <div className="max-w-lg mx-auto px-4 pb-2">
             <div className="inline-flex bg-card border border-border rounded-full p-0.5 shadow-sm">
               {(["week", "all"] as const).map(r => (
@@ -295,9 +328,7 @@ const Dashboard = () => {
                   key={r}
                   onClick={() => setTimeRange(r)}
                   className={`px-4 py-1 rounded-full text-[11px] font-semibold transition-all ${
-                    timeRange === r
-                      ? "bg-terracotta text-white shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
+                    timeRange === r ? "bg-terracotta text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {r === "week" ? "This Week" : "All Time"}
@@ -307,260 +338,261 @@ const Dashboard = () => {
           </div>
         </header>
 
-        <main className="max-w-lg mx-auto px-4 space-y-3 pt-1">
+        {/* ── Content ── */}
+        {/* Mobile: single column. Desktop: 2-column grid */}
+        <main className="max-w-lg mx-auto px-4 space-y-3 pt-1 md:max-w-none md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-6 md:px-8 md:py-6 md:items-start md:space-y-0">
 
-          {/* ── Hero card: Gauge + side stats ─────────────── */}
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease }}
-            className="bg-card rounded-2xl shadow-sm border border-border/50 p-4"
-          >
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Today's Activity</p>
+          {/* ── Left column on desktop ─── */}
+          <div className="md:space-y-6">
 
-            <div className="flex items-center gap-2">
-              {/* Gauge */}
-              <div className="flex-shrink-0 -mb-2">
-                <SpeedometerGauge value={totalWordsWritten} max={totalWordsTarget || 1} size={200} />
-              </div>
-
-              {/* Side stats */}
-              <div className="flex flex-col gap-2 flex-1 pl-1">
-                {[
-                  { label: "Complete", count: completedCount, color: "bg-sage", textColor: "text-sage" },
-                  { label: "In Progress", count: activeCount, color: "bg-terracotta", textColor: "text-terracotta" },
-                  { label: "Draft", count: draftCount, color: "bg-muted-foreground/40", textColor: "text-muted-foreground" },
-                ].map(s => (
-                  <div key={s.label} className="flex items-center gap-2 bg-muted/40 rounded-xl px-3 py-2">
-                    <span className={`w-2 h-2 rounded-full ${s.color} flex-shrink-0`} />
-                    <div className="min-w-0">
-                      <p className={`text-base font-bold tabular-nums leading-none ${s.textColor}`}>{s.count}</p>
-                      <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{s.label}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick action row */}
-            <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-border/50">
-              <Link
-                to="/assessment/new"
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all"
-              >
-                <div className="w-8 h-8 rounded-lg bg-terracotta/10 flex items-center justify-center">
-                  <Plus size={15} className="text-terracotta" />
-                </div>
-                <span className="text-[9px] font-medium text-foreground text-center leading-tight">New Assessment</span>
-              </Link>
-              <Link
-                to="/analytics"
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all"
-              >
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                  <BarChart3 size={15} className="text-blue-500" />
-                </div>
-                <span className="text-[9px] font-medium text-foreground text-center leading-tight">Analytics</span>
-              </Link>
-              <button
-                onClick={handleSignOut}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all"
-              >
-                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-                  <LogOut size={15} className="text-muted-foreground" />
-                </div>
-                <span className="text-[9px] font-medium text-foreground text-center leading-tight">Sign Out</span>
-              </button>
-            </div>
-          </motion.div>
-
-          {/* ── Assessment Progress card ───────────────────── */}
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, delay: 0.1, ease }}
-            className="bg-card rounded-2xl shadow-sm border border-border/50 p-4"
-          >
-            {/* Header row */}
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="text-[13px] font-bold text-foreground">Assessment Progress</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] text-muted-foreground">Performance</span>
-                  <div className="flex -space-x-1">
-                    {["bg-terracotta", "bg-sage", "bg-muted-blue"].map((c, i) => (
-                      <span key={i} className={`w-4 h-4 rounded-full ${c} border-2 border-card`} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <Link to="/analytics">
-                <button className="flex items-center gap-1 bg-muted/60 hover:bg-muted text-[10px] font-semibold text-foreground px-3 py-1.5 rounded-full transition-colors active:scale-95">
-                  Get Report <ChevronDown size={10} />
-                </button>
-              </Link>
-            </div>
-
-            {/* Chart */}
-            {chartData.length > 0 ? (
-              <>
-                <div className="flex items-end gap-4 mb-3">
-                  <div>
-                    <p className="text-4xl font-extrabold text-foreground tabular-nums leading-none">{avgCompletion}%</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">Avg. Completion</p>
-                    <p className="text-[9px] text-muted-foreground/60">Across {filtered.length} assessment{filtered.length !== 1 ? "s" : ""}</p>
-                  </div>
-                  <div className="flex-1">
-                    <ResponsiveContainer width="100%" height={90}>
-                      <BarChart data={chartData} barCategoryGap="15%" barGap={2}>
-                        <XAxis dataKey="name" tick={{ fontSize: 8 }} tickLine={false} axisLine={false} />
-                        <YAxis hide />
-                        <Tooltip
-                          contentStyle={{ fontSize: 10, borderRadius: 8, border: "1px solid hsl(var(--border))" }}
-                          formatter={(v: any, name: string) => [fmt(v) + " words", name === "written" ? "Written" : "Remaining"]}
-                        />
-                        <Bar dataKey="written" radius={[3, 3, 0, 0]} maxBarSize={18} fill="#c27b5c" />
-                        <Bar dataKey="remaining" radius={[3, 3, 0, 0]} maxBarSize={18} fill="#2e231a" opacity={0.65} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Legend */}
-                <div className="flex items-center gap-4 pt-2 border-t border-border/50">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-terracotta" />
-                    <span className="text-[9px] text-muted-foreground font-medium">Words Written</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-[hsl(24,14%,20%)]" />
-                    <span className="text-[9px] text-muted-foreground font-medium">Remaining</span>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground text-center py-6">No data yet — start an assessment!</p>
-            )}
-          </motion.div>
-
-          {/* ── Words quota card ───────────────────────────── */}
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, delay: 0.18, ease }}
-            className="bg-card rounded-2xl shadow-sm border border-border/50 p-4"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[13px] font-bold text-foreground">Word Quota</p>
-              <span className="text-[10px] font-semibold text-terracotta capitalize px-2 py-0.5 bg-terracotta/10 rounded-full">
-                {profile?.tier || "free"}
-              </span>
-            </div>
-            <div className="flex items-end justify-between mb-2">
-              <div>
-                <p className="text-2xl font-extrabold text-foreground tabular-nums">
-                  {isUnlimited ? "∞" : fmt(wordsLeft as number)}
-                </p>
-                <p className="text-[10px] text-muted-foreground">words remaining</p>
-              </div>
-              <p className="text-[10px] text-muted-foreground">{fmt(wordsUsed)} used</p>
-            </div>
-            {!isUnlimited && (
-              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-terracotta rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, (wordsUsed / wordLimit) * 100)}%` }}
-                />
-              </div>
-            )}
-          </motion.div>
-
-          {/* ── Recent Assessments ─────────────────────────── */}
-          {assessments.length > 0 && (
+            {/* ── Hero card: Gauge + side stats ─────────────── */}
             <motion.div
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.55, delay: 0.24, ease }}
-              className="bg-card rounded-2xl shadow-sm border border-border/50 p-4"
+              transition={{ duration: 0.55, ease }}
+              className="bg-card rounded-2xl shadow-sm border border-border/50 p-4 md:p-6"
+            >
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Today's Activity</p>
+
+              {/* Gauge — larger on desktop */}
+              <div className="flex md:flex-col items-center gap-2 md:gap-4">
+                <div className="flex-shrink-0 -mb-2 md:mb-0 md:mx-auto">
+                  <SpeedometerGauge value={totalWordsWritten} max={totalWordsTarget || 1} size={200} />
+                </div>
+
+                {/* Side stats — row on mobile, grid on desktop */}
+                <div className="flex flex-col md:grid md:grid-cols-3 gap-2 flex-1 pl-1 md:pl-0 w-full">
+                  {[
+                    { label: "Complete", count: completedCount, color: "bg-sage", textColor: "text-sage" },
+                    { label: "In Progress", count: activeCount, color: "bg-terracotta", textColor: "text-terracotta" },
+                    { label: "Draft", count: draftCount, color: "bg-muted-foreground/40", textColor: "text-muted-foreground" },
+                  ].map(s => (
+                    <div key={s.label} className="flex items-center gap-2 bg-muted/40 rounded-xl px-3 py-2 md:flex-col md:items-start md:py-3">
+                      <span className={`w-2 h-2 rounded-full ${s.color} flex-shrink-0`} />
+                      <div className="min-w-0">
+                        <p className={`text-base font-bold tabular-nums leading-none ${s.textColor}`}>{s.count}</p>
+                        <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{s.label}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick action row — mobile only (desktop uses sidebar + header button) */}
+              <div className="md:hidden grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-border/50">
+                <Link to="/assessment/new" className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all">
+                  <div className="w-8 h-8 rounded-lg bg-terracotta/10 flex items-center justify-center">
+                    <Plus size={15} className="text-terracotta" />
+                  </div>
+                  <span className="text-[9px] font-medium text-foreground text-center leading-tight">New Assessment</span>
+                </Link>
+                <Link to="/analytics" className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                    <BarChart3 size={15} className="text-blue-500" />
+                  </div>
+                  <span className="text-[9px] font-medium text-foreground text-center leading-tight">Analytics</span>
+                </Link>
+                <button onClick={handleSignOut} className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all">
+                  <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
+                    <LogOut size={15} className="text-muted-foreground" />
+                  </div>
+                  <span className="text-[9px] font-medium text-foreground text-center leading-tight">Sign Out</span>
+                </button>
+              </div>
+            </motion.div>
+
+            {/* ── Words quota card ───────────────────────────── */}
+            <motion.div
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.55, delay: 0.18, ease }}
+              className="bg-card rounded-2xl shadow-sm border border-border/50 p-4 md:p-6"
             >
               <div className="flex items-center justify-between mb-3">
-                <p className="text-[13px] font-bold text-foreground">Recent Assessments</p>
-                <Link to="/assessment/new">
-                  <button className="w-6 h-6 rounded-full bg-terracotta/10 flex items-center justify-center active:scale-95 transition-transform">
-                    <Plus size={12} className="text-terracotta" />
+                <p className="text-[13px] font-bold text-foreground">Word Quota</p>
+                <span className="text-[10px] font-semibold text-terracotta capitalize px-2 py-0.5 bg-terracotta/10 rounded-full">
+                  {profile?.tier || "free"}
+                </span>
+              </div>
+              <div className="flex items-end justify-between mb-2">
+                <div>
+                  <p className="text-2xl font-extrabold text-foreground tabular-nums">
+                    {isUnlimited ? "∞" : fmt(wordsLeft as number)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">words remaining</p>
+                </div>
+                <p className="text-[10px] text-muted-foreground">{fmt(wordsUsed)} used</p>
+              </div>
+              {!isUnlimited && (
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-terracotta rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, (wordsUsed / wordLimit) * 100)}%` }}
+                  />
+                </div>
+              )}
+            </motion.div>
+
+          </div>{/* end left column */}
+
+          {/* ── Right column on desktop ─── */}
+          <div className="md:space-y-6">
+
+            {/* ── Assessment Progress card ───────────────────── */}
+            <motion.div
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.55, delay: 0.1, ease }}
+              className="bg-card rounded-2xl shadow-sm border border-border/50 p-4 md:p-6"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <p className="text-[13px] font-bold text-foreground">Assessment Progress</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[10px] text-muted-foreground">Performance</span>
+                    <div className="flex -space-x-1">
+                      {["bg-terracotta", "bg-sage", "bg-muted-blue"].map((c, i) => (
+                        <span key={i} className={`w-4 h-4 rounded-full ${c} border-2 border-card`} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <Link to="/analytics">
+                  <button className="flex items-center gap-1 bg-muted/60 hover:bg-muted text-[10px] font-semibold text-foreground px-3 py-1.5 rounded-full transition-colors active:scale-95">
+                    Get Report <ChevronDown size={10} />
                   </button>
                 </Link>
               </div>
-              <div className="space-y-1">
-                {assessments.slice(0, 5).map(a => {
-                  const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
-                  const done = a.status === "complete";
-                  return (
-                    <div key={a.id} className="flex items-center gap-2 group">
-                      <Link
-                        to={`/assessment/${a.id}`}
-                        className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2 rounded-xl hover:bg-muted/50 transition-colors"
-                      >
-                        <div className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white ${done ? "bg-sage" : "bg-terracotta"}`}>
-                          {pct}%
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[12px] font-semibold text-foreground truncate">{a.title}</p>
-                          <p className="text-[9px] text-muted-foreground">{fmt(a.word_current)}w · {getTimeAgo(a.updated_at)}</p>
-                        </div>
-                        <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden flex-shrink-0">
-                          <div
-                            className={`h-full rounded-full ${done ? "bg-sage" : "bg-terracotta"}`}
-                            style={{ width: `${Math.min(100, pct)}%` }}
-                          />
-                        </div>
-                      </Link>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity p-1 flex-shrink-0">
-                            <MoreHorizontal size={14} />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => handleDelete(e as any, a.id)} className="text-destructive focus:text-destructive">
-                            <Trash2 size={14} className="mr-2" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  );
-                })}
-              </div>
-            </motion.div>
-          )}
 
-          {/* ── Empty state ────────────────────────────────── */}
-          {assessments.length === 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease }}
-              className="bg-card rounded-2xl border border-border/50 shadow-sm text-center py-12 px-6"
-            >
-              <FileText size={40} className="mx-auto text-muted-foreground/20 mb-3" />
-              <h2 className="text-base font-bold text-foreground mb-1">No assessments yet</h2>
-              <p className="text-xs text-muted-foreground mb-5">Create your first to get started.</p>
-              <Link to="/assessment/new">
-                <Button className="bg-terracotta hover:bg-terracotta/90 text-white font-semibold active:scale-[0.97] transition-transform rounded-xl">
-                  <Plus size={16} className="mr-1.5" /> Create Assessment
-                </Button>
-              </Link>
+              {chartData.length > 0 ? (
+                <>
+                  <div className="flex items-end gap-4 mb-3">
+                    <div>
+                      <p className="text-4xl font-extrabold text-foreground tabular-nums leading-none">{avgCompletion}%</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">Avg. Completion</p>
+                      <p className="text-[9px] text-muted-foreground/60">Across {filtered.length} assessment{filtered.length !== 1 ? "s" : ""}</p>
+                    </div>
+                    <div className="flex-1">
+                      <ResponsiveContainer width="100%" height={110}>
+                        <BarChart data={chartData} barCategoryGap="15%" barGap={2}>
+                          <XAxis dataKey="name" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
+                          <YAxis hide />
+                          <Tooltip
+                            contentStyle={{ fontSize: 10, borderRadius: 8, border: "1px solid hsl(var(--border))" }}
+                            formatter={(v: any, name: string) => [fmt(v) + " words", name === "written" ? "Written" : "Remaining"]}
+                          />
+                          <Bar dataKey="written" radius={[3, 3, 0, 0]} maxBarSize={22} fill="#c27b5c" />
+                          <Bar dataKey="remaining" radius={[3, 3, 0, 0]} maxBarSize={22} fill="#2e231a" opacity={0.65} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 pt-2 border-t border-border/50">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-terracotta" />
+                      <span className="text-[9px] text-muted-foreground font-medium">Words Written</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-[hsl(24,14%,20%)]" />
+                      <span className="text-[9px] text-muted-foreground font-medium">Remaining</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-6">No data yet — start an assessment!</p>
+              )}
             </motion.div>
-          )}
+
+            {/* ── Recent Assessments ─────────────────────────── */}
+            {assessments.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.55, delay: 0.24, ease }}
+                className="bg-card rounded-2xl shadow-sm border border-border/50 p-4 md:p-6"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[13px] font-bold text-foreground">Recent Assessments</p>
+                  <Link to="/assessment/new">
+                    <button className="w-6 h-6 rounded-full bg-terracotta/10 flex items-center justify-center active:scale-95 transition-transform">
+                      <Plus size={12} className="text-terracotta" />
+                    </button>
+                  </Link>
+                </div>
+                {/* Mobile: 5 items. Desktop: all, in a grid */}
+                <div className="space-y-1 md:grid md:grid-cols-2 md:gap-x-3 md:gap-y-1 md:space-y-0">
+                  {assessments.slice(0, assessments.length > 5 ? undefined : 5).map(a => {
+                    const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
+                    const done = a.status === "complete";
+                    return (
+                      <div key={a.id} className="flex items-center gap-2 group">
+                        <Link
+                          to={`/assessment/${a.id}`}
+                          className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2 rounded-xl hover:bg-muted/50 transition-colors"
+                        >
+                          <div className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white ${done ? "bg-sage" : "bg-terracotta"}`}>
+                            {pct}%
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[12px] font-semibold text-foreground truncate">{a.title}</p>
+                            <p className="text-[9px] text-muted-foreground">{fmt(a.word_current)}w · {getTimeAgo(a.updated_at)}</p>
+                          </div>
+                          <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden flex-shrink-0">
+                            <div
+                              className={`h-full rounded-full ${done ? "bg-sage" : "bg-terracotta"}`}
+                              style={{ width: `${Math.min(100, pct)}%` }}
+                            />
+                          </div>
+                        </Link>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity p-1 flex-shrink-0">
+                              <MoreHorizontal size={14} />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={(e) => handleDelete(e as any, a.id)} className="text-destructive focus:text-destructive">
+                              <Trash2 size={14} className="mr-2" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── Empty state ─────────────────────────────────── */}
+            {assessments.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease }}
+                className="bg-card rounded-2xl border border-border/50 shadow-sm text-center py-16 px-6"
+              >
+                <FileText size={40} className="mx-auto text-muted-foreground/20 mb-3" />
+                <h2 className="text-base font-bold text-foreground mb-1">No assessments yet</h2>
+                <p className="text-xs text-muted-foreground mb-5">Create your first to get started.</p>
+                <Link to="/assessment/new">
+                  <Button className="bg-terracotta hover:bg-terracotta/90 text-white font-semibold active:scale-[0.97] transition-transform rounded-xl">
+                    <Plus size={16} className="mr-1.5" /> Create Assessment
+                  </Button>
+                </Link>
+              </motion.div>
+            )}
+
+          </div>{/* end right column */}
+
         </main>
 
         {/* ── Bottom Nav — mobile only ─────────────────────── */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-sm border-t border-border shadow-lg">
           <div className="flex items-center justify-around h-[58px] max-w-md mx-auto px-2">
             {([
-              { icon: Home, label: "Home", to: "/dashboard", isLink: true },
-              { icon: PenSquare, label: "New", to: "/assessment/new", isLink: true },
-              { icon: BarChart3, label: "Analytics", to: "/analytics", isLink: true },
+              { icon: Home, label: "Home", to: "/dashboard" },
+              { icon: PenSquare, label: "New", to: "/assessment/new" },
+              { icon: BarChart3, label: "Analytics", to: "/analytics" },
             ] as const).map(item => {
               const active = location.pathname === item.to;
               return (
@@ -589,6 +621,7 @@ const Dashboard = () => {
       </div>
     </div>
   );
-};
+
+}
 
 export default Dashboard;
