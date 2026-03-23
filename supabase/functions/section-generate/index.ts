@@ -485,7 +485,7 @@ Numbers must be written in numerals (1, 2, 3, percentages as %) not words — ex
 
 PUNCTUATION — NON-NEGOTIABLE: NEVER use em dashes (—) or en dashes (–) as punctuation substitutes. Where a comma, colon, semicolon, or parenthetical clause is appropriate, use those instead. Use only: commas, full stops, colons, semicolons, parentheses, and hyphens for compound words.
 
-CITATION COVERAGE — NON-NEGOTIABLE: EVERY paragraph must contain at least two in-text citations. No paragraph may be left uncited. Do not write entire paragraphs of analysis without citing the sources that support the claims being made. A paragraph that asserts facts, findings, or theoretical positions without citations will fail at A+ standard.
+CITATION COVERAGE — NON-NEGOTIABLE: 90% of all content must be cited. You must cite any information, idea, theory, statistic, or material that did not originate from you — unless it is common knowledge (widely known facts, generally accepted information, well-established historical facts). EVERY sentence that contains borrowed material must be cited. Place citations IMMEDIATELY after the information they support, before the full stop. If an entire paragraph draws on one source, still cite within every 1–2 sentences — do not leave a single citation at the end as if it covers the whole paragraph. At least 2 in every 3 paragraphs must contain citations. A paragraph that asserts facts, theories, or findings without citation will fail at A+ standard.
 
 EMPIRICAL DATA — MANDATORY: Every factual or statistical claim must be backed by a specific cited figure from a verifiable source. Do not write "studies show..." or "research suggests..." without citing the specific study, author, and year. Where data exists from statistical organisations (${preferredDataSources.length > 0 ? preferredDataSources.slice(0, 5).join(", ") : "Statista, World Bank, OECD, IMF"}), use it with precise figures (e.g. "GDP growth fell to 2.3% in 2023 (IMF, 2024)"). Vague generalisations unsupported by data are not acceptable.
 
@@ -496,16 +496,32 @@ Passive voice must not exceed 30% of sentences. Prefer active constructions with
 ═══════════════════════════════════════════════
 CITATION REQUIREMENTS — NON-NEGOTIABLE
 ═══════════════════════════════════════════════
-All sources must be genuine, verifiable, and searchable via Google. Fictional, fabricated, or unverifiable references are strictly prohibited. This is a hard rule with no exceptions.
+All sources must be genuine, verifiable, and searchable via Google. Fictional, fabricated, or unverifiable references are strictly prohibited. No exceptions.
 
-Citation density for this section type:
+THE 90% RULE — MANDATORY:
+90% of all content in this section must be cited. Academic writing is built on evidence from others — any idea, finding, statistic, theory, claim, interpretation, or argument that did not originate in your own analysis MUST be cited. Uncited prose is a failure at A+ standard.
+
+CITATION DENSITY — TARGET:
 — Minimum: ${density.min} citations per 1,000 words
 — Recommended: ${density.recommended} citations per 1,000 words
-— Maximum: ${density.max} citations per 1,000 words
 — Target for this section (${section.word_target} words): ${citMin}–${citMax} in-text citations, aiming for ~${citTarget}
+— At least 2 in every 3 consecutive paragraphs must contain citations. No paragraph that makes factual or theoretical claims may be left entirely uncited.
 
-Every sentence must be supported analytically by an academic source, clearly identified within the sentence. Citations must be varied in format and integrated naturally into the prose using constructions such as:
-— "(Author, Year)"
+WHEN TO CITE — APPLY EVERY RULE:
+1. IMMEDIATELY after the information: place the citation directly after the word, phrase, or sentence it supports — BEFORE the full stop where possible. Example: "Revenue grew by 14% (IMF, 2023)." not "Revenue grew by 14%. (IMF, 2023)"
+2. IN EVERY SENTENCE CONTAINING BORROWED MATERIAL: if a paragraph summarises or paraphrases one source throughout, still cite every 1–2 sentences within that paragraph — do NOT leave a citation only at the end.
+3. WHEN IN DOUBT: if you are uncertain whether information is common knowledge, cite it. The cost of an unnecessary citation is zero; the cost of a missing one is a fail.
+4. EVERY in-text citation in this section must have a corresponding entry in the reference list.
+
+WHAT DOES NOT NEED A CITATION (common knowledge only):
+— Widely known facts: "The sun rises in the east."
+— Generally accepted information: "Smoking can be harmful to health."
+— Well-established historical overviews that appear in dozens of sources without dispute: "George Washington was the first US President."
+— Your own original synthesis, interpretation, or analytical conclusion drawn from the evidence you have already cited.
+Everything else — every theory, every framework, every statistic, every empirical claim, every research finding — MUST be cited.
+
+Citations must be varied in format and integrated naturally into the prose using constructions such as:
+— "(Author, Year)" — parenthetical, before full stop
 — "Author (Year) argued that…"
 — "Author (Year) contended that…"
 — "Author (Year) demonstrated that…"
@@ -515,7 +531,7 @@ Every sentence must be supported analytically by an academic source, clearly ide
 — "Author (Year) revealed how…"
 — "Author (Year) emphasised that…"
 
-Citations must be substantively integrated into the analytical discussion. They must not always appear in brackets at the end of a sentence or paragraph. Vary their placement throughout the prose.
+Citations must be substantively integrated into the analytical discussion — not always at the end of a sentence. Vary placement: mid-sentence, at the end before the full stop, and as narrative subject ("Smith (2021) demonstrated that..."). Never stack two citations consecutively without analysis between them.
 
 In Harvard style, always use "and" rather than "&" for multiple authors (e.g., "Smith and Jones, 2020" — never "Smith & Jones, 2020").
 
