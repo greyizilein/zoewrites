@@ -498,8 +498,11 @@ CITATION REQUIREMENTS — NON-NEGOTIABLE
 ═══════════════════════════════════════════════
 All sources must be genuine, verifiable, and searchable via Google. Fictional, fabricated, or unverifiable references are strictly prohibited. No exceptions.
 
-THE 90% RULE — MANDATORY:
+THE 90% RULE — MANDATORY BUT HONEST:
 90% of all content in this section must be cited. Academic writing is built on evidence from others — any idea, finding, statistic, theory, claim, interpretation, or argument that did not originate in your own analysis MUST be cited. Uncited prose is a failure at A+ standard.
+
+CRITICAL BALANCE — QUALITY OVER MECHANICAL COMPLIANCE:
+The 90% rule means "wherever there is borrowed material, cite it honestly" — NOT "insert citations into every sentence regardless of whether they genuinely support the claim." Do NOT fabricate, force, or misrepresent citations to hit a number. Every citation must genuinely support the specific point being made: the cited source must actually say what you are claiming it says. A citation that misrepresents, stretches, or has nothing to do with the source is an academic integrity violation and is worse than no citation at all. Your own analytical conclusions drawn from evidence you have already cited do not need a second citation — that is your own thinking. Logical transitions, syntheses of previously-cited ideas, and interpretive commentary are yours and should not be artificially padded with citations.
 
 CITATION DENSITY — TARGET:
 — Minimum: ${density.min} citations per 1,000 words

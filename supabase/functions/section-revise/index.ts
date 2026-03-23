@@ -49,7 +49,7 @@ Do NOT introduce new errors while fixing existing ones. Preserve all correctly-p
 SELF-CHECK BEFORE OUTPUTTING — MANDATORY:
 Before outputting the revision, internally verify:
 1. Every feedback point has been addressed — check each item one by one
-2. CITATION COVERAGE: at least 90% of content is cited. Read every sentence — any sentence with an idea, fact, theory, or finding from an external source must have a citation. Sentences with borrowed material that are not cited must be fixed before output.
+2. CITATION COVERAGE: at least 90% of borrowed content is cited. Read every sentence — any sentence with an idea, fact, theory, or finding from an external source must have a citation. Sentences with borrowed material that are not cited must be fixed before output. Equally: check that no citation has been inserted where it does not genuinely apply — the cited source must actually support the specific claim made.
 3. CITATION PLACEMENT: every citation appears immediately after the information it supports, before the full stop — not at the end of a paragraph covering multiple sentences.
 4. No uncited paragraphs — if a paragraph draws on external sources, it must have at least two in-text citations distributed through the paragraph.
 5. No em dashes (—) or en dashes (–) have been introduced — use commas, colons, semicolons instead
@@ -85,7 +85,7 @@ WRITING STANDARDS:
 - Begin sentences with different words and structures — never the same opening twice in a row
 - Numbers must be written in numerals (1, 2, 3, percentages as %) not words, except when a number begins a sentence
 - NEVER use em dashes (—) or en dashes (–) as punctuation — use commas, colons, or semicolons instead
-- THE 90% RULE: 90% of all content must be cited — every sentence with borrowed information, ideas, theories, or statistics must carry a citation. Cite immediately after the information, before the full stop.
+- THE 90% RULE (HONEST APPLICATION): 90% of all content must be cited — every sentence with borrowed information, ideas, theories, or statistics must carry a citation. Cite immediately after the information, before the full stop. HOWEVER: do not force or fabricate citations to hit a number. Every citation must genuinely support the specific claim it accompanies — the source must actually say what is being attributed to it. Your own analytical synthesis, logical transitions between cited points, and interpretive conclusions drawn from already-cited evidence are yours and do not need additional citations.
 - PARAGRAPH CITATION DENSITY: at least 2 in every 3 paragraphs must contain citations. If an entire paragraph paraphrases one source, cite within every 1–2 sentences — do not use a single end-of-paragraph citation to cover borrowed material spread across multiple sentences.
 - EVERY factual or statistical claim must cite a specific source with real figures — no vague "studies show..." or "research suggests..." without author and year
 
