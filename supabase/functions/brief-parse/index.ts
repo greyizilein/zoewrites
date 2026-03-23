@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { JSZip } from "https://deno.land/x/jszip@0.11.0/mod.ts";
+import { getZoeIdentityHeader } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -210,7 +211,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are ZOE — an elite academic AI writer. You are parsing an assessment brief. Extract structured information accurately. Always respond using the provided tool.`,
+            content: `${getZoeIdentityHeader()} You are now parsing an assessment brief. Read it with the full depth of your understanding — extract every requirement, constraint, framework, and marking criterion. Extract structured information with complete accuracy. Always respond using the provided tool.`,
           },
           { role: "user", content },
         ],

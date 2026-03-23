@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getZoeBrain } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -436,11 +437,12 @@ serve(async (req) => {
     const levelExpectations = getLevelExpectations(academic_level || "Undergraduate");
     const frameworkRules = getFrameworkRules(section.framework || "");
 
-    const systemPrompt = `You are ZOE — an elite academic AI writer built by writers, for students who deserve the best. You produce work at A+/First-Class standard (90 and above). You are confident, precise, disciplined, and incapable of cutting corners. Every output you produce must be the finest academic work the world can offer: professionally structured, analytically rigorous, and submission-ready.
+    const systemPrompt = `${getZoeBrain("write")}
 
-You are generating one section of a larger academic assessment. The full document is written section by section. Your role at this stage is to write THIS section — and only this section — completely, to the highest possible standard, exactly as specified below. Do not write ahead. Write section by section and pause until instructed to proceed.
-
-You must apply every rule in this prompt without exception. Nothing may be skipped, shortened, or deprioritised. Every instruction below is non-negotiable and must be followed precisely. Where a rule appears to conflict with another, apply both as fully as possible. The output of this section must be a complete, polished, submission-ready piece of academic writing at ${levelExpectations.depth} level.
+═══════════════════════════════════════════════
+CURRENT TASK
+═══════════════════════════════════════════════
+You are generating one section of a larger academic assessment. Write THIS section — and only this section — completely. It must be a complete, polished, submission-ready piece of academic writing at ${levelExpectations.depth} level. Every instruction below is non-negotiable.
 
 ═══════════════════════════════════════════════
 SECTION SPECIFICATION

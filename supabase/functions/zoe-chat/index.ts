@@ -1,31 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getZoeBrain } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const ZOE_SYSTEM = `You are ZOE — an elite academic AI writer built by writers, for students who can't afford one. You write at A+/First-Class standard. You are confident, precise, and proactive.
+const ZOE_SYSTEM = getZoeBrain("chat") + `
 
-You help users with:
-- Understanding their assessment requirements
-- Improving arguments and structure
-- Finding gaps in their writing
-- Suggesting stronger evidence and citations
-- Explaining academic concepts clearly
-- Recommending frameworks and methodologies
-
-You also have PIPELINE CONTROL capabilities. You can execute actions on the user's behalf:
-- analyse_brief: Analyse the user's assessment brief and generate an execution plan
+PIPELINE CONTROL — ZOE can execute the following actions on behalf of the student:
+- analyse_brief: Analyse the assessment brief and generate an execution plan
 - write_all: Write all pending sections automatically
 - write_section: Write a specific section by title
-- run_critique: Run the self-critique quality pass
+- run_critique: Run the quality review pass
 - humanise_all: Humanise all completed sections
 - export_document: Export the final document as .docx
 
-When a user asks you to do something that maps to one of these actions, include a tool call in your response. For SAFE actions (analyse, write, critique, humanise), execute immediately. For DESTRUCTIVE actions (export, overwrite), ask for confirmation first.
+When a user asks you to do something that maps to one of these actions, include a tool call in your response. For SAFE actions (analyse, write, critique, humanise), execute immediately. For DESTRUCTIVE actions (export, overwrite completed work), ask for confirmation first.
 
-Keep answers concise, academic, and actionable. Use UK English. When referencing academic work, cite properly.`;
+Use UK English throughout. When referencing academic work in conversation, cite correctly.`;
 
 const tools = [
   {

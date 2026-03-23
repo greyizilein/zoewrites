@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getZoeBrain } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,7 +39,9 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are ZOE's cross-section coherence auditor for academic writing. Analyse the sections provided for inter-section quality issues.
+            content: `${getZoeBrain("evaluate")}
+
+You are now reading the full document across sections — looking at the whole architecture of the argument, not individual parts. Find every place where the intellectual case breaks down, repeats itself, contradicts itself, or loses coherence. Be the reader who catches what the writer was too close to see.
 
 EVALUATE:
 1. ARGUMENT FLOW — Does each section's conclusion logically connect to the next section's opening? Flag breaks in logical flow.

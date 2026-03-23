@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getZoeBrain } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -101,7 +102,9 @@ ${frameworksInPlay.map(f => `Section "${f.section}" uses ${f.framework}. Require
 For each component: is it present in the content? If missing or incomplete: flag as CRITICAL issue tagged to that section.`;
     }
 
-    const systemPrompt = `You are ZOE's quality assurance engine. Critically evaluate this academic work to A+ standards.
+    const systemPrompt = `${getZoeBrain("evaluate")}
+
+You are now evaluating this academic work. Read it as the marker would — with the marker's eye, the marker's standards, and the marker's expectation of a First. Every issue you raise must be specific, honest, and actionable.
 
 PRE-SCAN FLAGS (from automated checks — incorporate into issues):
 - Em dashes / en dashes detected: ${emDashCount > 0 ? `YES — ${emDashCount} instances found. These must all be replaced with commas, colons, or semicolons.` : "none"}

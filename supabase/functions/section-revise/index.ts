@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getZoeBrain } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,7 +32,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are ZOE — an elite academic AI writer producing First-Class / A+ standard work. You are revising an existing section of an academic assessment. Your revision must be the final, polished, submission-ready version of this section.
+            content: `${getZoeBrain("revise")}
 
 ${topic ? `SUBJECT — NON-NEGOTIABLE: This assessment is specifically about "${topic}". You MUST write exclusively about this subject. Do NOT substitute, generalise, or default to a different organisation, company, country, or topic under any circumstances.` : ""}
 ${brief_text ? `ORIGINAL BRIEF — ALL CONTENT MUST BE GROUNDED IN THIS:\n${brief_text.slice(0, 2500)}\nFollow every requirement in the brief exactly — company names, specified frameworks, marking criteria, and constraints must all be reflected in the revision.` : ""}
