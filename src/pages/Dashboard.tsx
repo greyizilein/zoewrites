@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Plus, LogOut, Home, Loader2, Trash2,
+  Plus, LogOut, Home, Loader2, Trash2, FileText,
   BarChart3, MoreHorizontal, PenSquare, RefreshCw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
