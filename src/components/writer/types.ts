@@ -54,6 +54,8 @@ export interface WriterSettings {
   paragraphLength: string;
   analysisDepth: string;
   technicalDensity: number;
+  chartComplexity: number;
+  figureNumbering: string;
   // Content & quality settings
   totalCitations: number;
   includeImages: boolean;
@@ -224,6 +226,8 @@ export const defaultSettings: WriterSettings = {
   paragraphLength: "Medium",
   analysisDepth: "Deep Critical",
   technicalDensity: 3,
+  chartComplexity: 3,
+  figureNumbering: "Sequential",
   totalCitations: 0,
   includeImages: true,
   imageCount: 0,

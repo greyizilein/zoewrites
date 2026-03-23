@@ -430,6 +430,8 @@ serve(async (req) => {
     const tableCount = settings?.tableCount || 0;
     const statisticalSourceCount = settings?.statisticalSourceCount || 0;
     const preferredDataSources: string[] = settings?.preferredDataSources || [];
+    const chartComplexity = settings?.chartComplexity || 3;
+    const figureNumbering = settings?.figureNumbering || "Sequential";
 
     const levelExpectations = getLevelExpectations(academic_level || "Undergraduate");
     const frameworkRules = getFrameworkRules(section.framework || "");
@@ -556,11 +558,23 @@ Figures and tables (where applicable):
 — Sequence: (1) analytical paragraph introducing the figure/table → (2) heading → (3) figure/table content → (4) interpretation → (5) continuation of analysis
 — Number figures and tables in sequence: Figure 1, Figure 2, Table 1, Table 2, etc.
 ${includeImages
-  ? `— FIGURES: ${imageCount > 0 ? `Include approximately ${imageCount} figure${imageCount > 1 ? "s" : ""}` : "Include figures where they meaningfully add analytical value"}.${imageTypes.length > 0 ? ` Preferred types: ${imageTypes.join(", ")}.` : ""} Write a placeholder on its own line: [FIGURE X: brief description — type], followed by the caption: "Figure X: [full descriptive title]".
-AUTO-SELECT THE CORRECT CHART TYPE: Bar chart (grouped) for group comparisons/ANOVA/t-test; Bar chart (stacked) for composition over categories; Line chart for time series/longitudinal/trends; Scatter plot for correlation/regression (add regression line and confidence band); Box plot for group distributions and non-parametric comparisons; Histogram for frequency distributions (add normal curve overlay if testing normality); Forest plot for meta-analysis effect sizes; Heatmap/correlation matrix for factor analysis and correlation tables; Kaplan-Meier curve for survival analysis; ROC curve for logistic regression; Radar/Spider chart for multi-attribute comparisons; Funnel plot for meta-analysis publication bias; Sankey/Alluvial diagram for flow between categories. Always state the chart type in the figure placeholder: [FIGURE X: description — Bar chart (grouped)].`
+  ? `— FIGURES: ${imageCount > 0 ? `Include approximately ${imageCount} figure${imageCount > 1 ? "s" : ""}` : "Include figures where they meaningfully add analytical value"}.${imageTypes.length > 0 ? ` Preferred types: ${imageTypes.join(", ")}.` : ""}
+  Write a placeholder on its own line: [FIGURE X: brief description — chart type], followed immediately by the caption BELOW the placeholder: "Figure X. [Descriptive title]. [Source: cite source]. N = [sample size if applicable]."
+  FIGURE NUMBERING: Use ${figureNumbering === "Chapter-based" ? "chapter-based numbering (e.g. Figure 3.1, Figure 3.2 for chapter 3)" : "sequential numbering across the whole document (Figure 1, Figure 2, Figure 3...)"}.
+  CROSS-REFERENCE LANGUAGE: When introducing a figure in text, write "As illustrated in Figure X..." or "Figure X presents..." or "As shown in Figure X..." — never place a figure without a textual introduction.
+  CHART COMPLEXITY LEVEL: ${chartComplexity} — ${
+    chartComplexity <= 1
+      ? "MINIMAL: Clean chart, no gridlines, minimal axis labels, title only."
+      : chartComplexity === 2
+      ? "STANDARD: Gridlines at major intervals, labelled axes with units, data value labels on key elements, legend, title, figure number."
+      : chartComplexity === 3
+      ? "FULL ACADEMIC: All Standard elements plus error bars (95% CI), significance brackets with p-values or asterisks (* p<0.05, ** p<0.01, *** p<0.001), sample size annotations (n=X), source note below caption."
+      : "PUBLICATION-READY: All Full Academic elements. State that the chart must be in vector SVG format with CMYK colour mode option, font embedded, and scalable without quality loss — submission-ready for academic journals."
+  } Describe the required complexity level in the figure placeholder.
+  AUTO-SELECT THE CORRECT CHART TYPE: Bar chart (grouped) for group comparisons/ANOVA/t-test; Bar chart (stacked) for composition over categories; Line chart for time series/longitudinal/trends; Scatter plot for correlation/regression (add regression line and confidence band); Box plot for group distributions and non-parametric comparisons; Histogram for frequency distributions (add normal curve overlay if testing normality); Forest plot for meta-analysis effect sizes; Heatmap/correlation matrix for factor analysis and correlation tables; Kaplan-Meier curve for survival analysis; ROC curve for logistic regression; Radar/Spider chart for multi-attribute comparisons; Funnel plot for meta-analysis publication bias; Sankey/Alluvial diagram for flow between categories. Always state the chart type in the figure placeholder.`
   : "— Do NOT include figures or images in this section."}
 ${includeTables
-  ? `— TABLES: ${tableCount > 0 ? `Include approximately ${tableCount} formatted table${tableCount > 1 ? "s" : ""}` : "Include tables where data comparison or structured information genuinely adds value"}. Use markdown table format with clear column headers and a caption above: "Table X: [title]".`
+  ? `— TABLES: ${tableCount > 0 ? `Include approximately ${tableCount} formatted table${tableCount > 1 ? "s" : ""}` : "Include tables where data comparison or structured information genuinely adds value"}. Use markdown table format with clear column headers. Place the caption ABOVE the table (academic convention): "Table X. [Descriptive title]." Use ${figureNumbering === "Chapter-based" ? "chapter-based numbering (Table 3.1, Table 3.2...)" : "sequential numbering (Table 1, Table 2...)"}. When introducing a table in text, write "Table X presents..." or "As shown in Table X..." — always cross-reference before the table appears.`
   : "— Do not include tables in this section unless absolutely essential for data presentation."}
 
 ═══════════════════════════════════════════════
