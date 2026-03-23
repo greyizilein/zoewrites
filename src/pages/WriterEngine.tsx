@@ -442,16 +442,46 @@ const WriterEngine = () => {
     const isHarvard = (settings.citationStyle || "Harvard").toLowerCase().includes("harvard");
 
     try {
+      // Helper: filter feedback lines to what's relevant for a specific section
+      const filterFeedback = (fullFeedback: string, sectionTitle: string): string => {
+        const lines = fullFeedback.split("\n");
+        const titleLower = sectionTitle.toLowerCase();
+        const additionalIdx = lines.findIndex(l => l.startsWith("ADDITIONAL INSTRUCTIONS"));
+        const issueLines = additionalIdx >= 0 ? lines.slice(0, additionalIdx) : lines;
+        const additional = additionalIdx >= 0 ? lines.slice(additionalIdx).join("\n") : "";
+
+        const relevant = issueLines.filter(line => {
+          if (!line.trim()) return false;
+          // Always include document-wide and coherence issues
+          if (/\[document\]/i.test(line) || /\[coherence/i.test(line)) return true;
+          // Include if no section tag (bare instruction)
+          if (!/\[[^\]]+\]\s*\[[^\]]+\]/.test(line)) return true;
+          // Include if section tag matches this section's title
+          const sectionTagMatch = line.match(/\[([^\]]+)\]\s*\[([^\]]+)\]/);
+          if (sectionTagMatch) {
+            const tag = sectionTagMatch[2].toLowerCase();
+            return titleLower.includes(tag) || tag.includes(titleLower);
+          }
+          return false;
+        });
+
+        const parts = [relevant.join("\n"), additional].filter(s => s.trim());
+        return parts.join("\n\n");
+      };
+
       for (let i = 0; i < contentSections.length; i++) {
         const section = contentSections[i];
         setProgressMessage(`Revising ${i + 1} of ${contentSections.length}: ${section.title}…`);
+
+        const sectionFeedback = filterFeedback(feedback, section.title);
+        if (!sectionFeedback.trim()) continue; // nothing relevant for this section
 
         const resp = await fetch(`${CHAT_URL}/section-revise`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
           body: JSON.stringify({
             content: section.content,
-            feedback,
+            feedback: sectionFeedback,
             word_target: section.word_target,
             section_title: section.title,
             model: selectedModel, settings,
@@ -485,8 +515,9 @@ const WriterEngine = () => {
         setSections(prev => prev.map(s => s.id === section.id ? { ...s, content: fixedBody, word_current: wc } : s));
       }
 
-      const newTotal = contentSections.reduce((a, s) => a + countBodyWords(s.content || ""), 0);
-      if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
+      // Recalculate from latest sections state
+      const latestTotal = sections.reduce((a, s) => a + (s.word_current || 0), 0);
+      if (assessment?.id) await supabase.from("assessments").update({ word_current: latestTotal }).eq("id", assessment.id);
 
     } catch (e: any) {
       setWriteError(e.message || "Revision failed");
@@ -494,6 +525,72 @@ const WriterEngine = () => {
       setGenerating(false);
       setStreamContent("");
       setProgressMessage("");
+    }
+  };
+
+  // ─── Review: Quality + coherence scan ───────────────────────────────────────
+  const handleQualityCheck = async () => {
+    const contentSections = sections.filter(s => s.content && s.content.trim().length > 50);
+    if (contentSections.length === 0) {
+      toast({ title: "Nothing to scan", description: "Write the document first.", variant: "destructive" });
+      return null;
+    }
+
+    const allContent = contentSections
+      .map(s => `## ${s.title}\n${getBodyContent(s.content || "")}`)
+      .join("\n\n");
+
+    const briefData = assessment?.execution_plan || executionPlan;
+    const parsedBrief = briefData ? {
+      brief_text: assessment?.brief_text || briefText || "",
+      requirements: briefData.requirements || [],
+      marking_criteria: briefData.marking_criteria || [],
+      learning_outcomes: briefData.learning_outcomes || [],
+    } : {};
+
+    const sectionsForQuality = contentSections.map(s => ({
+      title: s.title, framework: s.framework || null,
+    }));
+    const sectionsForCoherence = contentSections.map(s => ({
+      title: s.title, content: getBodyContent(s.content || ""),
+    }));
+
+    try {
+      const [qualityResult, coherenceResult] = await Promise.allSettled([
+        supabase.functions.invoke("quality-pass", {
+          body: {
+            content: allContent,
+            execution_plan: executionPlan,
+            word_target: totalTarget,
+            model: selectedModel,
+            sections: sectionsForQuality,
+            brief_text: parsedBrief.brief_text,
+            requirements: parsedBrief.requirements,
+            marking_criteria: parsedBrief.marking_criteria,
+            learning_outcomes: parsedBrief.learning_outcomes,
+          },
+        }),
+        contentSections.length >= 2
+          ? supabase.functions.invoke("coherence-pass", {
+              body: { sections: sectionsForCoherence, model: selectedModel },
+            })
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+
+      if (qualityResult.status === "rejected") throw qualityResult.reason;
+      const { data: qData, error: qError } = qualityResult.value as any;
+      if (qError) throw qError;
+      setQualityReport(qData);
+
+      if (coherenceResult.status === "fulfilled") {
+        const { data: cData } = coherenceResult.value as any;
+        setCoherenceReport(cData?.report || null);
+      }
+
+      return qData;
+    } catch (e: any) {
+      toast({ title: "Scan failed", description: e.message, variant: "destructive" });
+      throw e;
     }
   };
 
