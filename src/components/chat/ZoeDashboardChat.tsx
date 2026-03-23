@@ -1027,7 +1027,246 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
     </div>
   );
 
-  return null; // layout added next
+  // ── Bottom tab bar ─────────────────────────────────────────────────────────
+  const TABS: { id: TabId; label: string; Icon: React.FC<any> }[] = [
+    { id: "chats",  label: "Chats",  Icon: MessageCircle },
+    { id: "write",  label: "Write",  Icon: AlignLeft },
+    { id: "status", label: "Status", Icon: BarChart3 },
+    { id: "tools",  label: "Tools",  Icon: Settings },
+  ];
+
+  // ── Chat view (when assessment open) ───────────────────────────────────────
+  const renderChatView = () => (
+    <div className="flex flex-col h-full">
+      {/* Section chips */}
+      {!sectionsLoading && sections.length > 0 && (
+        <div className="flex-shrink-0 flex gap-2 px-3 py-2 overflow-x-auto bg-white/50 border-b border-border/30"
+          style={{ scrollbarWidth: "none" }}>
+          {sections.map(sec => (
+            <button
+              key={sec.id}
+              onClick={() => handleSend(`Write the ${sec.title} section`)}
+              className={cn(
+                "flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors whitespace-nowrap",
+                sec.status === "complete"
+                  ? "bg-sage/10 text-sage border-sage/20"
+                  : sec.status === "writing"
+                  ? "bg-terracotta/10 text-terracotta border-terracotta/20 animate-pulse"
+                  : "bg-muted/60 text-muted-foreground border-border/50 hover:bg-muted",
+              )}
+            >
+              {sec.title.length > 18 ? sec.title.slice(0, 15) + "…" : sec.title}
+              <span className="opacity-50 ml-1">{sec.word_current}w</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1"
+        style={{ backgroundColor: "hsl(30,20%,93%)" }}>
+        {currentMsgs.length === 0 && (
+          <div className="text-center py-10">
+            <div className="w-12 h-12 rounded-full bg-terracotta/10 flex items-center justify-center mx-auto mb-3">
+              <Brain size={20} className="text-terracotta" />
+            </div>
+            <p className="text-[13px] font-semibold text-foreground">ZOE is ready</p>
+            <p className="text-[11px] text-muted-foreground mt-1 max-w-[220px] mx-auto">
+              Ask me to write, critique, humanise, or improve anything.
+            </p>
+          </div>
+        )}
+        {currentMsgs.map(msg => <MsgBubble key={msg.id} msg={msg} />)}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input bar */}
+      <div className="flex-shrink-0 px-3 py-2.5 bg-white border-t border-border/40">
+        <div className="flex items-end gap-2">
+          <div className="flex-1 flex items-end bg-[hsl(220,20%,96%)] rounded-2xl border border-border/50 px-3 py-2">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              placeholder="Message ZOE…"
+              rows={1}
+              disabled={loading}
+              className="flex-1 bg-transparent outline-none resize-none text-[13px] text-foreground placeholder:text-muted-foreground leading-5 max-h-[120px] overflow-y-auto"
+              style={{ scrollbarWidth: "none" }}
+            />
+          </div>
+          <button
+            onClick={() => handleSend()}
+            disabled={!input.trim() || loading}
+            className={cn(
+              "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
+              input.trim() && !loading
+                ? "bg-terracotta text-white shadow-md active:scale-95"
+                : "bg-muted text-muted-foreground",
+            )}
+          >
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Main render ─────────────────────────────────────────────────────────────
+  return (
+    <>
+      {/* Floating ZOE button — hidden when panel is open */}
+      <AnimatePresence>
+        {!open && (
+          <motion.button
+            key="fab"
+            onClick={() => setOpen(true)}
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            whileTap={{ scale: 0.9 }}
+            whileHover={{ scale: 1.08 }}
+            className="fixed bottom-[74px] right-4 z-50 md:bottom-6 md:right-6 w-14 h-14 rounded-full bg-terracotta text-white shadow-xl flex items-center justify-center"
+            style={{ boxShadow: "0 4px 24px hsl(18 50% 53% / 0.45)" }}
+          >
+            {/* Pulsing ring */}
+            <motion.span
+              className="absolute inset-0 rounded-full bg-terracotta"
+              animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0, 0.5] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <span className="relative z-10 text-[11px] font-extrabold tracking-widest">ZOE</span>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Overlay */}
+      <AnimatePresence>
+        {open && (
+          <>
+            {/* Backdrop (mobile only) */}
+            <motion.div
+              key="backdrop"
+              className="fixed inset-0 z-[59] bg-black/40 md:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setOpen(false)}
+            />
+
+            {/* Panel */}
+            <motion.div
+              key="panel"
+              className="fixed inset-0 z-[60] flex flex-col bg-[hsl(220,20%,96%)] md:inset-auto md:right-4 md:bottom-[88px] md:w-[400px] md:h-[600px] md:rounded-2xl md:shadow-2xl md:overflow-hidden"
+              initial={{ y: "100%", opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: "spring", damping: 30, stiffness: 320 }}
+            >
+              {/* Header */}
+              <div className="flex items-center gap-3 px-4 py-3 bg-[hsl(24,14%,10%)] text-white flex-shrink-0">
+                {chatOpen ? (
+                  <button
+                    onClick={() => setChatOpen(null)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-terracotta flex items-center justify-center text-[10px] font-extrabold flex-shrink-0">
+                    ZOE
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[15px] font-bold leading-none truncate">
+                    {currentAssessment ? currentAssessment.title : "ZOE"}
+                  </p>
+                  <p className="text-[11px] text-white/50 mt-0.5">
+                    {currentAssessment
+                      ? `${currentAssessment.status} · ${currentAssessment.type || "Assessment"}`
+                      : "Academic Writing Assistant"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-hidden relative">
+                <AnimatePresence mode="wait">
+                  {chatOpen ? (
+                    <motion.div
+                      key="chat"
+                      className="absolute inset-0 flex flex-col"
+                      initial={{ x: "100%", opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: "100%", opacity: 0 }}
+                      transition={{ type: "spring", damping: 30, stiffness: 320 }}
+                    >
+                      {renderChatView()}
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="tabs"
+                      className="absolute inset-0 flex flex-col"
+                      initial={{ x: "-15%", opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: "-15%", opacity: 0 }}
+                      transition={{ type: "spring", damping: 30, stiffness: 320 }}
+                    >
+                      {/* Tab content */}
+                      <div className="flex-1 overflow-hidden relative">
+                        <AnimatePresence mode="wait">
+                          <motion.div
+                            key={activeTab}
+                            className="absolute inset-0"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.12 }}
+                          >
+                            {activeTab === "chats"  && renderChatsTab()}
+                            {activeTab === "write"  && renderWriteTab()}
+                            {activeTab === "status" && renderStatusTab()}
+                            {activeTab === "tools"  && renderToolsTab()}
+                          </motion.div>
+                        </AnimatePresence>
+                      </div>
+
+                      {/* Bottom tab bar */}
+                      <div className="flex-shrink-0 flex items-center bg-white border-t border-border/40">
+                        {TABS.map(({ id, label, Icon }) => (
+                          <button
+                            key={id}
+                            onClick={() => setActiveTab(id)}
+                            className={cn(
+                              "flex-1 flex flex-col items-center gap-0.5 py-2.5 relative transition-colors",
+                              activeTab === id ? "text-terracotta" : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            <Icon size={18} strokeWidth={activeTab === id ? 2.2 : 1.8} />
+                            <span className="text-[9px] font-medium">{label}</span>
+                            {activeTab === id && (
+                              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-terracotta rounded-full" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
+  );
 };
 
 export default ZoeDashboardChat;
