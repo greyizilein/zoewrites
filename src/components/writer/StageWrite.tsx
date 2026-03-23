@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Loader2, FileText, Zap } from "lucide-react";
+import { Loader2, FileText, Zap, AlertCircle, X } from "lucide-react";
 import { Section, WriterSettings } from "./types";
 
 export type AutoPhase = "writing" | "quality" | "editing" | null;
@@ -13,6 +13,8 @@ interface Props {
   onBack: () => void;
   onNext: () => void;
   settings: WriterSettings;
+  writeError?: string | null;
+  onClearError?: () => void;
 }
 
 function fmt(n: number) {
@@ -22,7 +24,7 @@ function fmt(n: number) {
 
 export default function StageWrite({
   sections, generating, streamContent, fullDocContent,
-  onWrite, onBack, onNext, settings,
+  onWrite, onBack, onNext, settings, writeError, onClearError,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -66,7 +68,7 @@ export default function StageWrite({
           </div>
           {!generating && (
             <button
-              onClick={onWrite}
+              onClick={() => { onClearError?.(); onWrite(); }}
               disabled={sections.length === 0}
               className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-xl text-[13px] font-bold hover:bg-terracotta/90 transition-all active:scale-[0.97] disabled:opacity-40 shadow-sm"
             >
@@ -133,6 +135,19 @@ export default function StageWrite({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Inline error */}
+      {writeError && (
+        <div className="flex items-start gap-2.5 bg-destructive/8 border border-destructive/20 rounded-xl px-4 py-3">
+          <AlertCircle size={15} className="text-destructive flex-shrink-0 mt-0.5" />
+          <p className="text-[12px] text-destructive flex-1 leading-relaxed">{writeError}</p>
+          {onClearError && (
+            <button onClick={onClearError} className="text-destructive/60 hover:text-destructive flex-shrink-0">
+              <X size={13} />
+            </button>
+          )}
         </div>
       )}
 

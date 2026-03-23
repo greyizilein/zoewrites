@@ -11,7 +11,7 @@ interface Props {
 
 export default function StickyFooter({ leftLabel, onLeft, rightLabel, onRight, rightLoading, rightDisabled }: Props) {
   return (
-    <div className="sticky bottom-0 bg-background/95 backdrop-blur-md border-t border-border py-2.5 mt-5 flex justify-between items-center gap-2 z-10">
+    <div className="mt-8 pt-4 border-t border-border/40 flex justify-between items-center gap-2">
       {leftLabel ? (
         <>
           {/* Mobile: icon arrow */}
