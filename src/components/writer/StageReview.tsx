@@ -2,13 +2,31 @@ import { useState, useEffect } from "react";
 import {
   Loader2, Check, AlertTriangle, AlertCircle, RefreshCw,
   ChevronDown, ChevronUp, Wrench, Send, Image, Table2, Plus,
+  Link2,
 } from "lucide-react";
 import { Section } from "./types";
 
 interface Issue {
-  severity: "critical" | "warning" | string;
+  severity: "critical" | "major" | "minor" | "warning" | string;
+  section?: string;
   description: string;
   suggestion?: string;
+}
+
+interface CoherenceIssue {
+  severity: "critical" | "major" | "minor" | string;
+  type: string;
+  sections_involved: string[];
+  description: string;
+  suggestion: string;
+}
+
+interface FrameworkCheck {
+  section_title: string;
+  framework: string;
+  present: string[];
+  missing: string[];
+  completeness_score: number;
 }
 
 // State per issue: null=visible, "fixing"=in-progress, "fixed"=green, "done"=dismissed
@@ -17,6 +35,7 @@ type IssueState = null | "fixing" | "fixed" | "done";
 interface Props {
   sections: Section[];
   qualityReport: any;
+  coherenceReport: any;
   isProcessing: boolean;
   onRunScan: () => Promise<any>;
   onFixAllIssues: (customInstructions?: string) => Promise<void>;
@@ -36,7 +55,7 @@ const gradeColor: Record<string, string> = {
 };
 
 export default function StageReview({
-  sections, qualityReport, isProcessing, onRunScan,
+  sections, qualityReport, coherenceReport, isProcessing, onRunScan,
   onFixAllIssues, onApplySectionFeedback, onBack, onNext,
 }: Props) {
   const [expandedSectionId, setExpandedSectionId] = useState<string | null>(null);
@@ -52,8 +71,11 @@ export default function StageReview({
   const [applyingContent, setApplyingContent] = useState(false);
 
   const report = qualityReport?.report;
-  const grade = report?.grade || null;
+  const grade = report?.overall_grade || report?.grade || null;
   const allIssues: Issue[] = report?.issues || [];
+  const frameworkChecks: FrameworkCheck[] = report?.framework_checks || [];
+  const coherenceIssues: CoherenceIssue[] = coherenceReport?.issues || [];
+  const overallCoherence: string | null = coherenceReport?.overall_coherence || null;
 
   // Sync issueStates when qualityReport changes (fresh scan)
   useEffect(() => {
@@ -61,8 +83,10 @@ export default function StageReview({
   }, [qualityReport]);
 
   const visibleIssues = allIssues.filter((_, i) => issueStates[i] !== "done");
-  const criticalCount = visibleIssues.filter(i => i.severity === "critical").length;
-  const warningCount = visibleIssues.filter(i => i.severity === "warning").length;
+  const criticalCount = visibleIssues.filter(i => i.severity === "critical").length
+    + coherenceIssues.filter(i => i.severity === "critical").length;
+  const warningCount = visibleIssues.filter(i => i.severity === "major" || i.severity === "warning").length
+    + coherenceIssues.filter(i => i.severity === "major" || i.severity === "minor").length;
 
   const totalWords = sections.reduce((a, s) => a + s.word_current, 0);
   const totalTarget = sections.reduce((a, s) => a + s.word_target, 0);
@@ -277,6 +301,89 @@ export default function StageReview({
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Framework checks */}
+      {frameworkChecks.length > 0 && (
+        <div className="bg-card border border-border/50 rounded-2xl shadow-sm overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-border/50">
+            <p className="text-[12px] font-bold text-foreground">Framework Verification</p>
+          </div>
+          <div className="divide-y divide-border/50">
+            {frameworkChecks.map((fc, i) => (
+              <div key={i} className="px-4 py-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[11px] font-semibold text-foreground">{fc.framework}</p>
+                  <span className={`text-[10px] font-bold tabular-nums px-2 py-0.5 rounded-full ${
+                    fc.completeness_score >= 90 ? "bg-sage/10 text-sage" :
+                    fc.completeness_score >= 70 ? "bg-amber-500/10 text-amber-600" :
+                    "bg-destructive/10 text-destructive"
+                  }`}>{fc.completeness_score}%</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground mb-1.5">{fc.section_title}</p>
+                {fc.missing.length > 0 && (
+                  <div className="space-y-0.5">
+                    {fc.missing.map((m, j) => (
+                      <div key={j} className="flex items-center gap-1.5">
+                        <AlertCircle size={10} className="text-destructive flex-shrink-0" />
+                        <span className="text-[10px] text-destructive">{m}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {fc.missing.length === 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <Check size={10} className="text-sage" />
+                    <span className="text-[10px] text-sage">All components present</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Coherence issues */}
+      {coherenceIssues.length > 0 && (
+        <div className="bg-card border border-border/50 rounded-2xl shadow-sm overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-border/50 flex items-center justify-between">
+            <p className="text-[12px] font-bold text-foreground">Cross-Section Coherence</p>
+            {overallCoherence && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                overallCoherence === "Strong" ? "bg-sage/10 text-sage" :
+                overallCoherence === "Adequate" ? "bg-amber-500/10 text-amber-600" :
+                "bg-destructive/10 text-destructive"
+              }`}>{overallCoherence}</span>
+            )}
+          </div>
+          <div className="divide-y divide-border/50">
+            {coherenceIssues.map((issue, i) => (
+              <div key={i} className="flex items-start gap-2.5 px-4 py-3">
+                {issue.severity === "critical"
+                  ? <AlertCircle size={13} className="text-destructive flex-shrink-0 mt-0.5" />
+                  : <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                }
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-foreground">{issue.description}</p>
+                  {issue.sections_involved.length > 0 && (
+                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                      <Link2 size={9} className="text-muted-foreground flex-shrink-0" />
+                      {issue.sections_involved.map((t, j) => (
+                        <span key={j} className="text-[9px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-full">{t}</span>
+                      ))}
+                    </div>
+                  )}
+                  {issue.suggestion && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{issue.suggestion}</p>
+                  )}
+                </div>
+                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                  issue.severity === "critical" ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600"
+                }`}>{issue.severity}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}

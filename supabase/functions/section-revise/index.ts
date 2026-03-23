@@ -90,15 +90,22 @@ Output the complete revised section text only. Do not include any preamble, expl
           {
             role: "user",
             content: `Section title: ${section_title}
-Word target: ${word_target} words (±1%)
+Word target: ${word_target} words (±1%) — BODY ONLY, not counting the reference list
 
 FEEDBACK TO APPLY — EVERY ITEM IS MANDATORY:
 ${feedback}
 
-CURRENT SECTION CONTENT:
+CURRENT SECTION CONTENT (body + references if present):
 ${content}
 
-Revise the section now. Apply EVERY feedback point above without exception. Output the complete revised section only. Exactly ${word_target} words (±1%). No reference list at the end.`,
+Revise the section now. Apply EVERY feedback point above without exception.
+
+OUTPUT FORMAT:
+1. Revised body text — exactly ${word_target} words (±1%), with in-text citations throughout
+2. Then on a new line: ## References
+3. Then the complete updated reference list — add any new sources cited, remove any no longer cited, keep all unchanged references that are still used
+
+Output body → ## References → reference list only. No preamble, no commentary.`,
           },
         ],
         stream: true,

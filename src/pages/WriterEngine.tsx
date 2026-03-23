@@ -14,7 +14,7 @@ import StageSubmissionPrep, { SubmissionDetails } from "@/components/writer/Stag
 import ProgressBanner from "@/components/writer/ProgressBanner";
 import { Section, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 import { readContentStream } from "@/lib/sseStream";
-import { countWords, truncateToWordCeiling } from "@/lib/wordCount";
+import { countWords, countBodyWords, getBodyContent, truncateToWordCeiling } from "@/lib/wordCount";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -52,6 +52,7 @@ const WriterEngine = () => {
   const [executionPlan, setExecutionPlan] = useState<any>(null);
   const [settings, setSettings] = useState<WriterSettings>({ ...defaultSettings });
   const [qualityReport, setQualityReport] = useState<any>(null);
+  const [coherenceReport, setCoherenceReport] = useState<any>(null);
   const [autoPhase, setAutoPhase] = useState<AutoPhase>(null);
   const [progressMessage, setProgressMessage] = useState("");
   const [submissionDetails, setSubmissionDetails] = useState<SubmissionDetails | undefined>();
@@ -373,10 +374,11 @@ const WriterEngine = () => {
 
       const fullContent = await readContentStream(resp.body, setStreamContent);
 
-      // Hard word count cap: truncate at sentence boundaries if over 1% of target
+      // Hard word count cap: truncate at sentence boundaries if over 1% of target (body only)
       const ceiling = Math.ceil(section.word_target * 1.01);
-      let finalContent = truncateToWordCeiling(fullContent, ceiling);
-      let wordCount = countWords(finalContent);
+      let finalContent = truncateToWordCeiling(getBodyContent(fullContent), ceiling)
+        + (fullContent.match(/\n## References[\s\S]*$/i)?.[0] || "");
+      let wordCount = countBodyWords(finalContent);
 
       // Harvard citation post-processing: replace & with "and" inside citation parentheses
       if ((settings.citationStyle || "Harvard") === "Harvard") {
@@ -404,23 +406,26 @@ const WriterEngine = () => {
         } catch { /* optional */ }
       }
 
-      // Word count enforcement: auto-trim if over 1% of target (reads fresh from DB)
+      // Word count enforcement: retry trim up to 3x if body still exceeds 1% of target
       {
         const latestData = await supabase.from("sections").select("content, word_current").eq("id", sectionId).single();
-        const currentContent = (!latestData.error && latestData.data?.content) || fullContent;
-        const currentWc = countWords(currentContent);
+        let trimContent = (!latestData.error && latestData.data?.content) || fullContent;
         const wCeiling = Math.ceil(section.word_target * 1.01);
-        if (currentWc > wCeiling) {
-          const trimFeedback = `Trim this section to exactly ${section.word_target} words. Remove redundant phrases, tighten prose. Do NOT add new content.`;
+        let attempt = 0;
+        while (countBodyWords(trimContent) > wCeiling && attempt < 3) {
+          attempt++;
+          const trimFeedback = `Trim this section to exactly ${section.word_target} words (body only, excluding references). Remove redundant phrases, tighten prose. Do NOT add new content.`;
           try {
-            toast({ title: "Trimming to target…", description: section.title });
-            const trimContent = await streamTrimSection(currentContent, trimFeedback, section.word_target, section.title, accessToken);
-            if (trimContent) {
-              const trimWc = countWords(trimContent);
-              await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", sectionId);
-              setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: trimContent, word_current: trimWc } : s));
-            }
-          } catch { /* word count adjustment is best-effort */ }
+            if (attempt === 1) toast({ title: "Trimming to target…", description: section.title });
+            const trimResult = await streamTrimSection(trimContent, trimFeedback, section.word_target, section.title, accessToken);
+            if (!trimResult) break;
+            trimContent = trimResult;
+          } catch { break; }
+        }
+        if (attempt > 0 && trimContent) {
+          const trimWc = countBodyWords(trimContent);
+          await supabase.from("sections").update({ content: trimContent, word_current: trimWc }).eq("id", sectionId);
+          setSections(prev => prev.map(s => s.id === sectionId ? { ...s, content: trimContent, word_current: trimWc } : s));
         }
       }
 
@@ -464,7 +469,7 @@ const WriterEngine = () => {
       toast({ title: "No content to scan", description: "Write your sections first.", variant: "destructive" });
       return null;
     }
-    const allContent = contentSections.map(s => `## ${s.title}\n${s.content}`).join("\n\n");
+    const allContent = contentSections.map(s => `## ${s.title}\n${getBodyContent(s.content || "")}`).join("\n\n");
 
     const briefData = assessment?.execution_plan || executionPlan;
     const parsedBrief = briefData ? {
@@ -474,17 +479,47 @@ const WriterEngine = () => {
       learning_outcomes: briefData.learning_outcomes || [],
     } : {};
 
+    // Sections list for framework verification (title + framework per section)
+    const sectionsForQuality = contentSections.map(s => ({
+      title: s.title,
+      framework: s.framework || null,
+    }));
+
+    // Sections for coherence pass (title + body content)
+    const sectionsForCoherence = contentSections.map(s => ({
+      title: s.title,
+      content: getBodyContent(s.content || ""),
+    }));
+
     try {
-      const { data, error } = await supabase.functions.invoke("quality-pass", {
-        body: {
-          content: allContent, execution_plan: executionPlan, word_target: totalTarget, model: selectedModel,
-          brief_text: parsedBrief.brief_text || assessment?.brief_text || briefText || "",
-          requirements: parsedBrief.requirements, marking_criteria: parsedBrief.marking_criteria, learning_outcomes: parsedBrief.learning_outcomes,
-        },
-      });
-      if (error) throw error;
-      setQualityReport(data);
-      return data;
+      // Run quality-pass and coherence-pass in parallel
+      const [qualityResult, coherenceResult] = await Promise.allSettled([
+        supabase.functions.invoke("quality-pass", {
+          body: {
+            content: allContent, execution_plan: executionPlan, word_target: totalTarget, model: selectedModel,
+            sections: sectionsForQuality,
+            brief_text: parsedBrief.brief_text || assessment?.brief_text || briefText || "",
+            requirements: parsedBrief.requirements, marking_criteria: parsedBrief.marking_criteria, learning_outcomes: parsedBrief.learning_outcomes,
+          },
+        }),
+        contentSections.length >= 2
+          ? supabase.functions.invoke("coherence-pass", {
+              body: { sections: sectionsForCoherence, model: selectedModel },
+            })
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+
+      if (qualityResult.status === "rejected") throw qualityResult.reason;
+      const { data: qData, error: qError } = qualityResult.value as any;
+      if (qError) throw qError;
+      setQualityReport(qData);
+
+      if (coherenceResult.status === "fulfilled") {
+        const { data: cData } = coherenceResult.value as any;
+        setCoherenceReport(cData?.report || null);
+      }
+
+      return qData;
     } catch (e: any) {
       toast({ title: "Quality check failed", description: e.message, variant: "destructive" });
       throw e;
@@ -506,17 +541,40 @@ const WriterEngine = () => {
 
   // ─── Review: Fix all issues from quality report ───
   const handleFixAllIssues = async (customInstructions?: string) => {
-    const issues = qualityReport?.report?.issues || [];
-    const hasIssues = issues.length > 0;
+    const issues: any[] = qualityReport?.report?.issues || [];
+    const coherenceIssues: any[] = coherenceReport?.issues || [];
+    const hasIssues = issues.length > 0 || coherenceIssues.length > 0;
     const hasCustom = !!customInstructions?.trim();
     if (!hasIssues && !hasCustom) { toast({ title: "No issues to fix" }); return; }
-    const issueFeedback = hasIssues
-      ? issues.map((i: any) => `[${i.severity?.toUpperCase()}] ${i.description}${i.suggestion ? ` — ${i.suggestion}` : ""}`).join("\n")
-      : "";
-    const feedback = [issueFeedback, hasCustom ? `ADDITIONAL INSTRUCTIONS:\n${customInstructions}` : ""].filter(Boolean).join("\n\n");
+
+    const contentSections = sections.filter(s => s.content);
     setIsProcessing(true);
     try {
-      for (const s of sections.filter(s => s.content)) {
+      for (const s of contentSections) {
+        // Quality issues: send only those tagged to this section, plus "Document" globals
+        const sectionIssues = issues.filter((i: any) => {
+          const tag = (i.section || "").toLowerCase();
+          return tag === "document" || tag === s.title.toLowerCase() || s.title.toLowerCase().includes(tag) || tag.includes(s.title.toLowerCase());
+        });
+
+        // Coherence issues: include ones involving this section
+        const sectionCoherenceIssues = coherenceIssues.filter((i: any) =>
+          (i.sections_involved || []).some((t: string) => t.toLowerCase() === s.title.toLowerCase())
+        );
+
+        const qualityLines = sectionIssues.map((i: any) =>
+          `[${i.severity?.toUpperCase()}] ${i.description}${i.suggestion ? ` — ${i.suggestion}` : ""}`
+        );
+        const coherenceLines = sectionCoherenceIssues.map((i: any) =>
+          `[COHERENCE/${i.severity?.toUpperCase()}] ${i.description}${i.suggestion ? ` — ${i.suggestion}` : ""}`
+        );
+        const allLines = [...qualityLines, ...coherenceLines];
+
+        // If nothing to fix in this section and no global custom instructions, skip it
+        if (allLines.length === 0 && !hasCustom) continue;
+
+        const issueFeedback = allLines.join("\n");
+        const feedback = [issueFeedback, hasCustom ? `ADDITIONAL INSTRUCTIONS:\n${customInstructions}` : ""].filter(Boolean).join("\n\n");
         await streamSection(s.id, true, feedback);
       }
       toast({ title: "All revisions applied", description: "Run Re-scan to verify." });
@@ -559,7 +617,7 @@ const WriterEngine = () => {
     }
 
     const contentSections = sections.filter(s => s.content);
-    const currentTotal = contentSections.reduce((a, s) => a + s.word_current, 0);
+    const currentTotal = contentSections.reduce((a, s) => a + countBodyWords(s.content || ""), 0);
     const excess = currentTotal - totalTarget;
     if (excess <= 0) { setIsProcessing(false); toast({ title: "Already within target" }); return; }
 
@@ -905,6 +963,7 @@ const WriterEngine = () => {
                 <StageReview
                   sections={sections}
                   qualityReport={qualityReport}
+                  coherenceReport={coherenceReport}
                   isProcessing={isProcessing}
                   onRunScan={handleRunScan}
                   onFixAllIssues={handleFixAllIssues}
