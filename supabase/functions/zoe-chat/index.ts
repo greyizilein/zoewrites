@@ -51,7 +51,7 @@ DOCUMENT READ, EDIT & EXPORT:
 - read_section: Display the full content of a specific section in the chat. Call this when the user says "show me [section]", "read [section]", "what does [section] say", "draw up [section]". Always confirm what you are displaying.
 - read_assessment: Display the full assembled document (all written sections) in the chat. Use when user says "show me the document", "read back my essay", "draw up my assessment".
 - update_assessment_settings: Change the assessment's citation style, academic level, or AI model. Call when user says "change citation to APA", "switch to Vancouver", "change level to postgraduate".
-- export_content: Trigger a file download for any content you have generated or processed — revised essays, summaries, critiques, rewritten documents, etc. Call when user says "download this", "save this", "give me a file", "export what you wrote". Include the full text as `content`.
+- export_content: Trigger a file download for any content you have generated or processed — revised essays, summaries, critiques, rewritten documents, etc. Call when user says "download this", "save this", "give me a file", "export what you wrote". Include the full text as 'content'.
 
 WEB SEARCH:
 - web_search: Search the web for real-time information, news, academic topics, or any factual query. ALWAYS use this when the user asks you to search, look something up, or when you need current information beyond your training. Returns top 5 results with titles, URLs, and snippets.
