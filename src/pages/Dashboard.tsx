@@ -138,7 +138,7 @@ const Dashboard = () => {
     if (!user) return;
     const [{ data: ad }, { data: pd }] = await Promise.all([
       supabase.from("assessments").select("id, title, type, word_current, word_target, status, updated_at")
-        .eq("user_id", user.id).is("deleted_at", null).order("updated_at", { ascending: false }),
+        .eq("user_id", user.id).order("updated_at", { ascending: false }),
       supabase.from("profiles").select("full_name, tier, words_used, word_limit")
         .eq("user_id", user.id).single(),
     ]);
