@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import {
   MessageCircle, X, ArrowLeft, Search, Send,
-  Plus, BarChart3, Settings, Paperclip, Trash2,
+  Plus, BarChart3, Settings, Paperclip, Trash2, Copy,
   CheckCircle, AlertCircle, Loader2, ChevronRight, Wand2,
   Sparkles, ShieldCheck, Download, Image, BookOpen,
   AlignLeft, Target, Brain, Quote, SlidersHorizontal,
@@ -180,7 +180,19 @@ const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
 };
 
 // ── MsgBubble ────────────────────────────────────────────────────────────────
-const MsgBubble: React.FC<{ msg: ZoeChatMsg }> = ({ msg }) => {
+const MsgBubble: React.FC<{
+  msg: ZoeChatMsg;
+  onDelete?: (id: string) => void;
+}> = ({ msg, onDelete }) => {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(msg.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
   // Action pill — centered status indicator
   if (msg.role === "action") {
     const meta = ACTION_META[msg.actionType || "processing"];
@@ -208,9 +220,22 @@ const MsgBubble: React.FC<{ msg: ZoeChatMsg }> = ({ msg }) => {
   // User bubble — right aligned, terracotta
   if (msg.role === "user") {
     return (
-      <div className="flex justify-end mb-1">
-        <div className="max-w-[80%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-terracotta text-white text-[13px] leading-relaxed shadow-sm">
-          {msg.content}
+      <div className="flex justify-end mb-1 group">
+        <div className="flex items-end gap-1.5 max-w-[82%]">
+          {/* Actions (shown on hover) */}
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity self-end mb-1 flex-shrink-0">
+            <button onClick={handleCopy} className="w-6 h-6 rounded-full bg-muted/80 flex items-center justify-center hover:bg-muted" title="Copy">
+              {copied ? <CheckCircle size={10} className="text-sage" /> : <Copy size={10} className="text-muted-foreground" />}
+            </button>
+            {onDelete && (
+              <button onClick={() => onDelete(msg.id)} className="w-6 h-6 rounded-full bg-muted/80 flex items-center justify-center hover:bg-destructive/20" title="Delete">
+                <Trash2 size={10} className="text-muted-foreground" />
+              </button>
+            )}
+          </div>
+          <div className="px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-terracotta text-white text-[13px] leading-relaxed shadow-sm whitespace-pre-wrap">
+            {msg.content}
+          </div>
         </div>
       </div>
     );
@@ -219,33 +244,41 @@ const MsgBubble: React.FC<{ msg: ZoeChatMsg }> = ({ msg }) => {
   // Assistant bubble — left aligned, white card with ZOE avatar
   const isEmpty = !msg.content && msg.streaming;
   return (
-    <div className="flex items-end gap-2 mb-1 max-w-[88%]">
-      {/* ZOE avatar dot */}
+    <div className="flex items-end gap-2 mb-1 group max-w-[88%]">
+      {/* ZOE avatar */}
       <div className="w-6 h-6 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0 self-end mb-0.5">
         <span className="text-white text-[7px] font-extrabold">Z</span>
       </div>
-      <div className={cn(
-        "px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-white border border-border/40 shadow-sm text-[13px] leading-relaxed text-foreground min-w-[60px]",
-        msg.streaming && "opacity-90",
-      )}>
-        {isEmpty ? (
-          /* Typing indicator — 3 bouncing dots */
-          <span className="flex gap-1 py-0.5">
-            {[0, 1, 2].map(i => (
-              <span
-                key={i}
-                className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce"
-                style={{ animationDelay: `${i * 0.15}s` }}
-              />
-            ))}
-          </span>
-        ) : (
-          <>
-            <ReactMarkdown components={mdComponents}>{msg.content}</ReactMarkdown>
-            {msg.streaming && (
-              <span className="inline-block w-0.5 h-3.5 bg-terracotta animate-pulse ml-0.5 align-middle" />
+      <div className="flex-1">
+        <div className={cn(
+          "px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-white border border-border/40 shadow-sm text-[13px] leading-relaxed text-foreground min-w-[60px]",
+          msg.streaming && "opacity-90",
+        )}>
+          {isEmpty ? (
+            <span className="flex gap-1 py-0.5">
+              {[0, 1, 2].map(i => (
+                <span key={i} className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+              ))}
+            </span>
+          ) : (
+            <>
+              <ReactMarkdown components={mdComponents}>{msg.content}</ReactMarkdown>
+              {msg.streaming && <span className="inline-block w-0.5 h-3.5 bg-terracotta animate-pulse ml-0.5 align-middle" />}
+            </>
+          )}
+        </div>
+        {/* Per-message actions (shown on hover, only when not streaming) */}
+        {!msg.streaming && !isEmpty && (
+          <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={handleCopy} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/70 text-[10px] text-muted-foreground hover:bg-muted" title="Copy">
+              {copied ? <><CheckCircle size={9} className="text-sage" /> Copied</> : <><Copy size={9} /> Copy</>}
+            </button>
+            {onDelete && (
+              <button onClick={() => onDelete(msg.id)} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/70 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
+                <Trash2 size={9} /> Delete
+              </button>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -295,7 +328,94 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Message helpers ────────────────────────────────────────────────────────
+  const addMsg = useCallback((chatId: string, msg: Omit<ZoeChatMsg, "id" | "ts">): string => {
+    const id = uid();
+    setMsgsMap(prev => ({
+      ...prev,
+      [chatId]: [...(prev[chatId] || []), { ...msg, id, ts: Date.now() }],
+    }));
+    // Persist non-streaming messages immediately; streaming ones saved on completion
+    if (!msg.streaming && user?.id) {
+      supabase.from("chat_messages" as any).insert({
+        id, user_id: user.id, chat_id: chatId,
+        role: msg.role, content: msg.content,
+        action_type: msg.actionType ?? null,
+      }).then(() => {});
+    }
+    return id;
+  }, [user]);
+
+  const updateMsg = useCallback((chatId: string, msgId: string, patch: Partial<ZoeChatMsg>) => {
+    setMsgsMap(prev => ({
+      ...prev,
+      [chatId]: (prev[chatId] || []).map(m => m.id === msgId ? { ...m, ...patch } : m),
+    }));
+    // When streaming ends, upsert the final content to DB
+    if (patch.streaming === false && user?.id) {
+      supabase.from("chat_messages" as any).upsert({
+        id: msgId, user_id: user.id, chat_id: chatId,
+        role: "assistant", content: patch.content ?? "",
+        action_type: null,
+      }).then(() => {});
+    }
+  }, [user]);
+
+  const deleteMsg = useCallback((chatId: string, msgId: string) => {
+    setMsgsMap(prev => ({
+      ...prev,
+      [chatId]: (prev[chatId] || []).filter(m => m.id !== msgId),
+    }));
+    supabase.from("chat_messages" as any).delete().eq("id", msgId).then(() => {});
+  }, []);
+
   // ── Effects ────────────────────────────────────────────────────────────────
+
+  // Load chat history from DB — once per chatId (assessment or dashboard)
+  useEffect(() => {
+    if (!user?.id) return;
+    const chatId = chatOpen || "dashboard";
+    // Skip if already loaded (has messages in memory)
+    if ((msgsMap[chatId] || []).length > 0) return;
+    supabase.from("chat_messages" as any)
+      .select("id, role, content, action_type, created_at")
+      .eq("user_id", user.id)
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true })
+      .limit(120)
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        const msgs: ZoeChatMsg[] = (data as any[]).map(r => ({
+          id: r.id,
+          role: r.role as ZoeChatMsg["role"],
+          content: r.content,
+          actionType: r.action_type ?? undefined,
+          ts: new Date(r.created_at).getTime(),
+        }));
+        setMsgsMap(prev => ({ ...prev, [chatId]: msgs }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, chatOpen]);
+
+  // Also load dashboard messages when panel first opens
+  useEffect(() => {
+    if (!open || !user?.id) return;
+    if ((msgsMap["dashboard"] || []).length > 0) return;
+    supabase.from("chat_messages" as any)
+      .select("id, role, content, action_type, created_at")
+      .eq("user_id", user.id).eq("chat_id", "dashboard")
+      .order("created_at", { ascending: true }).limit(60)
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        const msgs: ZoeChatMsg[] = (data as any[]).map(r => ({
+          id: r.id, role: r.role as ZoeChatMsg["role"],
+          content: r.content, actionType: r.action_type ?? undefined,
+          ts: new Date(r.created_at).getTime(),
+        }));
+        setMsgsMap(prev => ({ ...prev, dashboard: msgs }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, user?.id]);
 
   // Fetch live GBP→NGN rate once on first open
   useEffect(() => {
@@ -350,25 +470,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatOpen, pendingPrompt]);
 
-  // ── Message helpers ────────────────────────────────────────────────────────
-  const addMsg = useCallback((
-    chatId: string,
-    msg: Omit<ZoeChatMsg, "id" | "ts">,
-  ): string => {
-    const id = uid();
-    setMsgsMap(prev => ({
-      ...prev,
-      [chatId]: [...(prev[chatId] || []), { ...msg, id, ts: Date.now() }],
-    }));
-    return id;
-  }, []);
-
-  const updateMsg = useCallback((chatId: string, msgId: string, patch: Partial<ZoeChatMsg>) => {
-    setMsgsMap(prev => ({
-      ...prev,
-      [chatId]: (prev[chatId] || []).map(m => m.id === msgId ? { ...m, ...patch } : m),
-    }));
-  }, []);
+  // (addMsg, updateMsg, deleteMsg defined above with persistence)
 
   // Section search (global) — fires when search query >= 3 chars
   useEffect(() => {
@@ -387,7 +489,9 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
   // ── Derived values ─────────────────────────────────────────────────────────
   const chatId = chatOpen || "dashboard";
   const currentMsgs = msgsMap[chatId] || [];
-  const currentAssessment = chatOpen ? assessments.find(a => a.id === chatOpen) : null;
+  // __general__ is the pinned free-form ZOE chat; assessment UUIDs have a title
+  const currentAssessment = (chatOpen && chatOpen !== "__general__")
+    ? assessments.find(a => a.id === chatOpen) : null;
   const filteredAssessments = assessments.filter(a => {
     const q = search.toLowerCase();
     return (
@@ -1144,6 +1248,30 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
           </div>
         )}
 
+        {/* Pinned ZOE general chat — always at top, not tied to any assessment */}
+        {!search && (
+          <div className="flex items-center gap-0 mb-1">
+            <button
+              onClick={() => setChatOpen("__general__")}
+              className="flex-1 flex items-center gap-3 px-3 py-3 bg-white rounded-2xl border border-terracotta/20 hover:border-terracotta/40 active:scale-[0.99] transition-all text-left shadow-sm"
+            >
+              <div className="w-11 h-11 rounded-full bg-terracotta flex-shrink-0 flex items-center justify-center">
+                <span className="text-white text-[9px] font-extrabold tracking-wider">ZOE</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-foreground">ZOE — General Chat</p>
+                <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                  {(() => {
+                    const last = (msgsMap["__general__"] || []).filter(m => m.role !== "action").slice(-1)[0];
+                    return last ? last.content.slice(0, 55) + (last.content.length > 55 ? "…" : "") : "Ask ZOE anything";
+                  })()}
+                </p>
+              </div>
+              <ChevronRight size={14} className="text-muted-foreground flex-shrink-0 ml-1" />
+            </button>
+          </div>
+        )}
+
         {filteredAssessments.length > 0 && search && (
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-1 mt-2 mb-1">Assessments</p>
         )}
@@ -1526,7 +1654,13 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
             </p>
           </div>
         )}
-        {currentMsgs.map(msg => <MsgBubble key={msg.id} msg={msg} />)}
+        {currentMsgs.map(msg => (
+          <MsgBubble
+            key={msg.id}
+            msg={msg}
+            onDelete={id => deleteMsg(chatId, id)}
+          />
+        ))}
         <div ref={messagesEndRef} />
       </div>
 
@@ -1666,7 +1800,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-[15px] font-bold leading-none truncate">
-                    {currentAssessment ? currentAssessment.title : "ZOE"}
+                    {currentAssessment ? currentAssessment.title : chatOpen === "__general__" ? "ZOE — General Chat" : "ZOE"}
                   </p>
                   <p className="text-[11px] text-white/50 mt-0.5">
                     {currentAssessment
