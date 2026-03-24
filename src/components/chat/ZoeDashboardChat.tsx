@@ -281,6 +281,20 @@ const MsgBubble: React.FC<{
     });
   };
 
+  const handleDownload = () => {
+    const text = msg.content;
+    if (!text) return;
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ZOE-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Action pill — centered status indicator
   if (msg.role === "action") {
     const meta = ACTION_META[msg.actionType || "processing"];
@@ -358,10 +372,15 @@ const MsgBubble: React.FC<{
         </div>
         {/* Per-message actions (shown on hover, only when not streaming) */}
         {!msg.streaming && !isEmpty && (
-          <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap">
             <button onClick={handleCopy} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/70 text-[10px] text-muted-foreground hover:bg-muted" title="Copy">
               {copied ? <><CheckCircle size={9} className="text-sage" /> Copied</> : <><Copy size={9} /> Copy</>}
             </button>
+            {msg.content && msg.content.length > 80 && (
+              <button onClick={handleDownload} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/70 text-[10px] text-muted-foreground hover:bg-muted" title="Download as .txt">
+                <Download size={9} /> Download
+              </button>
+            )}
             {onDelete && (
               <button onClick={() => onDelete(msg.id)} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/70 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
                 <Trash2 size={9} /> Delete
@@ -1201,6 +1220,23 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
           ].filter(Boolean).join(" · ");
           addMsg(activeChatId, { role: "action", content: `Settings updated: ${changes}`, actionType: "success" });
         }
+        break;
+      }
+
+      case "export_content": {
+        const content = args.content || "";
+        if (!content) { addMsg(activeChatId, { role: "action", content: "No content to export.", actionType: "error" }); break; }
+        const filename = args.filename || "ZOE-output.txt";
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        addMsg(activeChatId, { role: "action", content: `Downloaded "${filename}".`, actionType: "success" });
         break;
       }
 

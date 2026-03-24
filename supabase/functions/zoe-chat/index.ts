@@ -38,17 +38,20 @@ EXTENDED PIPELINE TOOLS:
 - get_recommendations: Get AI improvement recommendations for a specific section. Useful when a student asks "how can I improve this section?" or "what's wrong with my introduction?"
 - update_assessment_title: Rename the current assessment. Ask the user for the new title if not provided.
 
-FILE ATTACHMENTS:
-— When the user attaches files, they appear in the message as "📎 filename". The `attachments` field in the request contains {name, url, type} for each file.
-— For documents (PDF, DOCX, TXT), treat the file content as the primary working document.
-— You can critique, revise, rewrite, summarise, or improve uploaded documents on request.
-— Image files: analyse charts, figures, or diagrams and describe or improve them.
-— The user can upload briefs, drafts, articles, or reference materials to work on live.
+FILE ATTACHMENTS — ALL FORMATS SUPPORTED:
+— PDFs: content extracted and injected directly — you can read, summarise, revise, and critique.
+— DOCX files: text extracted from Word documents — treat as the working draft.
+— Images (PNG, JPG, WEBP, GIF): analysed visually — describe, interpret, extract data from charts, annotate figures.
+— Text files (TXT, MD, CSV, JSON): read in full — analyse, transform, summarise.
+— For ALL uploaded files: treat the file content as the primary working document for any task the user requests.
+— After processing, if user wants to download the result: call export_content with the final text.
+— CRITICAL: Never say you cannot read a file. All formats are extracted server-side before reaching you.
 
-DOCUMENT READ & EDIT:
+DOCUMENT READ, EDIT & EXPORT:
 - read_section: Display the full content of a specific section in the chat. Call this when the user says "show me [section]", "read [section]", "what does [section] say", "draw up [section]". Always confirm what you are displaying.
 - read_assessment: Display the full assembled document (all written sections) in the chat. Use when user says "show me the document", "read back my essay", "draw up my assessment".
 - update_assessment_settings: Change the assessment's citation style, academic level, or AI model. Call when user says "change citation to APA", "switch to Vancouver", "change level to postgraduate".
+- export_content: Trigger a file download for any content you have generated or processed — revised essays, summaries, critiques, rewritten documents, etc. Call when user says "download this", "save this", "give me a file", "export what you wrote". Include the full text as `content`.
 
 WEB SEARCH:
 - web_search: Search the web for real-time information, news, academic topics, or any factual query. ALWAYS use this when the user asks you to search, look something up, or when you need current information beyond your training. Returns top 5 results with titles, URLs, and snippets.
@@ -73,6 +76,7 @@ EXECUTIVE CONTROL RULES:
 — For web_search: call the tool whenever any factual, current, or researched information is needed.
 — For read_section / read_assessment: call immediately when asked to show, read, or draw up content.
 — For render_chart: call the tool with properly structured data when the user provides data to visualise.
+— For export_content: call immediately when asked to download, save, or export — pass the FULL generated text as `content`.
 — Always tell the user what you are about to do BEFORE the tool call, in the same response.
 — When discussing plans or pricing: Hello £15/1500w, Regular £45/5000w, Professional £110/15000w, Custom ₦23/word + 1000 bonus words.
 — When on the dashboard without a specific assessment, use the sections_summary context to reference assessment titles and route the user appropriately.
@@ -485,6 +489,22 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "export_content",
+      description: "Export or download content produced in the conversation — e.g. a rewritten document, a summary, or any text ZOE has generated. Use when user says 'save this', 'download', 'export what you wrote', 'give me a file'.",
+      parameters: {
+        type: "object",
+        properties: {
+          content: { type: "string", description: "The text content to export" },
+          filename: { type: "string", description: "Suggested filename (e.g. 'revised-essay.txt')" },
+        },
+        required: ["content"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ── Semantic Scholar lookup ──────────────────────────────────────────────────
@@ -548,24 +568,147 @@ serve(async (req) => {
       }
     }
 
-    // Handle file attachments — fetch text content for document types
+    // ── File attachment processing ─────────────────────────────────────────
+    // Multimodal parts (images, PDFs) go here and are appended to the last user message
+    const multimodalParts: { type: string; image_url?: { url: string } }[] = [];
+
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {
       contextNote += "\n\nATTACHED FILES:";
+
       for (const att of attachments as { name: string; url: string; type: string }[]) {
-        contextNote += `\n\n[File: ${att.name} (${att.type})]`;
+        const nameLower = att.name.toLowerCase();
         const isTextLike = att.type.startsWith("text/") ||
           att.type === "application/json" ||
-          att.name.endsWith(".md") || att.name.endsWith(".txt") ||
-          att.name.endsWith(".csv");
+          nameLower.endsWith(".md") || nameLower.endsWith(".txt") ||
+          nameLower.endsWith(".csv") || nameLower.endsWith(".json");
+        const isPDF = att.type === "application/pdf" || nameLower.endsWith(".pdf");
+        const isImage = att.type.startsWith("image/") ||
+          nameLower.endsWith(".png") || nameLower.endsWith(".jpg") ||
+          nameLower.endsWith(".jpeg") || nameLower.endsWith(".webp") ||
+          nameLower.endsWith(".gif");
+        const isDocx = att.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+          nameLower.endsWith(".docx");
+        const isXlsx = att.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+          nameLower.endsWith(".xlsx");
+        const isPptx = nameLower.endsWith(".pptx");
+
+        contextNote += `\n\n[File: ${att.name}]`;
+
         if (isTextLike) {
+          // ── Plain text: inject directly into context ──────────────────────
           try {
             const fileResp = await fetch(att.url);
             const text = await fileResp.text();
-            contextNote += `\n${text.slice(0, 8000)}`;
+            contextNote += `\n${text.slice(0, 10000)}`;
           } catch { contextNote += "\n[Could not retrieve file content]"; }
+
+        } else if (isPDF || isImage) {
+          // ── PDF / Image: fetch as binary, base64-encode, pass as multimodal ─
+          try {
+            const fileResp = await fetch(att.url);
+            const buffer = await fileResp.arrayBuffer();
+            const limitBytes = 20 * 1024 * 1024; // 20 MB cap
+            if (buffer.byteLength > limitBytes) {
+              contextNote += `\n[File too large for inline processing — ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB. Limit: 20 MB]`;
+            } else {
+              // Chunk-safe base64 encoding
+              const uint8 = new Uint8Array(buffer);
+              let binary = "";
+              const chunkSize = 32768;
+              for (let i = 0; i < uint8.length; i += chunkSize) {
+                binary += String.fromCharCode(...uint8.slice(i, i + chunkSize));
+              }
+              const b64 = btoa(binary);
+              const mimeType = isImage ? att.type : "application/pdf";
+              multimodalParts.push({
+                type: "image_url",
+                image_url: { url: `data:${mimeType};base64,${b64}` },
+              });
+              contextNote += isPDF
+                ? "\n[PDF content transmitted as multimodal — read it directly]"
+                : "\n[Image transmitted as multimodal — analyse it visually]";
+            }
+          } catch (e) {
+            contextNote += `\n[Could not load file: ${(e as Error).message}]`;
+          }
+
+        } else if (isDocx || isXlsx || isPptx) {
+          // ── DOCX/XLSX/PPTX: unzip and extract XML text ────────────────────
+          try {
+            const fileResp = await fetch(att.url);
+            const buffer = await fileResp.arrayBuffer();
+            const JSZip = (await import("npm:jszip")).default;
+            const zip = await JSZip.loadAsync(buffer);
+
+            let xmlContent = "";
+            if (isDocx) {
+              const docFile = zip.file("word/document.xml");
+              if (docFile) xmlContent = await docFile.async("string");
+            } else if (isXlsx) {
+              // Extract all sheet XML files
+              const sheetFiles = Object.keys(zip.files).filter(f => f.match(/xl\/worksheets\/sheet\d+\.xml/));
+              for (const sf of sheetFiles.slice(0, 3)) {
+                xmlContent += await zip.files[sf].async("string") + "\n";
+              }
+            } else if (isPptx) {
+              const slideFiles = Object.keys(zip.files).filter(f => f.match(/ppt\/slides\/slide\d+\.xml/));
+              for (const sf of slideFiles.slice(0, 20)) {
+                xmlContent += await zip.files[sf].async("string") + "\n";
+              }
+            }
+
+            if (xmlContent) {
+              const plainText = xmlContent
+                .replace(/<a:br[^>]*\/?>/g, "\n")
+                .replace(/<w:br[^>]*\/?>/g, "\n")
+                .replace(/<\/w:p>/g, "\n")
+                .replace(/<\/a:p>/g, "\n")
+                .replace(/<[^>]+>/g, " ")
+                .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+                .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ")
+                .replace(/[ \t]{2,}/g, " ")
+                .replace(/\n{3,}/g, "\n\n")
+                .trim();
+              contextNote += `\n${plainText.slice(0, 12000)}`;
+            } else {
+              contextNote += "\n[Could not extract text from this Office file]";
+            }
+          } catch (e) {
+            contextNote += `\n[Office file extraction failed: ${(e as Error).message}]`;
+          }
+
         } else {
-          contextNote += `\nFile URL: ${att.url}`;
+          // ── Unknown format: try as text, fallback gracefully ──────────────
+          try {
+            const fileResp = await fetch(att.url);
+            const text = await fileResp.text();
+            const isBinary = text.includes("\x00") || (text.length > 10 && /[\x01-\x08\x0E-\x1F]/.test(text.slice(0, 200)));
+            if (!isBinary) {
+              contextNote += `\n${text.slice(0, 6000)}`;
+            } else {
+              contextNote += `\n[Binary file — cannot extract text from this format]`;
+            }
+          } catch { contextNote += `\n[Could not retrieve file]`; }
         }
+      }
+    }
+
+    // ── Build final messages array — inject multimodal parts into last user message ──
+    let processedMessages = [...messages];
+    if (multimodalParts.length > 0) {
+      const lastIdx = processedMessages.length - 1;
+      const lastMsg = processedMessages[lastIdx];
+      if (lastMsg?.role === "user") {
+        processedMessages = [
+          ...processedMessages.slice(0, lastIdx),
+          {
+            role: "user",
+            content: [
+              { type: "text", text: typeof lastMsg.content === "string" ? lastMsg.content : "" },
+              ...multimodalParts,
+            ],
+          },
+        ];
       }
     }
 
@@ -579,7 +722,7 @@ serve(async (req) => {
         model: model || "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: ZOE_SYSTEM + contextNote },
-          ...messages,
+          ...processedMessages,
         ],
         tools,
         stream: true,
