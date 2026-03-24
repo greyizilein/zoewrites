@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import {
   Plus, LogOut, Home, Loader2, Trash2, FileText,
   BarChart3, MoreHorizontal, PenSquare, RefreshCw, ChevronDown,
-  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -139,7 +138,7 @@ const Dashboard = () => {
     if (!user) return;
     const [{ data: ad }, { data: pd }] = await Promise.all([
       supabase.from("assessments").select("id, title, type, word_current, word_target, status, updated_at")
-        .eq("user_id", user.id).is("deleted_at", null).order("updated_at", { ascending: false }),
+        .eq("user_id", user.id).order("updated_at", { ascending: false }),
       supabase.from("profiles").select("full_name, tier, words_used, word_limit")
         .eq("user_id", user.id).single(),
     ]);
@@ -158,11 +157,10 @@ const Dashboard = () => {
     e.preventDefault(); e.stopPropagation();
     if (!confirm("Move this assessment to trash? You can recover it within 2 months.")) return;
     try {
-      const { error } = await supabase.from("assessments")
-        .update({ deleted_at: new Date().toISOString() }).eq("id", id);
+      const { error } = await supabase.from("assessments").delete().eq("id", id);
       if (error) throw error;
       setAssessments(prev => prev.filter(a => a.id !== id));
-      toast({ title: "Moved to trash", description: "Ask ZOE to restore it anytime within 2 months." });
+      toast({ title: "Deleted", description: "Assessment has been removed." });
     } catch (e: any) {
       toast({ title: "Delete failed", description: e.message, variant: "destructive" });
     }

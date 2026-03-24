@@ -83,16 +83,18 @@ interface ZoeChatMsg {
 }
 
 interface ZoeDashboardChatProps {
-  assessments: Assessment[];
-  profile: {
+  assessments?: Assessment[];
+  profile?: {
     full_name: string | null;
     tier: string;
     words_used: number;
     word_limit: number;
   } | null;
-  userName: string;
-  onRefresh: () => void;
+  userName?: string;
+  onRefresh?: () => void;
 }
+
+export type { ZoeDashboardChatProps };
 
 // ── Action display metadata ─────────────────────────────────────────────────
 const ACTION_META: Record<ActionType, { label: string; bg: string; text: string }> = {
@@ -395,7 +397,7 @@ const MsgBubble: React.FC<{
 
 // ── Main component ───────────────────────────────────────────────────────────
 const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
-  assessments, profile, userName, onRefresh,
+  assessments = [], profile = null, userName = "there", onRefresh = () => {},
 }) => {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
@@ -893,61 +895,25 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
           addMsg(activeChatId, { role: "assistant", content: `Are you sure you want to delete **${target.title}**? It will be moved to trash and can be recovered within 2 months. Reply **yes, delete** to confirm.` });
           break;
         }
-        addMsg(activeChatId, { role: "action", content: `Moving "${target.title}" to trash…`, actionType: "processing" });
-        const { error: delError } = await supabase.from("assessments")
-          .update({ deleted_at: new Date().toISOString() }).eq("id", target.id);
+        addMsg(activeChatId, { role: "action", content: `Deleting "${target.title}"…`, actionType: "processing" });
+        const { error: delError } = await supabase.from("assessments").delete().eq("id", target.id);
         if (delError) {
           addMsg(activeChatId, { role: "action", content: "Delete failed. Please try again.", actionType: "error" });
         } else {
           if (chatOpen === target.id) setChatOpen(null);
-          addMsg("dashboard", { role: "action", content: `"${target.title}" moved to trash. Say "restore ${target.title}" to recover it within 2 months.`, actionType: "success" });
+          addMsg("dashboard", { role: "action", content: `"${target.title}" has been deleted.`, actionType: "success" });
           onRefresh();
         }
         break;
       }
 
       case "restore_assessment": {
-        const twoMonthsAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: trashData } = await supabase.from("assessments")
-          .select("id, title, deleted_at")
-          .not("deleted_at", "is", null)
-          .gte("deleted_at", twoMonthsAgo)
-          .eq(args.assessment_id ? "id" : "user_id", args.assessment_id || (user?.id || ""));
-        const restoreTarget = args.assessment_id
-          ? trashData?.find(a => a.id === args.assessment_id)
-          : trashData?.find(a => a.title.toLowerCase().includes((args.title || "").toLowerCase()));
-        if (!restoreTarget) {
-          addMsg(activeChatId, { role: "action", content: "Assessment not found in trash or recovery window has passed.", actionType: "error" });
-          break;
-        }
-        const { error: restoreError } = await supabase.from("assessments")
-          .update({ deleted_at: null }).eq("id", restoreTarget.id);
-        if (restoreError) {
-          addMsg(activeChatId, { role: "action", content: "Restore failed.", actionType: "error" });
-        } else {
-          addMsg(activeChatId, { role: "action", content: `"${restoreTarget.title}" restored to your dashboard.`, actionType: "success" });
-          onRefresh();
-        }
+        addMsg(activeChatId, { role: "assistant", content: "Deleted assessments are permanently removed and cannot be restored." });
         break;
       }
 
       case "view_trash": {
-        const twoMonthsAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: trashItems } = await supabase.from("assessments")
-          .select("id, title, deleted_at")
-          .not("deleted_at", "is", null)
-          .gte("deleted_at", twoMonthsAgo)
-          .eq("user_id", user?.id || "")
-          .order("deleted_at", { ascending: false });
-        const list = (trashItems || []).map(a =>
-          `- **${a.title}** — deleted ${timeAgo(a.deleted_at!)} *(ID: ${a.id})*`
-        ).join("\n");
-        addMsg(activeChatId, {
-          role: "assistant",
-          content: (trashItems || []).length
-            ? `**Recoverable assessments** (deleted within 2 months):\n\n${list}\n\nSay "restore [title]" to recover any of these.`
-            : "No deleted assessments to recover. Items are permanently purged after 2 months.",
-        });
+        addMsg(activeChatId, { role: "assistant", content: "Trash is not available. Deleted assessments are permanently removed." });
         break;
       }
 
@@ -1018,11 +984,15 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       case "read_analytics": {
         addMsg(activeChatId, { role: "action", content: "Reading your analytics…", actionType: "processing" });
         const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-        const [{ data: allAssessments }, { data: recentSections }, { data: profileData }] = await Promise.all([
-          supabase.from("assessments").select("id, title, type, status, word_current, word_target, created_at, updated_at")
-            .eq("user_id", user?.id || "").is("deleted_at", null).order("updated_at", { ascending: false }),
-          supabase.from("sections").select("status, word_current, word_target, citation_count, updated_at")
-            .in("assessment_id", (allAssessments || []).map(a => a.id)).gte("updated_at", twoWeeksAgo),
+        const { data: allAssessments } = await supabase.from("assessments")
+          .select("id, title, type, status, word_current, word_target, created_at, updated_at")
+          .eq("user_id", user?.id || "").order("updated_at", { ascending: false });
+        const assessmentIds = (allAssessments || []).map(a => a.id);
+        const [{ data: recentSections }, { data: profileData }] = await Promise.all([
+          assessmentIds.length > 0
+            ? supabase.from("sections").select("status, word_current, word_target, citation_count, updated_at")
+                .in("assessment_id", assessmentIds).gte("updated_at", twoWeeksAgo)
+            : Promise.resolve({ data: [] as any[] }),
           supabase.from("profiles").select("tier, words_used, word_limit").eq("user_id", user?.id || "").single(),
         ]);
         const all = allAssessments || [];
@@ -1593,9 +1563,9 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
               {/* Delete bubble */}
               <button
                 onClick={async () => {
-                  if (!confirm(`Move "${a.title}" to trash? Recoverable within 2 months.`)) return;
-                  await supabase.from("assessments").update({ deleted_at: new Date().toISOString() }).eq("id", a.id);
-                  toast({ title: "Moved to trash", description: "Ask ZOE to restore it anytime." });
+                  if (!confirm(`Delete "${a.title}"? This cannot be undone.`)) return;
+                  await supabase.from("assessments").delete().eq("id", a.id);
+                  toast({ title: "Deleted", description: "Assessment removed." });
                   onRefresh();
                 }}
                 className="ml-2 w-9 h-9 rounded-full bg-destructive/10 text-destructive flex items-center justify-center flex-shrink-0 hover:bg-destructive/20 active:scale-90 transition-all"
