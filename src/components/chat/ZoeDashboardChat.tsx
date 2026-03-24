@@ -397,7 +397,7 @@ const MsgBubble: React.FC<{
 
 // ── Main component ───────────────────────────────────────────────────────────
 const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
-  assessments, profile, userName, onRefresh,
+  assessments = [], profile = null, userName = "there", onRefresh = () => {},
 }) => {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
