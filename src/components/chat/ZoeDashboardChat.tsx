@@ -83,16 +83,18 @@ interface ZoeChatMsg {
 }
 
 interface ZoeDashboardChatProps {
-  assessments: Assessment[];
-  profile: {
+  assessments?: Assessment[];
+  profile?: {
     full_name: string | null;
     tier: string;
     words_used: number;
     word_limit: number;
   } | null;
-  userName: string;
-  onRefresh: () => void;
+  userName?: string;
+  onRefresh?: () => void;
 }
+
+export type { ZoeDashboardChatProps };
 
 // ── Action display metadata ─────────────────────────────────────────────────
 const ACTION_META: Record<ActionType, { label: string; bg: string; text: string }> = {
