@@ -5,9 +5,10 @@ import { useZoeHome, ChatMessage } from "@/hooks/useZoeHome";
 
 const SUGGESTIONS = [
   "What can ZOE do?",
+  "Show me a demo",
   "Show me pricing",
-  "How does it work?",
   "Create an assessment",
+  "How does it work?",
 ];
 
 function MessageBubble({ msg }: { msg: ChatMessage }) {
