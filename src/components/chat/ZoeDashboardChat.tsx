@@ -908,47 +908,12 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       }
 
       case "restore_assessment": {
-        const twoMonthsAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: trashData } = await supabase.from("assessments")
-          .select("id, title, deleted_at")
-          .not("deleted_at", "is", null)
-          .gte("deleted_at", twoMonthsAgo)
-          .eq(args.assessment_id ? "id" : "user_id", args.assessment_id || (user?.id || ""));
-        const restoreTarget = args.assessment_id
-          ? trashData?.find(a => a.id === args.assessment_id)
-          : trashData?.find(a => a.title.toLowerCase().includes((args.title || "").toLowerCase()));
-        if (!restoreTarget) {
-          addMsg(activeChatId, { role: "action", content: "Assessment not found in trash or recovery window has passed.", actionType: "error" });
-          break;
-        }
-        const { error: restoreError } = await supabase.from("assessments")
-          .update({ deleted_at: null }).eq("id", restoreTarget.id);
-        if (restoreError) {
-          addMsg(activeChatId, { role: "action", content: "Restore failed.", actionType: "error" });
-        } else {
-          addMsg(activeChatId, { role: "action", content: `"${restoreTarget.title}" restored to your dashboard.`, actionType: "success" });
-          onRefresh();
-        }
+        addMsg(activeChatId, { role: "assistant", content: "Deleted assessments are permanently removed and cannot be restored." });
         break;
       }
 
       case "view_trash": {
-        const twoMonthsAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: trashItems } = await supabase.from("assessments")
-          .select("id, title, deleted_at")
-          .not("deleted_at", "is", null)
-          .gte("deleted_at", twoMonthsAgo)
-          .eq("user_id", user?.id || "")
-          .order("deleted_at", { ascending: false });
-        const list = (trashItems || []).map(a =>
-          `- **${a.title}** — deleted ${timeAgo(a.deleted_at!)} *(ID: ${a.id})*`
-        ).join("\n");
-        addMsg(activeChatId, {
-          role: "assistant",
-          content: (trashItems || []).length
-            ? `**Recoverable assessments** (deleted within 2 months):\n\n${list}\n\nSay "restore [title]" to recover any of these.`
-            : "No deleted assessments to recover. Items are permanently purged after 2 months.",
-        });
+        addMsg(activeChatId, { role: "assistant", content: "Trash is not available. Deleted assessments are permanently removed." });
         break;
       }
 
