@@ -1598,9 +1598,9 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
               {/* Delete bubble */}
               <button
                 onClick={async () => {
-                  if (!confirm(`Move "${a.title}" to trash? Recoverable within 2 months.`)) return;
-                  await supabase.from("assessments").update({ deleted_at: new Date().toISOString() }).eq("id", a.id);
-                  toast({ title: "Moved to trash", description: "Ask ZOE to restore it anytime." });
+                  if (!confirm(`Delete "${a.title}"? This cannot be undone.`)) return;
+                  await supabase.from("assessments").delete().eq("id", a.id);
+                  toast({ title: "Deleted", description: "Assessment removed." });
                   onRefresh();
                 }}
                 className="ml-2 w-9 h-9 rounded-full bg-destructive/10 text-destructive flex items-center justify-center flex-shrink-0 hover:bg-destructive/20 active:scale-90 transition-all"
