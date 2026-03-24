@@ -256,7 +256,7 @@ const MsgBubble: React.FC<{ msg: ZoeChatMsg }> = ({ msg }) => {
 const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
   assessments, profile, userName, onRefresh,
 }) => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -784,6 +784,126 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         break;
       }
 
+      case "sign_out": {
+        addMsg(activeChatId, { role: "action", content: "Signing out…", actionType: "navigating" });
+        setTimeout(async () => { await signOut(); navigate("/"); setOpen(false); }, 600);
+        break;
+      }
+
+      case "read_analytics": {
+        addMsg(activeChatId, { role: "action", content: "Reading your analytics…", actionType: "processing" });
+        const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+        const [{ data: allAssessments }, { data: recentSections }, { data: profileData }] = await Promise.all([
+          supabase.from("assessments").select("id, title, type, status, word_current, word_target, created_at, updated_at")
+            .eq("user_id", user?.id || "").is("deleted_at", null).order("updated_at", { ascending: false }),
+          supabase.from("sections").select("status, word_current, word_target, citation_count, updated_at")
+            .in("assessment_id", (allAssessments || []).map(a => a.id)).gte("updated_at", twoWeeksAgo),
+          supabase.from("profiles").select("tier, words_used, word_limit").eq("user_id", user?.id || "").single(),
+        ]);
+        const all = allAssessments || [];
+        const totalWords = all.reduce((s, a) => s + (a.word_current || 0), 0);
+        const complete = all.filter(a => a.status === "complete").length;
+        const inProgress = all.filter(a => a.status !== "complete").length;
+        const secData = recentSections || [];
+        const citations = secData.reduce((s, s2) => s + (s2.citation_count || 0), 0);
+        const pd = profileData as any;
+        const wordsLeft = pd ? Math.max(0, (pd.word_limit || 500) - (pd.words_used || 0)) : "unknown";
+        const summary = [
+          `**Your ZOE Analytics Summary**`,
+          ``,
+          `📊 **Assessments:** ${all.length} total · ${complete} complete · ${inProgress} in progress`,
+          `✍️ **Words written:** ${totalWords.toLocaleString()} across all assessments`,
+          `📚 **Citations found:** ${citations} in recent sections`,
+          `💳 **Plan:** ${pd?.tier || "free"} · ${typeof wordsLeft === "number" ? wordsLeft.toLocaleString() : wordsLeft} words remaining`,
+          all.length > 0 ? `\n**Recent assessments:**\n${all.slice(0, 5).map(a => `- **${a.title}** — ${a.status} · ${(a.word_current || 0).toLocaleString()}/${(a.word_target || 0).toLocaleString()}w`).join("\n")}` : "",
+        ].filter(Boolean).join("\n");
+        addMsg(activeChatId, { role: "action", content: "Analytics loaded.", actionType: "success" });
+        addMsg(activeChatId, { role: "assistant", content: summary });
+        break;
+      }
+
+      case "create_full_assessment": {
+        if (!user?.id) { addMsg(activeChatId, { role: "action", content: "Not signed in.", actionType: "error" }); break; }
+        const { topic_or_brief, word_count = 2000, type = "Essay", citation_style = "Harvard", level = "Undergraduate L6", model = "google/gemini-2.5-flash" } = args;
+        if (!topic_or_brief) { addMsg(activeChatId, { role: "action", content: "Please provide a brief or topic.", actionType: "error" }); break; }
+        addMsg(activeChatId, { role: "action", content: "Parsing brief…", actionType: "processing" });
+        // Step 1: parse brief
+        const parseResp = await supabase.functions.invoke("brief-parse", {
+          body: { brief_text: topic_or_brief, type, word_count, citation_style, level, model },
+        });
+        if (parseResp.error) { addMsg(activeChatId, { role: "action", content: "Brief parsing failed.", actionType: "error" }); break; }
+        const parsedBrief = parseResp.data?.brief_text || topic_or_brief;
+        // Step 2: generate execution plan
+        addMsg(activeChatId, { role: "action", content: "Building execution plan…", actionType: "processing" });
+        const planResp = await supabase.functions.invoke("execution-table", {
+          body: { brief_text: parsedBrief, type, word_count, citation_style, level, model },
+        });
+        if (planResp.error || !planResp.data?.sections) { addMsg(activeChatId, { role: "action", content: "Execution plan failed.", actionType: "error" }); break; }
+        const planSections: { title: string; word_target: number; framework?: string }[] = planResp.data.sections;
+        const totalTarget = planSections.reduce((s, sec) => s + (sec.word_target || 0), 0) || word_count;
+        // Step 3: create assessment row
+        const title = parsedBrief.slice(0, 80).replace(/\n/g, " ").trim() || `${type} — ${level}`;
+        const { data: newAssessment, error: assError } = await supabase.from("assessments").insert({
+          user_id: user.id, title, type, brief_text: parsedBrief,
+          word_target: totalTarget, word_current: 0, status: "planning",
+          settings: { citation_style, level, model },
+          execution_plan: planResp.data,
+        }).select("id").single();
+        if (assError || !newAssessment) { addMsg(activeChatId, { role: "action", content: "Failed to create assessment.", actionType: "error" }); break; }
+        // Step 4: create sections
+        const sectionRows = planSections.map((sec, i) => ({
+          assessment_id: newAssessment.id,
+          title: sec.title,
+          word_target: sec.word_target || Math.round(totalTarget / planSections.length),
+          word_current: 0,
+          status: "pending",
+          sort_order: i,
+          framework: sec.framework || null,
+        }));
+        await supabase.from("sections").insert(sectionRows);
+        onRefresh();
+        addMsg(activeChatId, { role: "action", content: `Assessment "${title}" created with ${planSections.length} sections.`, actionType: "success" });
+        addMsg(activeChatId, { role: "assistant", content: `I've created your assessment **"${title}"** with ${planSections.length} sections:\n\n${planSections.map((s, i) => `${i + 1}. **${s.title}** — ${s.word_target}w`).join("\n")}\n\nTotal: ${totalTarget.toLocaleString()} words. Say **"write all"** to begin writing, or open the assessment to review the plan first.` });
+        setChatOpen(newAssessment.id);
+        break;
+      }
+
+      case "confirm_execution_plan": {
+        if (!activeAssessmentId) { addMsg(activeChatId, { role: "action", content: "No assessment selected.", actionType: "error" }); break; }
+        // Fetch the assessment's execution_plan
+        const { data: assData } = await supabase.from("assessments")
+          .select("execution_plan, title, word_target, settings").eq("id", activeAssessmentId).single();
+        if (!assData?.execution_plan) { addMsg(activeChatId, { role: "action", content: "No execution plan found. Try opening the assessment to generate one.", actionType: "error" }); break; }
+        const plan = assData.execution_plan as any;
+        const planSecs: { title: string; word_target: number; framework?: string }[] = plan.sections || [];
+        if (!planSecs.length) { addMsg(activeChatId, { role: "action", content: "Execution plan has no sections.", actionType: "error" }); break; }
+        // Check if sections already exist
+        const { data: existingSecs } = await supabase.from("sections").select("id").eq("assessment_id", activeAssessmentId).limit(1);
+        if (existingSecs && existingSecs.length > 0) {
+          addMsg(activeChatId, { role: "action", content: "Sections already exist for this assessment.", actionType: "success" });
+          break;
+        }
+        addMsg(activeChatId, { role: "action", content: "Confirming plan and creating sections…", actionType: "processing" });
+        const secRows = planSecs.map((sec, i) => ({
+          assessment_id: activeAssessmentId,
+          title: sec.title,
+          word_target: sec.word_target || Math.round((assData.word_target || 2000) / planSecs.length),
+          word_current: 0,
+          status: "pending",
+          sort_order: i,
+          framework: sec.framework || null,
+        }));
+        await supabase.from("sections").insert(secRows);
+        await supabase.from("assessments").update({ status: "writing" }).eq("id", activeAssessmentId);
+        const { data: freshSecs } = await supabase.from("sections")
+          .select("id, title, word_target, word_current, status, content, sort_order")
+          .eq("assessment_id", activeAssessmentId).order("sort_order", { ascending: true });
+        if (freshSecs) setSections(freshSecs as Section[]);
+        onRefresh();
+        addMsg(activeChatId, { role: "action", content: `${planSecs.length} sections created. Ready to write.`, actionType: "success" });
+        break;
+      }
+
       // Conversational tools — ZOE's text response carries the result, no side effects needed
       case "predict_grade":
       case "find_sources":
@@ -796,7 +916,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       default:
         console.warn("Unknown tool:", toolName, args);
     }
-  }, [chatId, chatOpen, sections, assessments, user, navigate, gbpToNgn, customWords, onRefresh, addMsg, setChatOpen, toast]);
+  }, [chatId, chatOpen, sections, assessments, user, signOut, navigate, gbpToNgn, customWords, onRefresh, addMsg, setChatOpen, toast]);
 
   // ── handleSend ─────────────────────────────────────────────────────────────
   const handleSend = useCallback(async (overrideText?: string) => {

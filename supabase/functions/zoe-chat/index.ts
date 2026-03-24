@@ -19,9 +19,13 @@ PIPELINE CONTROL — ZOE can execute the following actions on behalf of the stud
 
 DASHBOARD NAVIGATION & CONTROL:
 - navigate_to: Navigate the user to any route (/dashboard, /assessment/:id, /analytics)
-- create_assessment: Open the new assessment creation page
+- create_assessment: Open the new assessment creation page (use create_full_assessment instead when the user provides a brief/topic)
+- create_full_assessment: Create a complete assessment end-to-end from a brief or topic — parses brief, generates execution plan, creates all sections in one shot. PREFER this over create_assessment when any brief/topic text is provided.
+- confirm_execution_plan: Confirm an existing execution plan and create sections for the current assessment. Use when user says "confirm the plan", "start writing", "approve the plan".
 - open_assessment: Open a specific assessment by ID
 - process_payment: Trigger Paystack checkout for a subscription plan. ALWAYS confirm tier + price with the user before calling. Example: "You'd be upgrading to Professional for £110 (approx ₦229,000). Shall I open the checkout?"
+- sign_out: Sign the user out. Confirm once before calling.
+- read_analytics: Read and narrate the user's writing analytics — call this whenever asked about stats, progress, words written, completion rates, or "how am I doing".
 
 EXTENDED PIPELINE TOOLS:
 - edit_proofread: Grammar, style, and reference correction across all sections
@@ -339,6 +343,49 @@ const tools = [
     function: {
       name: "view_trash",
       description: "View all assessments deleted by the user in the last 2 months",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "sign_out",
+      description: "Sign the user out of the application",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_analytics",
+      description: "Read and narrate the user's writing analytics — total words, completions, citations, plan status. Use when asked 'how am I doing', 'show my stats', 'analytics', 'how many words have I written', etc.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_full_assessment",
+      description: "Create a complete assessment end-to-end from a brief or topic — parses brief, generates execution plan, creates all sections. Use this instead of create_assessment when the user provides brief/topic text and wants ZOE to set everything up without them visiting a form.",
+      parameters: {
+        type: "object",
+        properties: {
+          topic_or_brief: { type: "string", description: "The brief text or topic title" },
+          word_count: { type: "number", description: "Target word count (default 2000)" },
+          type: { type: "string", description: "Assessment type e.g. Essay, Report, Case Study" },
+          citation_style: { type: "string", description: "Citation style e.g. Harvard, APA, Vancouver" },
+          level: { type: "string", description: "Academic level e.g. Undergraduate L6, Postgraduate L7" },
+        },
+        required: ["topic_or_brief"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "confirm_execution_plan",
+      description: "Confirm the execution plan for the current assessment and create its sections without needing to visit the WriterEngine. Use when user says 'confirm the plan', 'start writing', 'approve the plan', or 'create the sections'.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
