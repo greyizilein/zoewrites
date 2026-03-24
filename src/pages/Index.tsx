@@ -11,7 +11,7 @@ import FrameworkLibrary from "@/components/landing/FrameworkLibrary";
 import Pricing from "@/components/landing/Pricing";
 import CTABanner from "@/components/landing/CTABanner";
 import Footer from "@/components/landing/Footer";
-import ZoeDashboardChat from "@/components/chat/ZoeDashboardChat";
+
 
 const Index = () => {
   return (
@@ -29,7 +29,7 @@ const Index = () => {
       <Pricing />
       <CTABanner />
       <Footer />
-      <ZoeDashboardChat />
+      
     </div>
   );
 };
