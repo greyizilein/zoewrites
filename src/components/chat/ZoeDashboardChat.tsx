@@ -4,6 +4,10 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from "recharts";
+import {
   MessageCircle, X, ArrowLeft, Search, Send,
   Plus, BarChart3, Settings, Paperclip, Trash2, Copy,
   CheckCircle, AlertCircle, Loader2, ChevronRight, Wand2,
@@ -60,6 +64,14 @@ interface Section {
   constraints_text?: string | null;
 }
 
+interface ChartConfig {
+  type: "bar" | "line" | "pie" | "area";
+  title?: string;
+  data: { label: string; value: number; [key: string]: any }[];
+  x_label?: string;
+  y_label?: string;
+}
+
 interface ZoeChatMsg {
   id: string;
   role: "user" | "assistant" | "action";
@@ -67,6 +79,7 @@ interface ZoeChatMsg {
   streaming?: boolean;
   actionType?: ActionType;
   ts: number;
+  chartData?: ChartConfig;
 }
 
 interface ZoeDashboardChatProps {
@@ -179,6 +192,81 @@ const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   ),
 };
 
+// ── Chart colours ────────────────────────────────────────────────────────────
+const CHART_COLORS = ["#c0654a", "#6ba58b", "#4a7ec0", "#c0a44a", "#8b4ac0", "#4ac0b8"];
+
+// ── ChartBlock ───────────────────────────────────────────────────────────────
+const ChartBlock: React.FC<{ config: ChartConfig }> = ({ config }) => {
+  const { type, title, data, x_label, y_label } = config;
+
+  const renderChart = () => {
+    if (type === "pie") {
+      return (
+        <PieChart>
+          <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" outerRadius={90} label={({ label, percent }) => `${label} ${(percent * 100).toFixed(0)}%`}>
+            {data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+          </Pie>
+          <Tooltip formatter={(v: any) => v.toLocaleString()} />
+        </PieChart>
+      );
+    }
+    const commonProps = {
+      data,
+      margin: { top: 8, right: 16, left: 0, bottom: x_label ? 20 : 8 },
+    };
+    const axisProps = (
+      <>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" />
+        <XAxis dataKey="label" tick={{ fontSize: 10 }} label={x_label ? { value: x_label, position: "insideBottom", offset: -10, fontSize: 10 } : undefined} />
+        <YAxis tick={{ fontSize: 10 }} label={y_label ? { value: y_label, angle: -90, position: "insideLeft", fontSize: 10 } : undefined} />
+        <Tooltip formatter={(v: any) => v.toLocaleString()} />
+        <Legend wrapperStyle={{ fontSize: 10 }} />
+      </>
+    );
+    if (type === "line") {
+      return (
+        <LineChart {...commonProps}>
+          {axisProps}
+          <Line type="monotone" dataKey="value" stroke={CHART_COLORS[0]} strokeWidth={2} dot={{ r: 3 }} />
+        </LineChart>
+      );
+    }
+    if (type === "area") {
+      return (
+        <AreaChart {...commonProps}>
+          {axisProps}
+          <Area type="monotone" dataKey="value" stroke={CHART_COLORS[0]} fill={`${CHART_COLORS[0]}30`} strokeWidth={2} />
+        </AreaChart>
+      );
+    }
+    // default: bar
+    return (
+      <BarChart {...commonProps}>
+        {axisProps}
+        {data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+        <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+          {data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+        </Bar>
+      </BarChart>
+    );
+  };
+
+  return (
+    <div className="my-2 rounded-xl overflow-hidden border border-border/40 bg-white shadow-sm">
+      {title && (
+        <div className="px-4 py-2.5 border-b border-border/30">
+          <p className="text-[12px] font-semibold text-foreground">{title}</p>
+        </div>
+      )}
+      <div className="p-3">
+        <ResponsiveContainer width="100%" height={220}>
+          {renderChart()}
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
 // ── MsgBubble ────────────────────────────────────────────────────────────────
 const MsgBubble: React.FC<{
   msg: ZoeChatMsg;
@@ -262,7 +350,8 @@ const MsgBubble: React.FC<{
             </span>
           ) : (
             <>
-              <ReactMarkdown components={mdComponents}>{msg.content}</ReactMarkdown>
+              {msg.chartData && <ChartBlock config={msg.chartData} />}
+              {msg.content && <ReactMarkdown components={mdComponents}>{msg.content}</ReactMarkdown>}
               {msg.streaming && <span className="inline-block w-0.5 h-3.5 bg-terracotta animate-pulse ml-0.5 align-middle" />}
             </>
           )}
@@ -337,9 +426,12 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
     }));
     // Persist non-streaming messages immediately; streaming ones saved on completion
     if (!msg.streaming && user?.id) {
+      const persistContent = msg.chartData
+        ? `__chart__:${JSON.stringify(msg.chartData)}\n${msg.content}`
+        : msg.content;
       supabase.from("chat_messages" as any).insert({
         id, user_id: user.id, chat_id: chatId,
-        role: msg.role, content: msg.content,
+        role: msg.role, content: persistContent,
         action_type: msg.actionType ?? null,
       }).then(() => {});
     }
@@ -385,13 +477,17 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       .limit(120)
       .then(({ data }) => {
         if (!data || data.length === 0) return;
-        const msgs: ZoeChatMsg[] = (data as any[]).map(r => ({
-          id: r.id,
-          role: r.role as ZoeChatMsg["role"],
-          content: r.content,
-          actionType: r.action_type ?? undefined,
-          ts: new Date(r.created_at).getTime(),
-        }));
+        const msgs: ZoeChatMsg[] = (data as any[]).map(r => {
+          const raw: string = r.content || "";
+          let content = raw;
+          let chartData: ChartConfig | undefined;
+          if (raw.startsWith("__chart__:")) {
+            const nl = raw.indexOf("\n");
+            try { chartData = JSON.parse(raw.slice(10, nl === -1 ? undefined : nl)); } catch { /* ignore */ }
+            content = nl === -1 ? "" : raw.slice(nl + 1);
+          }
+          return { id: r.id, role: r.role as ZoeChatMsg["role"], content, chartData, actionType: r.action_type ?? undefined, ts: new Date(r.created_at).getTime() };
+        });
         setMsgsMap(prev => ({ ...prev, [chatId]: msgs }));
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -407,11 +503,17 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       .order("created_at", { ascending: true }).limit(60)
       .then(({ data }) => {
         if (!data || data.length === 0) return;
-        const msgs: ZoeChatMsg[] = (data as any[]).map(r => ({
-          id: r.id, role: r.role as ZoeChatMsg["role"],
-          content: r.content, actionType: r.action_type ?? undefined,
-          ts: new Date(r.created_at).getTime(),
-        }));
+        const msgs: ZoeChatMsg[] = (data as any[]).map(r => {
+          const raw: string = r.content || "";
+          let content = raw;
+          let chartData: ChartConfig | undefined;
+          if (raw.startsWith("__chart__:")) {
+            const nl = raw.indexOf("\n");
+            try { chartData = JSON.parse(raw.slice(10, nl === -1 ? undefined : nl)); } catch { /* ignore */ }
+            content = nl === -1 ? "" : raw.slice(nl + 1);
+          }
+          return { id: r.id, role: r.role as ZoeChatMsg["role"], content, chartData, actionType: r.action_type ?? undefined, ts: new Date(r.created_at).getTime() };
+        });
         setMsgsMap(prev => ({ ...prev, dashboard: msgs }));
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1008,9 +1110,151 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         break;
       }
 
+      case "read_section": {
+        if (!activeAssessmentId) { addMsg(activeChatId, { role: "action", content: "No assessment open.", actionType: "error" }); break; }
+        const needle = (args.section_title || "").toLowerCase();
+        // Try in-memory first, then DB
+        let readSec = sections.find(s => s.title.toLowerCase().includes(needle));
+        if (!readSec || !readSec.content) {
+          const { data: dbSec } = await supabase.from("sections")
+            .select("id, title, content, word_current, word_target, status, sort_order")
+            .eq("assessment_id", activeAssessmentId)
+            .ilike("title", `%${needle}%`)
+            .limit(1)
+            .single();
+          if (dbSec) readSec = dbSec as Section;
+        }
+        if (!readSec) { addMsg(activeChatId, { role: "action", content: `Section "${args.section_title}" not found.`, actionType: "error" }); break; }
+        if (!readSec.content) { addMsg(activeChatId, { role: "action", content: `"${readSec.title}" hasn't been written yet.`, actionType: "error" }); break; }
+        addMsg(activeChatId, { role: "assistant", content: `**${readSec.title}** _(${readSec.word_current}/${readSec.word_target} words · ${readSec.status})_\n\n---\n\n${readSec.content}` });
+        break;
+      }
+
+      case "read_assessment": {
+        if (!activeAssessmentId) { addMsg(activeChatId, { role: "action", content: "No assessment open.", actionType: "error" }); break; }
+        addMsg(activeChatId, { role: "action", content: "Loading document…", actionType: "processing" });
+        const { data: allSecs } = await supabase.from("sections")
+          .select("id, title, content, word_current, word_target, status, sort_order")
+          .eq("assessment_id", activeAssessmentId)
+          .order("sort_order", { ascending: true });
+        const secs = (allSecs || []) as Section[];
+        const assessment = assessments.find(a => a.id === activeAssessmentId);
+        if (!secs.length) { addMsg(activeChatId, { role: "action", content: "No sections found.", actionType: "error" }); break; }
+        const written = secs.filter(s => s.content);
+        if (!written.length) {
+          const structure = secs.map(s => `- **${s.title}** — ${s.word_target}w (${s.status})`).join("\n");
+          addMsg(activeChatId, { role: "assistant", content: `**${assessment?.title || "Assessment"} — Structure**\n\n${structure}\n\nNo sections written yet. Say **"write all"** to begin.` });
+          break;
+        }
+        const fullDoc = written.map(s => `## ${s.title}\n\n${s.content}`).join("\n\n---\n\n");
+        const totalWords = written.reduce((sum, s) => sum + (s.word_current || 0), 0);
+        addMsg(activeChatId, { role: "assistant", content: `**${assessment?.title || "Assessment"}** — ${written.length}/${secs.length} sections · ${totalWords.toLocaleString()} words\n\n---\n\n${fullDoc}` });
+        break;
+      }
+
+      case "web_search": {
+        if (!args.query) { addMsg(activeChatId, { role: "action", content: "No search query provided.", actionType: "error" }); break; }
+        addMsg(activeChatId, { role: "action", content: `Searching the web for "${args.query}"…`, actionType: "processing" });
+        const { data: searchData, error: searchErr } = await supabase.functions.invoke("web-search", { body: { query: args.query } });
+        if (searchErr || !searchData?.results?.length) {
+          addMsg(activeChatId, { role: "action", content: "Web search returned no results.", actionType: "error" });
+          break;
+        }
+        const results = (searchData.results as { title: string; url: string; snippet: string }[])
+          .map(r => `**[${r.title}](${r.url})**\n${r.snippet}`)
+          .join("\n\n");
+        addMsg(activeChatId, { role: "assistant", content: `**Web Results: "${args.query}"**\n\n${results}` });
+        break;
+      }
+
+      case "render_chart": {
+        if (!args.data?.length) { addMsg(activeChatId, { role: "action", content: "No data provided for chart.", actionType: "error" }); break; }
+        const chartConfig: ChartConfig = {
+          type: args.type || "bar",
+          title: args.title,
+          data: args.data,
+          x_label: args.x_label,
+          y_label: args.y_label,
+        };
+        addMsg(activeChatId, { role: "assistant", content: args.title ? `Here's your **${args.title}** chart:` : "Here's your chart:", chartData: chartConfig });
+        break;
+      }
+
+      case "update_assessment_settings": {
+        if (!activeAssessmentId) { addMsg(activeChatId, { role: "action", content: "No assessment open.", actionType: "error" }); break; }
+        const { data: currentAss } = await supabase.from("assessments").select("settings").eq("id", activeAssessmentId).single();
+        const existing = (currentAss as any)?.settings || {};
+        const updated = {
+          ...existing,
+          ...(args.citation_style ? { citation_style: args.citation_style } : {}),
+          ...(args.level ? { level: args.level } : {}),
+          ...(args.model ? { model: args.model } : {}),
+        };
+        const { error: settingsErr } = await supabase.from("assessments").update({ settings: updated }).eq("id", activeAssessmentId);
+        if (settingsErr) {
+          addMsg(activeChatId, { role: "action", content: "Settings update failed.", actionType: "error" });
+        } else {
+          const changes = [
+            args.citation_style ? `Citation style → **${args.citation_style}**` : "",
+            args.level ? `Academic level → **${args.level}**` : "",
+            args.model ? `AI model → **${args.model}**` : "",
+          ].filter(Boolean).join(" · ");
+          addMsg(activeChatId, { role: "action", content: `Settings updated: ${changes}`, actionType: "success" });
+        }
+        break;
+      }
+
+      case "find_sources": {
+        if (!args.topic) { addMsg(activeChatId, { role: "action", content: "No topic specified.", actionType: "error" }); break; }
+        addMsg(activeChatId, { role: "action", content: `Searching Semantic Scholar for "${args.topic}"…`, actionType: "processing" });
+        const { data: srcData, error: srcErr } = await supabase.functions.invoke("web-search", {
+          body: { query: `${args.topic} academic research paper site:semanticscholar.org OR site:scholar.google.com` },
+        });
+        // Also try direct Semantic Scholar via a proxy fetch
+        try {
+          const ssUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(args.topic)}&limit=${Math.min(args.count || 5, 8)}&fields=title,authors,year,journal,externalIds,citationCount`;
+          const ssResp = await fetch(ssUrl, { headers: { "User-Agent": "ZOEWrites/1.0" } });
+          if (ssResp.ok) {
+            const ssJson = await ssResp.json();
+            const papers = (ssJson.data || []) as any[];
+            if (papers.length) {
+              const style = args.citation_style || "Harvard";
+              const formatted = papers.map((p: any) => {
+                const authors = (p.authors || []).slice(0, 3).map((a: any) => {
+                  const parts = a.name.split(" ");
+                  return style === "Harvard" || style === "APA"
+                    ? `${parts[parts.length - 1]}, ${parts.slice(0, -1).map((n: string) => n[0]).join(". ")}.`
+                    : a.name;
+                }).join(style === "Harvard" ? ", " : " and ");
+                const doi = p.externalIds?.DOI ? `https://doi.org/${p.externalIds.DOI}` : "";
+                const journal = p.journal?.name || "Unpublished";
+                const year = p.year || "n.d.";
+                const citations = p.citationCount ? ` _(cited ${p.citationCount}×)_` : "";
+                if (style === "Harvard") {
+                  return `- ${authors} (${year}) '${p.title}', _${journal}_${doi ? `. Available at: ${doi}` : ""}${citations}`;
+                } else if (style === "APA") {
+                  return `- ${authors} (${year}). ${p.title}. _${journal}_${doi ? `. ${doi}` : ""}${citations}`;
+                } else {
+                  return `- ${p.title} — ${authors} (${year})${doi ? ` · [DOI](${doi})` : ""}${citations}`;
+                }
+              }).join("\n");
+              addMsg(activeChatId, { role: "assistant", content: `**Real Academic Sources for "${args.topic}"** (via Semantic Scholar)\n\n${formatted}\n\n_These are verified papers. Always check the original source before citing._` });
+              break;
+            }
+          }
+        } catch { /* fallthrough to error */ }
+        if (!srcErr && srcData?.results?.length) {
+          const results = (srcData.results as { title: string; url: string; snippet: string }[])
+            .map(r => `- **[${r.title}](${r.url})**\n  ${r.snippet}`).join("\n\n");
+          addMsg(activeChatId, { role: "assistant", content: `**Sources for "${args.topic}"**\n\n${results}\n\n_Verify all sources before citing._` });
+        } else {
+          addMsg(activeChatId, { role: "action", content: "Could not retrieve live sources. ZOE will suggest from training data instead.", actionType: "error" });
+        }
+        break;
+      }
+
       // Conversational tools — ZOE's text response carries the result, no side effects needed
       case "predict_grade":
-      case "find_sources":
       case "format_citation":
       case "topic_to_brief":
       case "analyse_brief":
@@ -1020,6 +1264,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       default:
         console.warn("Unknown tool:", toolName, args);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, chatOpen, sections, assessments, user, signOut, navigate, gbpToNgn, customWords, onRefresh, addMsg, setChatOpen, toast]);
 
   // ── handleSend ─────────────────────────────────────────────────────────────
@@ -1385,11 +1630,11 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
             { label: "Write Section",    icon: AlignLeft,         prompt: "Which section would you like me to write?" },
             { label: "Run Critique",     icon: ShieldCheck,       prompt: "Run a quality critique on my assessment." },
             { label: "Humanise All",     icon: Wand2,             prompt: "Humanise all completed sections." },
+            { label: "Read Document",    icon: BookOpen,          prompt: "Show me the full document." },
             { label: "Edit & Proofread", icon: Sparkles,          prompt: "Run an edit and proofread pass." },
-            { label: "Generate Images",  icon: Image,             prompt: "Generate academic images for my assessment." },
             { label: "Coherence Check",  icon: Brain,             prompt: "Run a coherence check across all sections." },
             { label: "Predict Grade",    icon: Target,            prompt: "Predict my current grade based on content so far." },
-            { label: "Find Sources",     icon: BookOpen,          prompt: "Suggest relevant academic sources for my assessment." },
+            { label: "Find Sources",     icon: BookOpen,          prompt: "Find real academic sources for my assessment topic." },
           ].map(({ label, icon: Icon, prompt }) => (
             <button
               key={label}
@@ -1509,9 +1754,12 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
             { label: "Coherence Analysis", icon: Brain,             desc: "Check argument flow & consistency",   prompt: "Run a coherence analysis." },
             { label: "Edit & Proofread",   icon: Sparkles,          desc: "Grammar, style, references",         prompt: "Run an edit and proofread pass." },
             { label: "Humanise Writing",   icon: Wand2,             desc: "Remove AI detection markers",        prompt: "Humanise all completed sections." },
+            { label: "Read Document",      icon: AlignLeft,         desc: "Display full document in chat",      prompt: "Show me the full document." },
+            { label: "Find Sources",       icon: BookOpen,          desc: "Real papers from Semantic Scholar",  prompt: "Find real academic sources for my assessment topic." },
+            { label: "Web Search",         icon: Search,            desc: "Search the web for information",     prompt: "Search the web for " },
             { label: "Generate Images",    icon: Image,             desc: "Academic charts & diagrams",         prompt: "Generate academic images for my sections." },
+            { label: "Create Chart",       icon: BarChart3,         desc: "Visualise data as a chart",          prompt: "Create a chart from this data: " },
             { label: "Export Document",    icon: Download,          desc: "Export as .docx",                    prompt: "Export my document." },
-            { label: "Find Sources",       icon: BookOpen,          desc: "Suggest academic references",        prompt: "Suggest relevant academic sources." },
             { label: "Format Citation",    icon: Quote,             desc: "Format a reference correctly",       prompt: "Help me format a citation." },
             { label: "Predict Grade",      icon: Target,            desc: "Estimate current grade band",        prompt: "Predict my current grade." },
             { label: "Topic to Brief",     icon: SlidersHorizontal, desc: "Generate full brief from a topic",   prompt: "Generate a full assessment brief from my topic." },

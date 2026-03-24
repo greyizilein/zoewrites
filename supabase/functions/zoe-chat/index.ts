@@ -45,9 +45,22 @@ FILE ATTACHMENTS:
 — Image files: analyse charts, figures, or diagrams and describe or improve them.
 — The user can upload briefs, drafts, articles, or reference materials to work on live.
 
+DOCUMENT READ & EDIT:
+- read_section: Display the full content of a specific section in the chat. Call this when the user says "show me [section]", "read [section]", "what does [section] say", "draw up [section]". Always confirm what you are displaying.
+- read_assessment: Display the full assembled document (all written sections) in the chat. Use when user says "show me the document", "read back my essay", "draw up my assessment".
+- update_assessment_settings: Change the assessment's citation style, academic level, or AI model. Call when user says "change citation to APA", "switch to Vancouver", "change level to postgraduate".
+
+WEB SEARCH:
+- web_search: Search the web for real-time information, news, academic topics, or any factual query. ALWAYS use this when the user asks you to search, look something up, or when you need current information beyond your training. Returns top 5 results with titles, URLs, and snippets.
+
+CHART / GRAPH GENERATION:
+- render_chart: Render a data visualisation inline in the chat. Use when user provides data and asks for a bar chart, line graph, pie chart, etc. The chart appears directly in the conversation. Supported types: bar, line, pie, area.
+
+ACADEMIC SOURCES (NO HALLUCINATIONS):
+- find_sources: Search Semantic Scholar for real, verified academic sources. Returns actual papers with DOIs, authors, and publication years. NEVER guess or invent sources — always use this tool.
+
 CONVERSATIONAL INTELLIGENCE (respond entirely in your message — no API side effects):
 - predict_grade: Estimate the likely grade band. Be specific — name a band (e.g. "Upper Second / 2:1, ~63–68%") and explain strengths and gaps.
-- find_sources: Provide real, verifiable academic sources with authors, journal names, years, DOIs where possible.
 - format_citation: Format the given reference exactly in the requested style. State what information is missing if needed.
 - topic_to_brief: Generate a complete, realistic assessment brief from a topic alone — include learning outcomes, marking criteria, recommended word allocation per section, and suggested frameworks.
 - analyse_brief: Deep analysis of any brief text provided.
@@ -55,11 +68,16 @@ CONVERSATIONAL INTELLIGENCE (respond entirely in your message — no API side ef
 EXECUTIVE CONTROL RULES:
 — For payment and export: confirm once, then execute immediately on confirmation.
 — For writing, humanising, critique, coherence: execute immediately without asking.
-— For grade prediction and source finding: call the tool as a signal but deliver the full result in your text response.
+— For grade prediction: call the tool as a signal but deliver the full result in your text response.
+— For find_sources: ALWAYS call the tool — never generate fake references from memory.
+— For web_search: call the tool whenever any factual, current, or researched information is needed.
+— For read_section / read_assessment: call immediately when asked to show, read, or draw up content.
+— For render_chart: call the tool with properly structured data when the user provides data to visualise.
 — Always tell the user what you are about to do BEFORE the tool call, in the same response.
 — When discussing plans or pricing: Hello £15/1500w, Regular £45/5000w, Professional £110/15000w, Custom ₦23/word + 1000 bonus words.
 — When on the dashboard without a specific assessment, use the sections_summary context to reference assessment titles and route the user appropriately.
 — Never say "I can't do that" — you have full executive control over the entire application.
+— HALLUCINATION RULE: Never invent academic references, statistics, or factual claims. Use find_sources for real papers, web_search for current information.
 
 Use UK English throughout. When referencing academic work in conversation, cite correctly.`;
 
@@ -215,14 +233,15 @@ const tools = [
     type: "function",
     function: {
       name: "find_sources",
-      description: "Suggest relevant academic sources for the assessment topic",
+      description: "Search Semantic Scholar for real, verified academic sources. ALWAYS use this tool when finding sources — never invent or guess references. Returns actual papers with DOIs.",
       parameters: {
         type: "object",
         properties: {
           topic: { type: "string" },
           citation_style: { type: "string" },
-          count: { type: "number" },
+          count: { type: "number", description: "Number of sources to return (default 5, max 10)" },
         },
+        required: ["topic"],
         additionalProperties: false,
       },
     },
@@ -389,7 +408,119 @@ const tools = [
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "read_section",
+      description: "Display the full written content of a specific section in the chat. Use when the user wants to read, review, or see the text of a section.",
+      parameters: {
+        type: "object",
+        properties: {
+          section_title: { type: "string", description: "Title of the section to display" },
+        },
+        required: ["section_title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_assessment",
+      description: "Display the full assembled document (all written sections) in the chat. Use when the user wants to see the complete essay or report.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "Search the web for real-time information, news, or any query requiring current data. Always use this for factual lookups, current events, or when the user asks to 'search' anything.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "The search query" },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "render_chart",
+      description: "Render a data visualisation (bar chart, line graph, pie chart, area chart) inline in the chat from user-provided data.",
+      parameters: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["bar", "line", "pie", "area"], description: "Chart type" },
+          title: { type: "string", description: "Chart title" },
+          data: {
+            type: "array",
+            description: "Data points — each object must have a 'label' and 'value' key, plus any additional series keys",
+            items: { type: "object", properties: { label: { type: "string" }, value: { type: "number" } }, required: ["label", "value"] },
+          },
+          x_label: { type: "string", description: "X-axis label" },
+          y_label: { type: "string", description: "Y-axis label" },
+        },
+        required: ["type", "data"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_assessment_settings",
+      description: "Update the current assessment's settings — citation style, academic level, or AI writing model.",
+      parameters: {
+        type: "object",
+        properties: {
+          citation_style: { type: "string", description: "e.g. Harvard, APA, Vancouver, MLA, Chicago" },
+          level: { type: "string", description: "e.g. Undergraduate L4, L5, L6, Postgraduate L7" },
+          model: { type: "string", description: "AI model to use for writing" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
 ];
+
+// ── Semantic Scholar lookup ──────────────────────────────────────────────────
+async function fetchSemanticScholar(query: string, count = 5): Promise<string> {
+  try {
+    const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=${Math.min(count, 10)}&fields=title,authors,year,journal,externalIds,abstract`;
+    const resp = await fetch(url, { headers: { "User-Agent": "ZOEWrites/1.0" } });
+    if (!resp.ok) return "";
+    const json = await resp.json();
+    const papers = (json.data || []) as any[];
+    if (!papers.length) return "";
+    return papers.map((p: any) => {
+      const authors = (p.authors || []).slice(0, 3).map((a: any) => a.name).join(", ") + (p.authors?.length > 3 ? " et al." : "");
+      const doi = p.externalIds?.DOI ? `DOI: ${p.externalIds.DOI}` : "";
+      const journal = p.journal?.name || "";
+      return `- **${p.title}** — ${authors} (${p.year || "n.d."})${journal ? ` · ${journal}` : ""}${doi ? ` · ${doi}` : ""}${p.abstract ? `\n  _${p.abstract.slice(0, 200)}…_` : ""}`;
+    }).join("\n\n");
+  } catch { return ""; }
+}
+
+// ── Web search (Brave Search API) ────────────────────────────────────────────
+async function fetchWebSearch(query: string, apiKey: string): Promise<{ title: string; url: string; snippet: string }[]> {
+  try {
+    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5&text_decorations=false`;
+    const resp = await fetch(url, {
+      headers: { "Accept": "application/json", "X-Subscription-Token": apiKey },
+    });
+    if (!resp.ok) return [];
+    const json = await resp.json();
+    return ((json.web?.results || []) as any[]).slice(0, 5).map((r: any) => ({
+      title: r.title || "",
+      url: r.url || "",
+      snippet: r.description || "",
+    }));
+  } catch { return []; }
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -398,11 +529,24 @@ serve(async (req) => {
     const { messages, section_content, assessment_title, sections_summary, attachments, model } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY") || "";
 
     let contextNote = "";
     if (assessment_title) contextNote += `\n\nCurrent assessment: "${assessment_title}"`;
     if (section_content) contextNote += `\n\nCurrent section content (first 2000 chars):\n${section_content.slice(0, 2000)}`;
     if (sections_summary) contextNote += `\n\nSections overview:\n${sections_summary}`;
+
+    // Pre-fetch Semantic Scholar results if the last user message mentions sources/references
+    const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+    const lastText = (lastUserMsg?.content || "").toLowerCase();
+    const wantsSources = lastText.includes("source") || lastText.includes("reference") || lastText.includes("citation") || lastText.includes("find paper") || lastText.includes("academic");
+    if (wantsSources && assessment_title) {
+      const topic = assessment_title;
+      const scholarResults = await fetchSemanticScholar(topic, 5);
+      if (scholarResults) {
+        contextNote += `\n\nSEMANTIC SCHOLAR — verified papers for topic "${topic}":\n${scholarResults}\n\n(Use ONLY these real papers when citing sources. Do NOT invent references.)`;
+      }
+    }
 
     // Handle file attachments — fetch text content for document types
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {
