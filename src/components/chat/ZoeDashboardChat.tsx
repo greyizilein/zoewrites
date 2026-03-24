@@ -895,14 +895,13 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
           addMsg(activeChatId, { role: "assistant", content: `Are you sure you want to delete **${target.title}**? It will be moved to trash and can be recovered within 2 months. Reply **yes, delete** to confirm.` });
           break;
         }
-        addMsg(activeChatId, { role: "action", content: `Moving "${target.title}" to trash…`, actionType: "processing" });
-        const { error: delError } = await supabase.from("assessments")
-          .update({ deleted_at: new Date().toISOString() }).eq("id", target.id);
+        addMsg(activeChatId, { role: "action", content: `Deleting "${target.title}"…`, actionType: "processing" });
+        const { error: delError } = await supabase.from("assessments").delete().eq("id", target.id);
         if (delError) {
           addMsg(activeChatId, { role: "action", content: "Delete failed. Please try again.", actionType: "error" });
         } else {
           if (chatOpen === target.id) setChatOpen(null);
-          addMsg("dashboard", { role: "action", content: `"${target.title}" moved to trash. Say "restore ${target.title}" to recover it within 2 months.`, actionType: "success" });
+          addMsg("dashboard", { role: "action", content: `"${target.title}" has been deleted.`, actionType: "success" });
           onRefresh();
         }
         break;
