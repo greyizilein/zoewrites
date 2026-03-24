@@ -59,6 +59,7 @@ export type Database = {
         Row: {
           brief_text: string | null
           created_at: string
+          deleted_at: string | null
           execution_plan: Json | null
           id: string
           settings: Json | null
@@ -76,6 +77,7 @@ export type Database = {
         Insert: {
           brief_text?: string | null
           created_at?: string
+          deleted_at?: string | null
           execution_plan?: Json | null
           id?: string
           settings?: Json | null
@@ -93,6 +95,7 @@ export type Database = {
         Update: {
           brief_text?: string | null
           created_at?: string
+          deleted_at?: string | null
           execution_plan?: Json | null
           id?: string
           settings?: Json | null

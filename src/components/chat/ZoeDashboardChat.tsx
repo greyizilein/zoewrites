@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import {
   MessageCircle, X, ArrowLeft, Search, Send,
-  Plus, BarChart3, Settings,
+  Plus, BarChart3, Settings, Paperclip, Trash2,
   CheckCircle, AlertCircle, Loader2, ChevronRight, Wand2,
   Sparkles, ShieldCheck, Download, Image, BookOpen,
   AlignLeft, Target, Brain, Quote, SlidersHorizontal,
@@ -283,9 +283,17 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
   const [payLoading, setPayLoading] = useState<string | null>(null);
   const [customWords, setCustomWords] = useState(500);
 
+  // ── File upload state ──────────────────────────────────────────────────────
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+
+  // ── Section search results (global search) ─────────────────────────────────
+  const [sectionResults, setSectionResults] = useState<{ id: string; title: string; assessment_id: string }[]>([]);
+
   // ── Refs ───────────────────────────────────────────────────────────────────
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Effects ────────────────────────────────────────────────────────────────
 
@@ -362,13 +370,32 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
     }));
   }, []);
 
+  // Section search (global) — fires when search query >= 3 chars
+  useEffect(() => {
+    const q = search.trim().toLowerCase();
+    if (q.length < 3) { setSectionResults([]); return; }
+    const timer = setTimeout(async () => {
+      const { data } = await supabase.from("sections")
+        .select("id, title, assessment_id")
+        .ilike("title", `%${q}%`)
+        .limit(5);
+      setSectionResults(data || []);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   // ── Derived values ─────────────────────────────────────────────────────────
   const chatId = chatOpen || "dashboard";
   const currentMsgs = msgsMap[chatId] || [];
   const currentAssessment = chatOpen ? assessments.find(a => a.id === chatOpen) : null;
-  const filteredAssessments = assessments.filter(a =>
-    a.title.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredAssessments = assessments.filter(a => {
+    const q = search.toLowerCase();
+    return (
+      a.title.toLowerCase().includes(q) ||
+      (a.type || "").toLowerCase().includes(q) ||
+      a.status.toLowerCase().includes(q)
+    );
+  });
 
   // ── executePipeline ────────────────────────────────────────────────────────
   const executePipeline = useCallback(async (
@@ -638,19 +665,64 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
           : currentAssessment;
         if (!target) { addMsg(activeChatId, { role: "action", content: "No assessment specified.", actionType: "error" }); break; }
         if (!args.confirmed) {
-          addMsg(activeChatId, { role: "assistant", content: `Are you sure you want to permanently delete **${target.title}**? This cannot be undone. Reply **yes, delete** to confirm.` });
+          addMsg(activeChatId, { role: "assistant", content: `Are you sure you want to delete **${target.title}**? It will be moved to trash and can be recovered within 2 months. Reply **yes, delete** to confirm.` });
           break;
         }
-        addMsg(activeChatId, { role: "action", content: `Deleting "${target.title}"…`, actionType: "processing" });
-        await supabase.from("sections").delete().eq("assessment_id", target.id);
-        const { error: delError } = await supabase.from("assessments").delete().eq("id", target.id);
+        addMsg(activeChatId, { role: "action", content: `Moving "${target.title}" to trash…`, actionType: "processing" });
+        const { error: delError } = await supabase.from("assessments")
+          .update({ deleted_at: new Date().toISOString() }).eq("id", target.id);
         if (delError) {
           addMsg(activeChatId, { role: "action", content: "Delete failed. Please try again.", actionType: "error" });
         } else {
           if (chatOpen === target.id) setChatOpen(null);
-          addMsg("dashboard", { role: "action", content: `"${target.title}" deleted.`, actionType: "success" });
+          addMsg("dashboard", { role: "action", content: `"${target.title}" moved to trash. Say "restore ${target.title}" to recover it within 2 months.`, actionType: "success" });
           onRefresh();
         }
+        break;
+      }
+
+      case "restore_assessment": {
+        const twoMonthsAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: trashData } = await supabase.from("assessments")
+          .select("id, title, deleted_at")
+          .not("deleted_at", "is", null)
+          .gte("deleted_at", twoMonthsAgo)
+          .eq(args.assessment_id ? "id" : "user_id", args.assessment_id || (user?.id || ""));
+        const restoreTarget = args.assessment_id
+          ? trashData?.find(a => a.id === args.assessment_id)
+          : trashData?.find(a => a.title.toLowerCase().includes((args.title || "").toLowerCase()));
+        if (!restoreTarget) {
+          addMsg(activeChatId, { role: "action", content: "Assessment not found in trash or recovery window has passed.", actionType: "error" });
+          break;
+        }
+        const { error: restoreError } = await supabase.from("assessments")
+          .update({ deleted_at: null }).eq("id", restoreTarget.id);
+        if (restoreError) {
+          addMsg(activeChatId, { role: "action", content: "Restore failed.", actionType: "error" });
+        } else {
+          addMsg(activeChatId, { role: "action", content: `"${restoreTarget.title}" restored to your dashboard.`, actionType: "success" });
+          onRefresh();
+        }
+        break;
+      }
+
+      case "view_trash": {
+        const twoMonthsAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: trashItems } = await supabase.from("assessments")
+          .select("id, title, deleted_at")
+          .not("deleted_at", "is", null)
+          .gte("deleted_at", twoMonthsAgo)
+          .eq("user_id", user?.id || "")
+          .order("deleted_at", { ascending: false });
+        const list = (trashItems || []).map(a =>
+          `- **${a.title}** — deleted ${timeAgo(a.deleted_at!)} *(ID: ${a.id})*`
+        ).join("\n");
+        addMsg(activeChatId, {
+          role: "assistant",
+          content: (trashItems || []).length
+            ? `**Recoverable assessments** (deleted within 2 months):\n\n${list}\n\nSay "restore [title]" to recover any of these.`
+            : "No deleted assessments to recover. Items are permanently purged after 2 months.",
+        });
         break;
       }
 
@@ -718,21 +790,48 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       case "format_citation":
       case "topic_to_brief":
       case "analyse_brief":
+      case "get_section_context":
         break;
 
       default:
         console.warn("Unknown tool:", toolName, args);
     }
-  }, [chatId, chatOpen, sections, assessments, user, navigate, gbpToNgn, customWords, onRefresh, addMsg]);
+  }, [chatId, chatOpen, sections, assessments, user, navigate, gbpToNgn, customWords, onRefresh, addMsg, setChatOpen, toast]);
 
   // ── handleSend ─────────────────────────────────────────────────────────────
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
-    if (!text || loading) return;
+    if ((!text && attachedFiles.length === 0) || loading) return;
     setInput("");
     setLoading(true);
 
-    addMsg(chatId, { role: "user", content: text });
+    // Upload any attached files first
+    let uploadedAttachments: { name: string; url: string; type: string }[] = [];
+    if (attachedFiles.length > 0) {
+      setUploadingFiles(true);
+      for (const file of attachedFiles) {
+        try {
+          const path = `${user?.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+          await supabase.storage.from("chat-uploads").upload(path, file);
+          const { data: signedData } = await supabase.storage
+            .from("chat-uploads").createSignedUrl(path, 3600);
+          if (signedData?.signedUrl) {
+            uploadedAttachments.push({ name: file.name, url: signedData.signedUrl, type: file.type });
+            await supabase.from("chat_uploads" as any).insert({
+              user_id: user?.id, assessment_id: chatOpen || null,
+              file_name: file.name, file_size: file.size,
+              file_type: file.type, storage_path: path,
+            });
+          }
+        } catch { /* skip failed upload */ }
+      }
+      setAttachedFiles([]);
+      setUploadingFiles(false);
+    }
+
+    const fileNames = uploadedAttachments.map(f => f.name).join(", ");
+    const userContent = [text, fileNames ? `📎 ${fileNames}` : ""].filter(Boolean).join("\n");
+    addMsg(chatId, { role: "user", content: userContent });
 
     // Build history (last 20 user/assistant messages)
     const history = (msgsMap[chatId] || [])
@@ -765,6 +864,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
           messages: history,
           assessment_title: currentAssessment?.title,
           sections_summary: sectionsSummary,
+          attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
           model: "google/gemini-2.5-flash",
         }),
       });
@@ -804,78 +904,150 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       setLoading(false);
       textareaRef.current?.focus();
     }
-  }, [input, loading, chatId, chatOpen, msgsMap, sections, currentAssessment, addMsg, updateMsg, executePipeline]);
+  }, [input, loading, chatId, chatOpen, msgsMap, sections, currentAssessment, attachedFiles, user, addMsg, updateMsg, executePipeline]);
 
   // ── Tab: Chats ─────────────────────────────────────────────────────────────
   const renderChatsTab = () => (
     <div className="flex flex-col h-full">
-      {/* Search */}
-      <div className="px-3 py-2 flex-shrink-0">
+      {/* Hero tagline (shown when no search) */}
+      {!search && (
+        <div className="px-5 pt-5 pb-2 flex-shrink-0">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-10 h-10 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-[9px] font-extrabold tracking-wider">ZOE</span>
+            </div>
+            <div>
+              <p className="text-[18px] font-extrabold text-foreground leading-tight">Do everything with ZOE</p>
+              <p className="text-[12px] text-muted-foreground">Chat, write, revise, upload, export — all in one place</p>
+            </div>
+          </div>
+          {/* New chat button */}
+          <button
+            onClick={() => { navigate("/assessment/new"); setOpen(false); }}
+            className="mt-3 w-full flex items-center gap-3 px-4 py-3 bg-terracotta text-white rounded-2xl shadow-md active:scale-[0.98] transition-transform"
+          >
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Plus size={16} />
+            </div>
+            <div className="text-left">
+              <p className="text-[13px] font-bold">New Assessment</p>
+              <p className="text-[11px] text-white/70">Start from a brief, topic, or file</p>
+            </div>
+          </button>
+          {assessments.length > 0 && (
+            <p className="text-[11px] font-semibold text-muted-foreground mt-4 px-0.5 uppercase tracking-wide">Recent conversations</p>
+          )}
+        </div>
+      )}
+
+      {/* Search bar */}
+      <div className={cn("px-4 flex-shrink-0", search ? "pt-4 pb-1" : "pb-1")}>
         <div className="flex items-center gap-2 bg-white rounded-full px-3 py-2 border border-border/50">
           <Search size={13} className="text-muted-foreground flex-shrink-0" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search assessments…"
+            placeholder="Search everything — assessments, sections, types…"
             className="flex-1 text-[12px] bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
           />
           {search && (
-            <button onClick={() => setSearch("")}><X size={11} className="text-muted-foreground" /></button>
+            <button onClick={() => { setSearch(""); setSectionResults([]); }}>
+              <X size={11} className="text-muted-foreground" />
+            </button>
           )}
         </div>
       </div>
 
-      {/* List */}
-      <div className="flex-1 overflow-y-auto">
-        {filteredAssessments.length === 0 && (
+      {/* Scrollable list */}
+      <div className="flex-1 overflow-y-auto px-3 pb-3">
+        {/* Section search results */}
+        {sectionResults.length > 0 && (
+          <div className="mb-2 mt-2">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-1 mb-1">Sections</p>
+            {sectionResults.map(sec => {
+              const parentAssessment = assessments.find(a => a.id === sec.assessment_id);
+              return (
+                <button
+                  key={sec.id}
+                  onClick={() => { setChatOpen(sec.assessment_id); setSearch(""); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 bg-white rounded-xl mb-1 border border-border/40 hover:border-terracotta/40 transition-colors text-left"
+                >
+                  <AlignLeft size={14} className="text-terracotta flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-foreground truncate">{sec.title}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{parentAssessment?.title || "Assessment"}</p>
+                  </div>
+                  <ChevronRight size={13} className="text-muted-foreground flex-shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Assessment conversations */}
+        {filteredAssessments.length === 0 && sectionResults.length === 0 && (
           <div className="text-center py-14 px-6">
             <MessageCircle size={32} className="mx-auto text-muted-foreground/20 mb-3" />
             <p className="text-[13px] font-semibold text-foreground mb-1">
-              {search ? "No matches" : "No assessments yet"}
+              {search ? "No matches" : "No conversations yet"}
             </p>
-            <p className="text-[11px] text-muted-foreground mb-4">
-              {search ? "Try a different search." : "Create your first assessment to start chatting with ZOE."}
+            <p className="text-[11px] text-muted-foreground">
+              {search ? "Try searching for a section title or assessment type." : "Start a new assessment above."}
             </p>
-            {!search && (
-              <button
-                onClick={() => { navigate("/assessment/new"); setOpen(false); }}
-                className="px-4 py-2 bg-terracotta text-white text-[12px] font-bold rounded-xl"
-              >
-                New Assessment
-              </button>
-            )}
           </div>
         )}
+
+        {filteredAssessments.length > 0 && search && (
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-1 mt-2 mb-1">Assessments</p>
+        )}
+
         {filteredAssessments.map(a => {
           const pct = a.word_target > 0 ? Math.round((a.word_current / a.word_target) * 100) : 0;
           const done = a.status === "complete";
-          const lastMsg = (msgsMap[a.id] || []).slice(-1)[0];
+          const lastMsg = (msgsMap[a.id] || []).filter(m => m.role !== "action").slice(-1)[0];
           return (
-            <button
+            <div
               key={a.id}
-              onClick={() => setChatOpen(a.id)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/60 active:bg-white/80 transition-colors border-b border-border/30 text-left"
+              className="flex items-center gap-0 mt-1"
             >
-              {/* Avatar — shows % */}
-              <div className={cn(
-                "w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold",
-                done ? "bg-sage" : "bg-terracotta",
-              )}>
-                {pct}%
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-1">
-                  <p className="text-[13px] font-semibold text-foreground truncate">{a.title}</p>
-                  <span className="text-[10px] text-muted-foreground flex-shrink-0">{timeAgo(a.updated_at)}</span>
+              <button
+                onClick={() => setChatOpen(a.id)}
+                className="flex-1 flex items-center gap-3 px-3 py-3 bg-white rounded-2xl border border-border/30 hover:border-terracotta/30 active:scale-[0.99] transition-all text-left shadow-sm"
+              >
+                {/* Avatar — shows % */}
+                <div className={cn(
+                  "w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold",
+                  done ? "bg-sage" : pct > 50 ? "bg-terracotta/80" : "bg-terracotta",
+                )}>
+                  {pct}%
                 </div>
-                <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                  {lastMsg
-                    ? lastMsg.content.slice(0, 45) + (lastMsg.content.length > 45 ? "…" : "")
-                    : `${fmt(a.word_current)}/${fmt(a.word_target)}w · ${a.status}`}
-                </p>
-              </div>
-              <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
-            </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-[13px] font-semibold text-foreground truncate">{a.title}</p>
+                    <span className="text-[10px] text-muted-foreground flex-shrink-0">{timeAgo(a.updated_at)}</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                    {lastMsg
+                      ? lastMsg.content.slice(0, 55) + (lastMsg.content.length > 55 ? "…" : "")
+                      : `${fmt(a.word_current)}/${fmt(a.word_target)}w · ${a.status}`}
+                  </p>
+                </div>
+                <ChevronRight size={14} className="text-muted-foreground flex-shrink-0 ml-1" />
+              </button>
+              {/* Delete bubble */}
+              <button
+                onClick={async () => {
+                  if (!confirm(`Move "${a.title}" to trash? Recoverable within 2 months.`)) return;
+                  await supabase.from("assessments").update({ deleted_at: new Date().toISOString() }).eq("id", a.id);
+                  toast({ title: "Moved to trash", description: "Ask ZOE to restore it anytime." });
+                  onRefresh();
+                }}
+                className="ml-2 w-9 h-9 rounded-full bg-destructive/10 text-destructive flex items-center justify-center flex-shrink-0 hover:bg-destructive/20 active:scale-90 transition-all"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -1213,7 +1385,43 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
 
       {/* Input bar */}
       <div className="flex-shrink-0 px-3 py-2.5 bg-white border-t border-border/40">
+        {/* Attached file chips */}
+        {attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {attachedFiles.map((file, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
+                <Paperclip size={10} />
+                {file.name.length > 20 ? file.name.slice(0, 18) + "…" : file.name}
+                <button
+                  onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
+                  className="hover:opacity-70"
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2">
+          {/* File upload button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || uploadingFiles}
+            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors active:scale-90"
+            title="Attach files (up to 1 GB each)"
+          >
+            {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={16} />}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={e => {
+              setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+              e.target.value = "";
+            }}
+          />
           <div className="flex-1 flex items-end bg-[hsl(220,20%,96%)] rounded-2xl border border-border/50 px-3 py-2">
             <textarea
               ref={textareaRef}
@@ -1229,10 +1437,10 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
           </div>
           <button
             onClick={() => handleSend()}
-            disabled={!input.trim() || loading}
+            disabled={(!input.trim() && attachedFiles.length === 0) || loading}
             className={cn(
               "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
-              input.trim() && !loading
+              (input.trim() || attachedFiles.length > 0) && !loading
                 ? "bg-terracotta text-white shadow-md active:scale-95"
                 : "bg-muted text-muted-foreground",
             )}
@@ -1276,20 +1484,20 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       <AnimatePresence>
         {open && (
           <>
-            {/* Backdrop (mobile only) */}
+            {/* Backdrop */}
             <motion.div
               key="backdrop"
-              className="fixed inset-0 z-[59] bg-black/40 md:hidden"
+              className="fixed inset-0 z-[59] bg-black/50 hidden md:block"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setOpen(false)}
             />
 
-            {/* Panel */}
+            {/* Panel — full screen on all breakpoints */}
             <motion.div
               key="panel"
-              className="fixed inset-0 z-[60] flex flex-col bg-[hsl(220,20%,96%)] md:inset-auto md:right-4 md:bottom-[88px] md:w-[400px] md:h-[600px] md:rounded-2xl md:shadow-2xl md:overflow-hidden"
+              className="fixed inset-0 z-[60] flex flex-col bg-[hsl(220,20%,96%)] md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[720px] md:h-[88vh] md:max-h-[860px] md:rounded-2xl md:shadow-2xl md:overflow-hidden"
               initial={{ y: "100%", opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: "100%", opacity: 0 }}
@@ -1316,7 +1524,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                   <p className="text-[11px] text-white/50 mt-0.5">
                     {currentAssessment
                       ? `${currentAssessment.status} · ${currentAssessment.type || "Assessment"}`
-                      : "Academic Writing Assistant"}
+                      : "Do everything with ZOE"}
                   </p>
                 </div>
                 <button

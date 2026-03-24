@@ -28,9 +28,18 @@ EXTENDED PIPELINE TOOLS:
 - generate_images: Generate academic figures and diagrams
 - coherence_check: Analyse argument flow and cross-section logical consistency
 - adjust_word_target: Update a section's word target directly in the database
-- delete_assessment: Permanently delete an assessment. ALWAYS confirm with the user first — say "Are you sure you want to delete **[title]**? This cannot be undone." and only call if confirmed is true.
+- delete_assessment: Move an assessment to trash. ALWAYS confirm with the user first — say "Are you sure you want to delete **[title]**? It can be recovered within 2 months." and only call if confirmed is true.
+- restore_assessment: Restore a deleted assessment. Recoverable within 2 months of deletion. If user says "restore [title]", find the assessment ID and call this.
+- view_trash: Show all assessments the user has deleted within the last 2 months. They can be restored.
 - get_recommendations: Get AI improvement recommendations for a specific section. Useful when a student asks "how can I improve this section?" or "what's wrong with my introduction?"
 - update_assessment_title: Rename the current assessment. Ask the user for the new title if not provided.
+
+FILE ATTACHMENTS:
+— When the user attaches files, they appear in the message as "📎 filename". The `attachments` field in the request contains {name, url, type} for each file.
+— For documents (PDF, DOCX, TXT), treat the file content as the primary working document.
+— You can critique, revise, rewrite, summarise, or improve uploaded documents on request.
+— Image files: analyse charts, figures, or diagrams and describe or improve them.
+— The user can upload briefs, drafts, articles, or reference materials to work on live.
 
 CONVERSATIONAL INTELLIGENCE (respond entirely in your message — no API side effects):
 - predict_grade: Estimate the likely grade band. Be specific — name a band (e.g. "Upper Second / 2:1, ~63–68%") and explain strengths and gaps.
@@ -310,13 +319,36 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "restore_assessment",
+      description: "Restore a soft-deleted assessment. Can only restore assessments deleted within 2 months.",
+      parameters: {
+        type: "object",
+        properties: {
+          assessment_id: { type: "string", description: "ID of the assessment to restore" },
+          title: { type: "string", description: "Title of the assessment (used if ID is unknown)" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "view_trash",
+      description: "View all assessments deleted by the user in the last 2 months",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
 ];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, section_content, assessment_title, sections_summary, model } = await req.json();
+    const { messages, section_content, assessment_title, sections_summary, attachments, model } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
@@ -324,6 +356,27 @@ serve(async (req) => {
     if (assessment_title) contextNote += `\n\nCurrent assessment: "${assessment_title}"`;
     if (section_content) contextNote += `\n\nCurrent section content (first 2000 chars):\n${section_content.slice(0, 2000)}`;
     if (sections_summary) contextNote += `\n\nSections overview:\n${sections_summary}`;
+
+    // Handle file attachments — fetch text content for document types
+    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+      contextNote += "\n\nATTACHED FILES:";
+      for (const att of attachments as { name: string; url: string; type: string }[]) {
+        contextNote += `\n\n[File: ${att.name} (${att.type})]`;
+        const isTextLike = att.type.startsWith("text/") ||
+          att.type === "application/json" ||
+          att.name.endsWith(".md") || att.name.endsWith(".txt") ||
+          att.name.endsWith(".csv");
+        if (isTextLike) {
+          try {
+            const fileResp = await fetch(att.url);
+            const text = await fileResp.text();
+            contextNote += `\n${text.slice(0, 8000)}`;
+          } catch { contextNote += "\n[Could not retrieve file content]"; }
+        } else {
+          contextNote += `\nFile URL: ${att.url}`;
+        }
+      }
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
