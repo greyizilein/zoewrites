@@ -1019,11 +1019,15 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       case "read_analytics": {
         addMsg(activeChatId, { role: "action", content: "Reading your analytics…", actionType: "processing" });
         const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-        const [{ data: allAssessments }, { data: recentSections }, { data: profileData }] = await Promise.all([
-          supabase.from("assessments").select("id, title, type, status, word_current, word_target, created_at, updated_at")
-            .eq("user_id", user?.id || "").is("deleted_at", null).order("updated_at", { ascending: false }),
-          supabase.from("sections").select("status, word_current, word_target, citation_count, updated_at")
-            .in("assessment_id", (allAssessments || []).map(a => a.id)).gte("updated_at", twoWeeksAgo),
+        const { data: allAssessments } = await supabase.from("assessments")
+          .select("id, title, type, status, word_current, word_target, created_at, updated_at")
+          .eq("user_id", user?.id || "").order("updated_at", { ascending: false });
+        const assessmentIds = (allAssessments || []).map(a => a.id);
+        const [{ data: recentSections }, { data: profileData }] = await Promise.all([
+          assessmentIds.length > 0
+            ? supabase.from("sections").select("status, word_current, word_target, citation_count, updated_at")
+                .in("assessment_id", assessmentIds).gte("updated_at", twoWeeksAgo)
+            : Promise.resolve({ data: [] as any[] }),
           supabase.from("profiles").select("tier, words_used, word_limit").eq("user_id", user?.id || "").single(),
         ]);
         const all = allAssessments || [];

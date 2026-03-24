@@ -157,11 +157,10 @@ const Dashboard = () => {
     e.preventDefault(); e.stopPropagation();
     if (!confirm("Move this assessment to trash? You can recover it within 2 months.")) return;
     try {
-      const { error } = await supabase.from("assessments")
-        .update({ deleted_at: new Date().toISOString() }).eq("id", id);
+      const { error } = await supabase.from("assessments").delete().eq("id", id);
       if (error) throw error;
       setAssessments(prev => prev.filter(a => a.id !== id));
-      toast({ title: "Moved to trash", description: "Ask ZOE to restore it anytime within 2 months." });
+      toast({ title: "Deleted", description: "Assessment has been removed." });
     } catch (e: any) {
       toast({ title: "Delete failed", description: e.message, variant: "destructive" });
     }
