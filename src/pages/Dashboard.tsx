@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import {
   Plus, LogOut, Home, Loader2, Trash2, FileText,
   BarChart3, MoreHorizontal, PenSquare, RefreshCw, ChevronDown,
-  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
