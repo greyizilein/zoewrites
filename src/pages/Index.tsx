@@ -29,7 +29,7 @@ const Index = () => {
       <Pricing />
       <CTABanner />
       <Footer />
-      <ZoeHomeChat />
+      <ZoeDashboardChat />
     </div>
   );
 };
