@@ -960,6 +960,33 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
 
       {/* Scrollable list */}
       <div className="flex-1 overflow-y-auto px-3 pb-3">
+        {/* Dashboard-level ZOE conversation messages */}
+        {!search && (msgsMap["dashboard"] || []).filter(m => m.role !== "action").length > 0 && (
+          <div className="mt-2 mb-3">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-1 mb-1.5">ZOE conversation</p>
+            <div className="bg-white rounded-2xl border border-border/30 overflow-hidden px-3 py-2.5 space-y-2 shadow-sm">
+              {(msgsMap["dashboard"] || []).filter(m => m.role !== "action").slice(-6).map(msg => (
+                <div key={msg.id} className={cn("text-[12px] leading-relaxed", msg.role === "user" ? "text-right" : "text-left")}>
+                  {msg.role === "user" ? (
+                    <span className="inline-block max-w-[80%] px-3 py-1.5 rounded-xl rounded-tr-sm bg-terracotta text-white text-[12px]">
+                      {msg.content.slice(0, 120)}{msg.content.length > 120 ? "…" : ""}
+                    </span>
+                  ) : (
+                    <span className="inline-block max-w-[88%] px-3 py-1.5 rounded-xl rounded-tl-sm bg-muted/60 text-foreground text-[12px]">
+                      {msg.content.slice(0, 120)}{msg.content.length > 120 ? "…" : ""}
+                    </span>
+                  )}
+                </div>
+              ))}
+              {(msgsMap["dashboard"] || []).filter(m => m.role !== "action").length > 6 && (
+                <p className="text-[10px] text-muted-foreground text-center pt-0.5">
+                  {(msgsMap["dashboard"] || []).filter(m => m.role !== "action").length - 6} earlier messages · type to continue
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Section search results */}
         {sectionResults.length > 0 && (
           <div className="mb-2 mt-2">
@@ -1575,6 +1602,66 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                             {activeTab === "tools"  && renderToolsTab()}
                           </motion.div>
                         </AnimatePresence>
+                      </div>
+
+                      {/* Persistent ZOE input — always visible in tab view */}
+                      <div className="flex-shrink-0 px-3 py-2 bg-white border-t border-border/40">
+                        {/* Attached file chips */}
+                        {attachedFiles.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {attachedFiles.map((file, i) => (
+                              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
+                                <Paperclip size={10} />
+                                {file.name.length > 20 ? file.name.slice(0, 18) + "…" : file.name}
+                                <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="hover:opacity-70"><X size={10} /></button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex items-end gap-2">
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={loading || uploadingFiles}
+                            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors active:scale-90"
+                            title="Attach files"
+                          >
+                            {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={16} />}
+                          </button>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
+                            className="hidden"
+                            onChange={e => {
+                              setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+                              e.target.value = "";
+                            }}
+                          />
+                          <div className="flex-1 flex items-end bg-[hsl(220,20%,96%)] rounded-2xl border border-border/50 px-3 py-2">
+                            <textarea
+                              value={input}
+                              onChange={e => setInput(e.target.value)}
+                              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                              placeholder="Ask ZOE anything…"
+                              rows={1}
+                              disabled={loading}
+                              className="flex-1 bg-transparent outline-none resize-none text-[13px] text-foreground placeholder:text-muted-foreground leading-5 max-h-[80px] overflow-y-auto"
+                              style={{ scrollbarWidth: "none" }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleSend()}
+                            disabled={(!input.trim() && attachedFiles.length === 0) || loading}
+                            className={cn(
+                              "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
+                              (input.trim() || attachedFiles.length > 0) && !loading
+                                ? "bg-terracotta text-white shadow-md active:scale-95"
+                                : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                          </button>
+                        </div>
                       </div>
 
                       {/* Bottom tab bar */}
