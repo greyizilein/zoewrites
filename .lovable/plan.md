@@ -1,14 +1,7 @@
+# Simplify ZOE to Single Claude-Style Chat Interface
 
+## Problems identified
 
-# Replace Homepage ZoeHomeChat with ZoeDashboardChat
-
-## Change
-
-Swap `ZoeHomeChat` for `ZoeDashboardChat` in `src/pages/Index.tsx`. The dashboard chat component is a full-featured ChatGPT-style interface with assessment management, writing tools, subscription handling, etc. — exactly what you want on the homepage.
-
-## File
-
-| File | Change |
-|------|--------|
-| `src/pages/Index.tsx` | Replace `ZoeHomeChat` import/usage with `ZoeDashboardChat` |
-
+1. **Two ZOEs**: There's a "ZOE — General Chat" (`__general__`) AND per-assessment chats. User wants ONE ZOE with all capabilities.
+2. **Cluttered UI**: Bottom tab bar (Chats/Write/Status/Tools), hero section, search, assessment list — all add noise. Should be a clean chat like Claude.
+3. **Incomplete replies**: The `__general__` chat works but the main dashboard chat doesn't have subscription handling (so when general chat is removed, main Zoe on dashboard can do everything).
