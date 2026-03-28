@@ -109,6 +109,77 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_messages: {
+        Row: {
+          action_type: string | null
+          chat_id: string
+          content: string
+          created_at: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          action_type?: string | null
+          chat_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          action_type?: string | null
+          chat_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      chat_uploads: {
+        Row: {
+          assessment_id: string | null
+          created_at: string
+          file_name: string
+          file_size: number | null
+          file_type: string | null
+          id: string
+          storage_path: string
+          user_id: string
+        }
+        Insert: {
+          assessment_id?: string | null
+          created_at?: string
+          file_name: string
+          file_size?: number | null
+          file_type?: string | null
+          id?: string
+          storage_path: string
+          user_id: string
+        }
+        Update: {
+          assessment_id?: string | null
+          created_at?: string
+          file_name?: string
+          file_size?: number | null
+          file_type?: string | null
+          id?: string
+          storage_path?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_uploads_assessment_id_fkey"
+            columns: ["assessment_id"]
+            isOneToOne: false
+            referencedRelation: "assessments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exports: {
         Row: {
           assessment_id: string

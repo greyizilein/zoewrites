@@ -676,6 +676,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         break;
       }
 
+      case "apply_revision":
       case "revise_section": {
         if (!assId) break;
         setActiveAssessmentId(assId);
@@ -703,6 +704,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         break;
       }
 
+      case "run_critique":
       case "quality_critique": {
         if (!assId) break;
         setActiveAssessmentId(assId);
@@ -822,42 +824,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         break;
       }
 
-      case "restore_assessment": {
-        if (!user?.id) { addMsg({ role: "action", content: "Not signed in.", actionType: "error" }); break; }
-        const needle = (args.assessment_id || args.title || "").toLowerCase();
-        if (!needle) { addMsg({ role: "action", content: "Please specify which assessment to restore.", actionType: "error" }); break; }
-        addMsg({ role: "action", content: "Searching trash…", actionType: "processing" });
-        const { data: trashed } = await supabase
-          .from("assessments")
-          .select("id, title")
-          .eq("user_id", user.id)
-          .not("deleted_at", "is", null)
-          .ilike("title", `%${needle}%`)
-          .limit(1)
-          .single();
-        if (!trashed) { addMsg({ role: "action", content: `No deleted assessment matching "${needle}" found.`, actionType: "error" }); break; }
-        await supabase.from("assessments").update({ deleted_at: null, status: "draft" }).eq("id", trashed.id);
-        onRefresh();
-        addMsg({ role: "action", content: `"${trashed.title}" restored successfully.`, actionType: "success" });
-        break;
-      }
-
-      case "view_trash": {
-        if (!user?.id) { addMsg({ role: "action", content: "Not signed in.", actionType: "error" }); break; }
-        const { data: trashed } = await supabase
-          .from("assessments")
-          .select("id, title, deleted_at")
-          .eq("user_id", user.id)
-          .not("deleted_at", "is", null)
-          .order("deleted_at", { ascending: false });
-        if (!trashed?.length) {
-          addMsg({ role: "assistant", content: "Your trash is empty — no deleted assessments." });
-        } else {
-          const list = trashed.map((a: any) => `- **${a.title}** _(deleted ${new Date(a.deleted_at).toLocaleDateString("en", { day: "numeric", month: "short" })})_`).join("\n");
-          addMsg({ role: "assistant", content: `**Trash** — ${trashed.length} deleted assessment${trashed.length > 1 ? "s" : ""}:\n\n${list}\n\nSay **"restore [title]"** to recover one.` });
-        }
-        break;
-      }
+      // restore_assessment and view_trash removed — no soft-delete column exists
 
       case "get_recommendations": {
         if (!assId) break;
@@ -1486,14 +1453,8 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                       autoCorrect="on"
                       enterKeyHint="send"
                       spellCheck={true}
-                      className="flex-1 bg-transparent outline-none resize-none text-foreground placeholder:text-muted-foreground/60 leading-5 max-h-[120px] w-full"
-                      style={{
-                        fontSize: "16px",
-                        overflowY: "auto",
-                        scrollbarWidth: "none",
-                        WebkitUserSelect: "text",
-                        touchAction: "manipulation",
-                      }}
+                      className="flex-1 bg-transparent outline-none resize-none text-[14px] text-foreground placeholder:text-muted-foreground/60 leading-5 max-h-[120px] overflow-y-auto w-full"
+                      style={{ scrollbarWidth: "none" }}
                     />
                   </div>
 
