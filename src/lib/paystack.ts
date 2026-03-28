@@ -5,16 +5,22 @@ declare global {
 }
 
 let scriptLoaded = false;
+let scriptLoading: Promise<void> | null = null;
 
 export function loadPaystackScript(): Promise<void> {
   if (scriptLoaded) return Promise.resolve();
-  return new Promise((resolve, reject) => {
+  if (scriptLoading) return scriptLoading;
+  scriptLoading = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = "https://js.paystack.co/v2/inline.js";
-    script.onload = () => { scriptLoaded = true; resolve(); };
-    script.onerror = () => reject(new Error("Failed to load Paystack"));
+    script.onload = () => { scriptLoaded = true; scriptLoading = null; resolve(); };
+    script.onerror = () => {
+      scriptLoading = null;
+      reject(new Error("Failed to load Paystack. Check your internet connection and try again."));
+    };
     document.head.appendChild(script);
   });
+  return scriptLoading;
 }
 
 export interface PaystackConfig {
@@ -28,6 +34,9 @@ export interface PaystackConfig {
 }
 
 export function openPaystackPopup(config: PaystackConfig) {
+  if (!window.PaystackPop) {
+    throw new Error("Paystack is not loaded yet. Please try again in a moment.");
+  }
   const handler = window.PaystackPop.setup({
     key: config.publicKey,
     email: config.email,

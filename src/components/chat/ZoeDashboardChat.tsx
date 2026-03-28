@@ -823,12 +823,39 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
       }
 
       case "restore_assessment": {
-        addMsg({ role: "assistant", content: "Deleted assessments are permanently removed and cannot be restored." });
+        if (!user?.id) { addMsg({ role: "action", content: "Not signed in.", actionType: "error" }); break; }
+        const needle = (args.assessment_id || args.title || "").toLowerCase();
+        if (!needle) { addMsg({ role: "action", content: "Please specify which assessment to restore.", actionType: "error" }); break; }
+        addMsg({ role: "action", content: "Searching trash…", actionType: "processing" });
+        const { data: trashed } = await supabase
+          .from("assessments")
+          .select("id, title")
+          .eq("user_id", user.id)
+          .not("deleted_at", "is", null)
+          .ilike("title", `%${needle}%`)
+          .limit(1)
+          .single();
+        if (!trashed) { addMsg({ role: "action", content: `No deleted assessment matching "${needle}" found.`, actionType: "error" }); break; }
+        await supabase.from("assessments").update({ deleted_at: null, status: "draft" }).eq("id", trashed.id);
+        onRefresh();
+        addMsg({ role: "action", content: `"${trashed.title}" restored successfully.`, actionType: "success" });
         break;
       }
 
       case "view_trash": {
-        addMsg({ role: "assistant", content: "Trash is not available. Deleted assessments are permanently removed." });
+        if (!user?.id) { addMsg({ role: "action", content: "Not signed in.", actionType: "error" }); break; }
+        const { data: trashed } = await supabase
+          .from("assessments")
+          .select("id, title, deleted_at")
+          .eq("user_id", user.id)
+          .not("deleted_at", "is", null)
+          .order("deleted_at", { ascending: false });
+        if (!trashed?.length) {
+          addMsg({ role: "assistant", content: "Your trash is empty — no deleted assessments." });
+        } else {
+          const list = trashed.map((a: any) => `- **${a.title}** _(deleted ${new Date(a.deleted_at).toLocaleDateString("en", { day: "numeric", month: "short" })})_`).join("\n");
+          addMsg({ role: "assistant", content: `**Trash** — ${trashed.length} deleted assessment${trashed.length > 1 ? "s" : ""}:\n\n${list}\n\nSay **"restore [title]"** to recover one.` });
+        }
         break;
       }
 
@@ -1148,12 +1175,26 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         break;
       }
 
-      case "predict_grade":
-      case "format_citation":
-      case "topic_to_brief":
-      case "analyse_brief":
-      case "get_section_context":
+      case "predict_grade": {
+        addMsg({ role: "action", content: "Grade prediction is on the way — this feature is coming soon.", actionType: "processing" });
         break;
+      }
+
+      case "format_citation": {
+        // The AI handles citation formatting in its text response; no client action needed.
+        break;
+      }
+
+      case "topic_to_brief":
+      case "analyse_brief": {
+        // Brief analysis is handled entirely by the AI's text response.
+        break;
+      }
+
+      case "get_section_context": {
+        // Section context is already injected via sections_summary in the API call.
+        break;
+      }
 
       default:
         console.warn("Unknown tool:", toolName, args);
@@ -1259,8 +1300,17 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
 
       for (const tc of toolCalls) {
         let args: Record<string, any> = {};
-        try { args = JSON.parse(tc.arguments); } catch { /* malformed JSON */ }
-        await executePipeline(tc.name, args);
+        try {
+          args = JSON.parse(tc.arguments);
+        } catch {
+          addMsg({ role: "action", content: `Could not parse arguments for "${tc.name}".`, actionType: "error" });
+          continue;
+        }
+        try {
+          await executePipeline(tc.name, args);
+        } catch (toolErr: any) {
+          addMsg({ role: "action", content: `"${tc.name}" failed: ${toolErr?.message || "unknown error"}`, actionType: "error" });
+        }
       }
 
     } catch {
@@ -1367,8 +1417,10 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
               </div>
 
               {/* Input bar */}
-              <div className="flex-shrink-0 bg-white border-t border-border/40"
-                style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))", paddingTop: "10px", paddingLeft: "12px", paddingRight: "12px" }}>
+              <div
+                className="flex-shrink-0 bg-white border-t border-border/40"
+                style={{ padding: "10px 12px", paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+              >
                 {/* Attached file chips */}
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
@@ -1376,34 +1428,48 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                       <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
                         <Paperclip size={10} />
                         {file.name.length > 20 ? file.name.slice(0, 18) + "…" : file.name}
-                        <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="hover:opacity-70"><X size={10} /></button>
+                        <button
+                          type="button"
+                          onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="hover:opacity-70"
+                        >
+                          <X size={10} />
+                        </button>
                       </span>
                     ))}
                   </div>
                 )}
+
                 <div className="flex items-end gap-2">
-                  {/* File attach button */}
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={loading || uploadingFiles}
-                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors active:scale-90 border border-border/50"
-                    title="Attach files"
-                  >
-                    {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
-                  </button>
+                  {/* File attach — use <label> for reliable mobile file picker trigger */}
                   <input
+                    id="zoe-file-input"
                     ref={fileInputRef}
                     type="file"
                     multiple
                     accept="*/*"
-                    className="hidden"
+                    className="sr-only"
+                    disabled={loading || uploadingFiles}
                     onChange={e => {
                       setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
                       e.target.value = "";
                     }}
                   />
-                  {/* Text input */}
-                  <div className="flex-1 flex items-end bg-[hsl(220,25%,97%)] rounded-2xl border-2 border-border focus-within:border-terracotta/50 transition-colors px-3 py-2 min-h-[40px]">
+                  <label
+                    htmlFor="zoe-file-input"
+                    className={cn(
+                      "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border border-border/50 cursor-pointer transition-colors active:scale-90 select-none",
+                      loading || uploadingFiles
+                        ? "bg-muted/40 text-muted-foreground/40 pointer-events-none"
+                        : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                    )}
+                    title="Attach files"
+                  >
+                    {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
+                  </label>
+
+                  {/* Text input — white background, clear border, iOS-safe */}
+                  <div className="flex-1 flex items-end bg-white rounded-2xl border-2 border-border/80 hover:border-terracotta/30 focus-within:border-terracotta/60 transition-colors px-3 py-2 min-h-[44px]">
                     <textarea
                       ref={textareaRef}
                       value={input}
@@ -1412,12 +1478,18 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                       placeholder="Message ZOE…"
                       rows={1}
                       disabled={loading}
-                      className="flex-1 bg-transparent outline-none resize-none text-[14px] text-foreground placeholder:text-muted-foreground/70 leading-5 max-h-[120px] overflow-y-auto w-full"
-                      style={{ scrollbarWidth: "none" }}
+                      className="flex-1 bg-transparent outline-none resize-none text-[14px] text-foreground placeholder:text-muted-foreground/60 leading-5 max-h-[120px] overflow-y-auto w-full"
+                      style={{
+                        scrollbarWidth: "none",
+                        WebkitUserSelect: "text",
+                        touchAction: "manipulation",
+                      }}
                     />
                   </div>
-                  {/* Send button */}
+
+                  {/* Send */}
                   <button
+                    type="button"
                     onClick={() => handleSend()}
                     disabled={(!input.trim() && attachedFiles.length === 0) || loading}
                     className={cn(
