@@ -206,7 +206,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[hsl(220,20%,96%)] flex">
+    <div className="h-screen bg-[hsl(220,20%,96%)] flex overflow-hidden">
       {/* ── Desktop Sidebar ─────────────────────────────────── */}
       <aside className="w-56 border-r border-border bg-card hidden md:flex flex-col flex-shrink-0 sticky top-0 h-screen">
         <div className="p-5 pb-4 border-b border-border">
@@ -242,7 +242,8 @@ const Dashboard = () => {
         </div>
       </aside>
 
-      {/* ── Main ────────────────────────────────────────────── */}
+      {/* ── Main + ZOE panel wrapper ─────────────────────── */}
+      <div className="flex-1 flex overflow-hidden">
       <div className="flex-1 min-w-0 pb-20 md:pb-0 overflow-y-auto">
 
         {/* ── Desktop header ── */}
@@ -616,7 +617,7 @@ const Dashboard = () => {
             </button>
           </div>
         </nav>
-      </div>
+      </div>{/* end main content */}
 
       <ZoeDashboardChat
         assessments={assessments}
@@ -624,6 +625,7 @@ const Dashboard = () => {
         userName={userName}
         onRefresh={refreshData}
       />
+      </div>{/* end flex-1 flex overflow-hidden wrapper */}
     </div>
   );
 
