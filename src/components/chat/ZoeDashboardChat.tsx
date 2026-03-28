@@ -1212,29 +1212,36 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
     // Upload any attached files first
     let uploadedAttachments: { name: string; url: string; type: string }[] = [];
     if (attachedFiles.length > 0) {
+      if (!user?.id) {
+        toast({ title: "Not signed in", description: "You must be logged in to attach files.", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
       setUploadingFiles(true);
       let uploadFailed = false;
       for (const file of attachedFiles) {
         try {
-          const path = `${user?.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+          const path = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
           const { error: uploadError } = await supabase.storage.from("chat-uploads").upload(path, file);
           if (uploadError) throw uploadError;
-          const { data: signedData } = await supabase.storage
+          const { data: signedData, error: signError } = await supabase.storage
             .from("chat-uploads").createSignedUrl(path, 3600);
+          if (signError) throw signError;
           if (signedData?.signedUrl) {
             uploadedAttachments.push({ name: file.name, url: signedData.signedUrl, type: file.type });
             await supabase.from("chat_uploads" as any).insert({
-              user_id: user?.id, assessment_id: activeAssessmentId || null,
+              user_id: user.id, assessment_id: activeAssessmentId || null,
               file_name: file.name, file_size: file.size,
               file_type: file.type, storage_path: path,
             });
           }
-        } catch {
+        } catch (err: any) {
           uploadFailed = true;
+          console.error("[ZOE upload] failed for", file.name, err?.message ?? err);
         }
       }
       if (uploadFailed) {
-        toast({ title: "Upload failed", description: "One or more files could not be uploaded. Your message will still be sent.", variant: "destructive" });
+        toast({ title: "Upload failed", description: "One or more files could not be uploaded. Check the console for details. Your message will still be sent.", variant: "destructive" });
       }
       setAttachedFiles([]);
       setUploadingFiles(false);
@@ -1448,15 +1455,17 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                     type="file"
                     multiple
                     accept="*/*"
-                    className="sr-only"
+                    className="hidden"
                     disabled={loading || uploadingFiles}
                     onChange={e => {
                       setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
                       e.target.value = "";
                     }}
                   />
-                  <label
-                    htmlFor="zoe-file-input"
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={loading || uploadingFiles}
                     className={cn(
                       "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border border-border/50 cursor-pointer transition-colors active:scale-90 select-none",
                       loading || uploadingFiles
@@ -1466,7 +1475,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                     title="Attach files"
                   >
                     {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
-                  </label>
+                  </button>
 
                   {/* Text input — white background, clear border, iOS-safe */}
                   <div className="flex-1 flex items-end bg-white rounded-2xl border-2 border-border/80 hover:border-terracotta/30 focus-within:border-terracotta/60 transition-colors px-3 py-2 min-h-[44px]">
@@ -1477,7 +1486,10 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                       placeholder="Message ZOE…"
                       rows={1}
-                      disabled={loading}
+                      autoCapitalize="sentences"
+                      autoCorrect="on"
+                      enterKeyHint="send"
+                      spellCheck={true}
                       className="flex-1 bg-transparent outline-none resize-none text-[14px] text-foreground placeholder:text-muted-foreground/60 leading-5 max-h-[120px] overflow-y-auto w-full"
                       style={{
                         scrollbarWidth: "none",
