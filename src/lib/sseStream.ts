@@ -35,8 +35,9 @@ export async function readContentStream(
           fullContent += content;
           onChunk?.(fullContent);
         }
-      } catch {
-        // Ignore incomplete/partial SSE chunks — normal at stream boundaries.
+      } catch (e) {
+        // Warn on parse failures so we can debug malformed SSE chunks.
+        console.warn("[sseStream] failed to parse chunk:", jsonStr, e);
       }
     }
   }
@@ -92,8 +93,8 @@ export async function readContentAndToolStream(
             }
           }
         }
-      } catch {
-        // Ignore partial chunks.
+      } catch (e) {
+        console.warn("[sseStream] failed to parse tool-stream chunk:", jsonStr, e);
       }
     }
   }
