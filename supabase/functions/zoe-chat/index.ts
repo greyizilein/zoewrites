@@ -32,9 +32,7 @@ EXTENDED PIPELINE TOOLS:
 - generate_images: Generate academic figures and diagrams
 - coherence_check: Analyse argument flow and cross-section logical consistency
 - adjust_word_target: Update a section's word target directly in the database
-- delete_assessment: Move an assessment to trash. ALWAYS confirm with the user first — say "Are you sure you want to delete **[title]**? It can be recovered within 2 months." and only call if confirmed is true.
-- restore_assessment: Restore a deleted assessment. Recoverable within 2 months of deletion. If user says "restore [title]", find the assessment ID and call this.
-- view_trash: Show all assessments the user has deleted within the last 2 months. They can be restored.
+- delete_assessment: Permanently delete an assessment. ALWAYS confirm with the user first — say "Are you sure you want to permanently delete **[title]**?" and only call if confirmed is true.
 - get_recommendations: Get AI improvement recommendations for a specific section. Useful when a student asks "how can I improve this section?" or "what's wrong with my introduction?"
 - update_assessment_title: Rename the current assessment. Ask the user for the new title if not provided.
 
@@ -344,29 +342,6 @@ const tools = [
         required: ["new_title"],
         additionalProperties: false,
       },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "restore_assessment",
-      description: "Restore a soft-deleted assessment. Can only restore assessments deleted within 2 months.",
-      parameters: {
-        type: "object",
-        properties: {
-          assessment_id: { type: "string", description: "ID of the assessment to restore" },
-          title: { type: "string", description: "Title of the assessment (used if ID is unknown)" },
-        },
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "view_trash",
-      description: "View all assessments deleted by the user in the last 2 months",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
   {
