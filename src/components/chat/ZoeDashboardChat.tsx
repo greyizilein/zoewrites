@@ -1415,36 +1415,32 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                 )}
 
                 <div className="flex items-end gap-2">
-                  {/* File attach — use <label> for reliable mobile file picker trigger */}
-                  <input
-                    id="zoe-file-input"
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="*/*"
-                    className="hidden"
-                    disabled={loading || uploadingFiles}
-                    onChange={e => {
-                      setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
-                      e.target.value = "";
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={loading || uploadingFiles}
+                  {/* File attach — label wraps opacity-0 input for reliable cross-platform file picker */}
+                  <label
                     className={cn(
-                      "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border border-border/50 cursor-pointer transition-colors active:scale-90 select-none",
+                      "relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border border-border/50 transition-colors active:scale-90 select-none overflow-hidden",
                       loading || uploadingFiles
                         ? "bg-muted/40 text-muted-foreground/40 pointer-events-none"
-                        : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                        : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer",
                     )}
                     title="Attach files"
                   >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept="*/*"
+                      disabled={loading || uploadingFiles}
+                      onChange={e => {
+                        setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+                        e.target.value = "";
+                      }}
+                      style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }}
+                    />
                     {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
-                  </button>
+                  </label>
 
-                  {/* Text input — white background, clear border, iOS-safe */}
+                  {/* Text input — 16px font prevents iOS auto-zoom on focus */}
                   <div className="flex-1 flex items-end bg-white rounded-2xl border-2 border-border/80 hover:border-terracotta/30 focus-within:border-terracotta/60 transition-colors px-3 py-2 min-h-[44px]">
                     <textarea
                       ref={textareaRef}
