@@ -10,7 +10,7 @@ import {
 import {
   MessageCircle, X, Send, Paperclip, Trash2, Copy,
   CheckCircle, AlertCircle, Loader2, ChevronRight, Wand2,
-  ShieldCheck, Download, Brain, Plus,
+  ShieldCheck, Download, Plus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -399,8 +399,10 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // ── Panel state ────────────────────────────────────────────────────────────
-  const [open, setOpen] = useState(false);
+  // ── Panel state — auto-open on desktop, closed on mobile until FAB tapped ──
+  const [open, setOpen] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth >= 768
+  );
 
   // ── Chat state — single "dashboard" chat, no tabs ─────────────────────────
   const [msgs, setMsgs] = useState<ZoeChatMsg[]>([]);
@@ -470,9 +472,9 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
 
   // ── Effects ────────────────────────────────────────────────────────────────
 
-  // Load chat history from DB
+  // Load chat history from DB on mount (once user is available)
   useEffect(() => {
-    if (!open || !user?.id) return;
+    if (!user?.id) return;
     if (msgs.length > 0) return;
     supabase.from("chat_messages" as any)
       .select("id, role, content, action_type, created_at")
@@ -494,15 +496,14 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         setMsgs(loaded);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, user?.id]);
+  }, [user?.id]);
 
-  // Fetch live GBP→NGN rate once on first open
+  // Fetch live GBP→NGN rate once on mount
   useEffect(() => {
-    if (!open) return;
     supabase.functions.invoke("currency-rate").then(({ data }) => {
       if (data?.gbp_to_ngn) setGbpToNgn(data.gbp_to_ngn);
     });
-  }, [open]);
+  }, []);
 
   // Load sections whenever activeAssessmentId changes
   useEffect(() => {
@@ -1171,10 +1172,12 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
     let uploadedAttachments: { name: string; url: string; type: string }[] = [];
     if (attachedFiles.length > 0) {
       setUploadingFiles(true);
+      let uploadFailed = false;
       for (const file of attachedFiles) {
         try {
           const path = `${user?.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-          await supabase.storage.from("chat-uploads").upload(path, file);
+          const { error: uploadError } = await supabase.storage.from("chat-uploads").upload(path, file);
+          if (uploadError) throw uploadError;
           const { data: signedData } = await supabase.storage
             .from("chat-uploads").createSignedUrl(path, 3600);
           if (signedData?.signedUrl) {
@@ -1185,7 +1188,12 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
               file_type: file.type, storage_path: path,
             });
           }
-        } catch { /* skip */ }
+        } catch {
+          uploadFailed = true;
+        }
+      }
+      if (uploadFailed) {
+        toast({ title: "Upload failed", description: "One or more files could not be uploaded. Your message will still be sent.", variant: "destructive" });
       }
       setAttachedFiles([]);
       setUploadingFiles(false);
@@ -1341,8 +1349,8 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                 {/* Empty state with greeting + suggestions */}
                 {msgs.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full px-4">
-                    <div className="w-16 h-16 rounded-full bg-terracotta/10 flex items-center justify-center mb-4">
-                      <Brain size={28} className="text-terracotta" />
+                    <div className="w-16 h-16 rounded-full bg-terracotta flex items-center justify-center mb-4 shadow-md">
+                      <span className="text-[13px] font-extrabold text-white tracking-widest">ZOE</span>
                     </div>
                     <p className="text-[15px] font-bold text-foreground text-center">{greeting}</p>
                   </div>
@@ -1359,7 +1367,9 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
               </div>
 
               {/* Input bar */}
-              <div className="flex-shrink-0 px-3 py-2.5 bg-white border-t border-border/40">
+              <div className="flex-shrink-0 bg-white border-t border-border/40"
+                style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))", paddingTop: "10px", paddingLeft: "12px", paddingRight: "12px" }}>
+                {/* Attached file chips */}
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {attachedFiles.map((file, i) => (
@@ -1372,25 +1382,28 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                   </div>
                 )}
                 <div className="flex items-end gap-2">
+                  {/* File attach button */}
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={loading || uploadingFiles}
-                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors active:scale-90"
+                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors active:scale-90 border border-border/50"
                     title="Attach files"
                   >
-                    {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={16} />}
+                    {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
                   </button>
                   <input
                     ref={fileInputRef}
                     type="file"
                     multiple
+                    accept="*/*"
                     className="hidden"
                     onChange={e => {
                       setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
                       e.target.value = "";
                     }}
                   />
-                  <div className="flex-1 flex items-end bg-[hsl(220,20%,96%)] rounded-2xl border border-border/50 px-3 py-2">
+                  {/* Text input */}
+                  <div className="flex-1 flex items-end bg-[hsl(220,25%,97%)] rounded-2xl border-2 border-border focus-within:border-terracotta/50 transition-colors px-3 py-2 min-h-[40px]">
                     <textarea
                       ref={textareaRef}
                       value={input}
@@ -1399,10 +1412,11 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                       placeholder="Message ZOE…"
                       rows={1}
                       disabled={loading}
-                      className="flex-1 bg-transparent outline-none resize-none text-[13px] text-foreground placeholder:text-muted-foreground leading-5 max-h-[120px] overflow-y-auto"
+                      className="flex-1 bg-transparent outline-none resize-none text-[14px] text-foreground placeholder:text-muted-foreground/70 leading-5 max-h-[120px] overflow-y-auto w-full"
                       style={{ scrollbarWidth: "none" }}
                     />
                   </div>
+                  {/* Send button */}
                   <button
                     onClick={() => handleSend()}
                     disabled={(!input.trim() && attachedFiles.length === 0) || loading}
@@ -1413,7 +1427,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                         : "bg-muted text-muted-foreground",
                     )}
                   >
-                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={15} />}
                   </button>
                 </div>
               </div>
