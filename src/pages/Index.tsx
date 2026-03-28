@@ -12,7 +12,6 @@ import Pricing from "@/components/landing/Pricing";
 import CTABanner from "@/components/landing/CTABanner";
 import Footer from "@/components/landing/Footer";
 
-
 const Index = () => {
   return (
     <div className="min-h-screen">
@@ -29,7 +28,6 @@ const Index = () => {
       <Pricing />
       <CTABanner />
       <Footer />
-      
     </div>
   );
 };

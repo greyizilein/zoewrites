@@ -194,7 +194,7 @@ const Workspace = () => {
       ));
 
       const newTotal = sections.reduce((a, s) => a + (s.id === sectionId ? wordCount : s.word_current), 0);
-      if (id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", id);
+      await supabase.from("assessments").update({ word_current: newTotal }).eq("id", id);
 
       toast({ title: "Section complete", description: `${section.title} — ${wordCount} words written.` });
 
