@@ -676,6 +676,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         break;
       }
 
+      case "apply_revision":
       case "revise_section": {
         if (!assId) break;
         setActiveAssessmentId(assId);
@@ -703,6 +704,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         break;
       }
 
+      case "run_critique":
       case "quality_critique": {
         if (!assId) break;
         setActiveAssessmentId(assId);
@@ -1479,11 +1481,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                       rows={1}
                       disabled={loading}
                       className="flex-1 bg-transparent outline-none resize-none text-[14px] text-foreground placeholder:text-muted-foreground/60 leading-5 max-h-[120px] overflow-y-auto w-full"
-                      style={{
-                        scrollbarWidth: "none",
-                        WebkitUserSelect: "text",
-                        touchAction: "manipulation",
-                      }}
+                      style={{ scrollbarWidth: "none" }}
                     />
                   </div>
 
