@@ -10,8 +10,7 @@ import {
 import {
   MessageCircle, X, Send, Paperclip, Trash2, Copy,
   CheckCircle, AlertCircle, Loader2, ChevronRight, Wand2,
-  Sparkles, ShieldCheck, Download, BookOpen,
-  AlignLeft, Target, Brain, Plus,
+  ShieldCheck, Download, Brain, Plus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -121,24 +120,34 @@ const fmt = (n: number): string => {
 // ── Dynamic greetings ───────────────────────────────────────────────────────
 const getGreeting = (name: string): string => {
   const hour = new Date().getHours();
-  const displayName = name || "there";
-  const greetings = hour < 12
-    ? [
-        `Good morning ${displayName}, what are we working on?`,
-        `Morning ${displayName}! What do you have in mind?`,
-        `Rise and write, ${displayName}. How can I help?`,
-      ]
-    : hour < 17
-    ? [
-        `Hey ${displayName}, what do you have in mind?`,
-        `Afternoon ${displayName}! What shall we tackle?`,
-        `Hey ${displayName}, ready to get some writing done?`,
-      ]
-    : [
-        `Evening ${displayName}, how can I help tonight?`,
-        `Hey ${displayName}, what are we working on?`,
-        `Good evening ${displayName}! What's on the agenda?`,
-      ];
+  const n = name || "there";
+  const greetings =
+    hour < 12
+      ? [
+          `Good morning ${n}, what are we working on?`,
+          `Morning ${n}! What do you have in mind?`,
+          `Rise and write, ${n}. How can I help?`,
+          `Hey ${n}, ready to start the day strong?`,
+          `Good morning ${n}! What's on the agenda today?`,
+          `Morning ${n} — what are we building today?`,
+        ]
+      : hour < 17
+      ? [
+          `Hey ${n}, what do you have in mind?`,
+          `Afternoon ${n}! What shall we tackle?`,
+          `Hey ${n}, ready to get some writing done?`,
+          `What can I help you with, ${n}?`,
+          `Hey there ${n} — what are we working on?`,
+          `Afternoon ${n}! Let's make some progress.`,
+        ]
+      : [
+          `Evening ${n}, how can I help tonight?`,
+          `Hey ${n}, what are we working on?`,
+          `Good evening ${n}! What's on the agenda?`,
+          `Hey ${n} — let's get something done tonight.`,
+          `Evening ${n}! What do you need?`,
+          `Hey there ${n}, what do you have in mind?`,
+        ];
   return greetings[Math.floor(Math.random() * greetings.length)];
 };
 
@@ -1254,14 +1263,6 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
     }
   }, [input, loading, msgs, sections, currentAssessment, attachedFiles, user, activeAssessmentId, addMsg, updateMsg, executePipeline]);
 
-  // ── Suggestion chips ───────────────────────────────────────────────────────
-  const SUGGESTIONS = [
-    { label: "Write my assessment", icon: AlignLeft, prompt: "Create a full assessment for me" },
-    { label: "Subscribe to a plan", icon: Sparkles, prompt: "Show me the available subscription plans" },
-    { label: "Show my analytics", icon: Target, prompt: "Show me my analytics overview" },
-    { label: "Find academic sources", icon: BookOpen, prompt: "Help me find academic sources" },
-  ];
-
   // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <>
@@ -1276,7 +1277,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
             exit={{ scale: 0, opacity: 0 }}
             whileTap={{ scale: 0.9 }}
             whileHover={{ scale: 1.08 }}
-            className="fixed bottom-[74px] right-4 z-50 md:bottom-6 md:right-6 w-14 h-14 rounded-full bg-terracotta text-white shadow-xl flex items-center justify-center"
+            className="fixed bottom-[74px] right-4 z-50 md:hidden w-14 h-14 rounded-full bg-terracotta text-white shadow-xl flex items-center justify-center"
             style={{ boxShadow: "0 4px 24px hsl(18 50% 53% / 0.45)" }}
           >
             <motion.span
@@ -1289,30 +1290,32 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Chat overlay */}
+      {/* Mobile backdrop (only on mobile when open) */}
       <AnimatePresence>
         {open && (
-          <>
-            {/* Desktop backdrop */}
-            <motion.div
-              key="backdrop"
-              className="fixed inset-0 z-[59] bg-black/40 hidden md:block"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setOpen(false)}
-            />
+          <motion.div
+            key="backdrop"
+            className="fixed inset-0 z-[59] bg-black/40 md:hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
-            {/* Panel — full screen mobile, right-side panel desktop */}
-            <motion.div
-              key="panel"
-              className="fixed inset-0 z-[60] flex flex-col bg-[hsl(220,20%,96%)]
-                md:inset-auto md:top-3 md:right-3 md:bottom-3 md:left-auto md:w-[440px] md:rounded-2xl md:shadow-2xl md:overflow-hidden"
-              initial={{ y: "100%", opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: "100%", opacity: 0 }}
-              transition={{ type: "spring", damping: 30, stiffness: 320 }}
-            >
+      {/* Panel:
+          Desktop — permanent right column, part of layout flow (always visible)
+          Mobile  — fixed full-screen overlay, shown only when open             */}
+      <div
+        className={cn(
+          "flex flex-col bg-[hsl(220,20%,96%)]",
+          // Desktop: always-visible layout column
+          "md:flex md:relative md:inset-auto md:z-auto md:h-full md:w-[440px] md:flex-shrink-0 md:border-l md:border-border",
+          // Mobile: overlay when open, hidden otherwise
+          open ? "fixed inset-0 z-[60]" : "hidden",
+        )}
+      >
               {/* Header */}
               <div className="flex items-center gap-3 px-4 py-3 bg-[hsl(24,14%,10%)] text-white flex-shrink-0">
                 <div className="w-8 h-8 rounded-full bg-terracotta flex items-center justify-center text-[10px] font-extrabold flex-shrink-0">
@@ -1326,7 +1329,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                 </div>
                 <button
                   onClick={() => setOpen(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
+                  className="md:hidden w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
                 >
                   <X size={18} />
                 </button>
@@ -1341,22 +1344,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                     <div className="w-16 h-16 rounded-full bg-terracotta/10 flex items-center justify-center mb-4">
                       <Brain size={28} className="text-terracotta" />
                     </div>
-                    <p className="text-[15px] font-bold text-foreground text-center mb-1">{greeting}</p>
-                    <p className="text-[12px] text-muted-foreground text-center mb-6 max-w-[280px]">
-                      I can write, revise, critique, find sources, manage subscriptions, and more.
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 w-full max-w-[320px]">
-                      {SUGGESTIONS.map(({ label, icon: Icon, prompt }) => (
-                        <button
-                          key={label}
-                          onClick={() => handleSend(prompt)}
-                          className="flex items-center gap-2 p-3 bg-white rounded-xl border border-border/40 text-left hover:border-terracotta/30 hover:bg-terracotta/5 transition-colors active:scale-[0.97] shadow-sm"
-                        >
-                          <Icon size={14} className="text-terracotta flex-shrink-0" />
-                          <span className="text-[11px] font-medium text-foreground leading-tight">{label}</span>
-                        </button>
-                      ))}
-                    </div>
+                    <p className="text-[15px] font-bold text-foreground text-center">{greeting}</p>
                   </div>
                 )}
 
@@ -1429,10 +1417,7 @@ const ZoeDashboardChat: React.FC<ZoeDashboardChatProps> = ({
                   </button>
                 </div>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      </div>
     </>
   );
 };
