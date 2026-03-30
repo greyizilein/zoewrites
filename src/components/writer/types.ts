@@ -104,14 +104,10 @@ export const academicLevels = [
 
 // Models ranked by academic writing quality — best first
 export const aiModels = [
-  { id: "google/gemini-2.5-pro", name: "ZOE Pro — Gemini 2.5 Pro", desc: "Highest quality · deep analysis · best for complex academic work" },
-  { id: "google/gemini-3.1-pro-preview", name: "ZOE Max — Gemini 3.1 Pro", desc: "Next-generation reasoning · superior critical thinking" },
-  { id: "openai/gpt-5", name: "GPT-5", desc: "OpenAI flagship · strong reasoning and writing quality" },
-  { id: "openai/gpt-5.2", name: "GPT-5.2", desc: "Latest OpenAI · enhanced reasoning" },
-  { id: "google/gemini-2.5-flash", name: "ZOE Standard — Gemini 2.5 Flash", desc: "Fast & balanced · recommended default for most work" },
-  { id: "google/gemini-3-flash-preview", name: "Gemini 3 Flash", desc: "Next-gen speed · good quality-to-speed ratio" },
-  { id: "openai/gpt-5-mini", name: "GPT-5 Mini", desc: "OpenAI balanced · faster with good quality" },
-  { id: "google/gemini-2.5-flash-lite", name: "ZOE Rapid — Gemini 2.5 Flash Lite", desc: "Fastest · best for quick tasks and editing" },
+  { id: "google/gemini-2.5-pro",         name: "Gemini 2.5 Pro",  desc: "Highest quality · deep analysis · best for complex academic work" },
+  { id: "google/gemini-3.1-pro-preview",  name: "Gemini 3.1 Pro",  desc: "Next-generation reasoning · superior critical thinking" },
+  { id: "openai/gpt-5",                   name: "GPT-5",            desc: "OpenAI flagship · strong reasoning and writing quality" },
+  { id: "openai/gpt-5.2",                name: "GPT-5.2",          desc: "Latest OpenAI · enhanced reasoning" },
 ];
 
 export const stageLabels = ["Brief", "Write", "Review", "Export"];
