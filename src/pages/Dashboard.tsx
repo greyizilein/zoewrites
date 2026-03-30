@@ -13,7 +13,6 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
-import ZoeDashboardChat from "@/components/chat/ZoeDashboardChat";
 
 interface Assessment {
   id: string;
@@ -242,9 +241,7 @@ const Dashboard = () => {
         </div>
       </aside>
 
-      {/* ── Main + ZOE panel wrapper ─────────────────────── */}
-      <div className="flex-1 flex overflow-hidden">
-      <div className="flex-1 min-w-0 pb-20 md:pb-0 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
 
         {/* ── Desktop header ── */}
         <header className="hidden md:flex items-center justify-between px-8 py-4 sticky top-0 z-40 bg-[hsl(220,20%,96%)]/95 backdrop-blur-sm border-b border-border">
@@ -617,15 +614,7 @@ const Dashboard = () => {
             </button>
           </div>
         </nav>
-      </div>{/* end main content */}
-
-      <ZoeDashboardChat
-        assessments={assessments}
-        profile={profile}
-        userName={userName}
-        onRefresh={refreshData}
-      />
-      </div>{/* end flex-1 flex overflow-hidden wrapper */}
+      </div>
     </div>
   );
 
