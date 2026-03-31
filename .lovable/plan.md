@@ -1,86 +1,113 @@
+# Adapt Writer Engine UI + Fix Whole-Document Writing
+
+## Scope
+
+Two distinct problems:
+
+### Problem 1: Writing outputs references per section
+
+The `document-generate` edge function explicitly instructs the AI to produce `## References` after each section (line 260-271 of document-generate/index.ts). The `section-generate` function does the same. The client-side loop in WriterEngine.tsx (line 380-445) calls `section-generate` per section, each producing its own references block. 
+
+**Fix**: Change both edge functions to instruct the AI to write all body content first, then ONE combined reference list at the end. Update the client-side `handleWriteDocument` to use `document-generate` (whole-document) instead of the section-by-section loop, and update `document-generate` prompts to produce a single reference list.
+
+### Problem 2: Adopt new Writer Engine interface + updated pipeline rules
+
+The uploaded files describe a 6-stage pipeline interface with extensive settings (source type mix, burstiness slider, tone chips, per-section personalisation, visual insert panel, revision center with voice input, diff viewer, and final submission). The current WriterEngine has a simpler 4-stage flow. The uploaded `ZOE_Pipeline_Rules.txt` and `ZOE_Rulebook_v1.html` contain updated quality rules that should replace the current system prompts.
+
+---
+
+## Implementation Plan
+
+### Phase 1: Fix References (Priority — addresses your core complaint)
 
 
-# Fix ZOE Dashboard Chat — All Issues
+| File                                            | Change                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supabase/functions/document-generate/index.ts` | Remove per-section `## References` instruction. Replace with: "Write all sections continuously. After the final section, produce ONE `## References` block containing every source cited across the entire document, alphabetically. The reference list is excluded from the word count." |
+| `supabase/functions/section-generate/index.ts`  | Same fix for single-section calls: "Do NOT include a References block. References are handled separately at the document level."                                                                                                                                                          |
+| `src/pages/WriterEngine.tsx`                    | Switch `handleWriteDocument` to call `document-generate` (whole-document endpoint) instead of looping `section-generate`. Parse the single response to split content back into sections for DB storage. Keep section-generate available for individual rewrites.                          |
+| `src/lib/wordCount.ts`                          | Already strips `## References` from word counts — no change needed.                                                                                                                                                                                                                       |
 
-## Issues Found
 
-### 1. Tool name mismatch: `run_critique` vs `quality_critique`
-The edge function defines the tool as `run_critique`, but the client-side `executePipeline` handles `case "quality_critique"`. When the AI calls `run_critique`, the client hits the `default` case and logs "Unknown tool". Fix: rename client handler to `run_critique`.
+### Phase 2: Update Pipeline Rules in Edge Functions
 
-### 2. `apply_revision` tool name mismatch
-Edge function defines `apply_revision` but client handles `revise_section`. Fix: add `case "apply_revision"` alias.
 
-### 3. `deleted_at` references — column doesn't exist
-The `assessments` table has no `deleted_at` column (confirmed in types.ts), but `restore_assessment` and `view_trash` tools reference it. These will silently fail. Fix: remove `restore_assessment` and `view_trash` handlers (and the corresponding tool definitions in the edge function), since deletion is permanent.
+| File                                            | Change                                                                                                                                                                                                                                               |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supabase/functions/_shared/zoe-brain.ts`       | Update with rules from uploaded `ZOE_Pipeline_Rules.txt`: Five-Layer Justification Standard, paragraph self-check, banned phrase blacklist, synthesis standard, depth protocol, evidence hierarchy. These replace the current system prompt content. |
+| `supabase/functions/document-generate/index.ts` | Incorporate updated writing rules, humanisation rules, and quality criteria from the uploaded files into the system prompt.                                                                                                                          |
+| `supabase/functions/section-generate/index.ts`  | Same rule updates for single-section generation.                                                                                                                                                                                                     |
+| `supabase/functions/edit-proofread/index.ts`    | Update editing rules to match new pipeline standards.                                                                                                                                                                                                |
+| `supabase/functions/humanise/index.ts`          | Update humanisation prompt with the expanded rules from uploaded files (burstiness, AI fingerprint removal, transitions, vocabulary, paragraph logic, perplexity).                                                                                   |
+| `supabase/functions/quality-pass/index.ts`      | Update critique criteria to match new Five-Layer Justification and C-07 checklist.                                                                                                                                                                   |
 
-### 4. `chat_messages` and `chat_uploads` tables don't exist
-Both are used with `as any` casts, so they won't cause build errors, but all persistence (message history, file upload tracking) silently fails at runtime. Fix: create these tables via migration.
 
-### 5. `chat-uploads` storage bucket may not exist
-The migration file creates it, but we should verify. The bucket is referenced for file uploads.
+### Phase 3: Adapt Writer Engine UI
 
-### 6. Textarea not working
-The textarea uses a raw `<textarea>` element. On mobile, the `touchAction: "manipulation"` style can interfere. The input area structure looks correct but the `disabled={loading}` during uploads could lock it. Also, the `onChange` handler is fine. The real issue may be that `WebkitUserSelect: "text"` needs to be combined with removing any parent touch event handlers. Fix: ensure textarea is fully interactive by removing potentially problematic inline styles.
+The uploaded HTML shows a 6-stage interface. The current app has a 4-stage flow (Brief → Write → Review → Export). The new flow from the uploaded design:
 
-### 7. File upload not working
-File uploads try to write to `chat-uploads` bucket and `chat_uploads` table. If either doesn't exist, uploads silently fail and the toast shows "Upload failed". Fix: create the table and ensure bucket exists.
+1. **Brief Intake** — assessment type chips, word count chips, citation style chips, level chips, brief input tabs (Type/Paste, Upload, URL, Manual), citation settings panel, writing settings (tone, humanisation, burstiness slider, source type mix sliders, seminal toggle)
+2. **Execution Table** — section plan cards (expandable), role & context editor, per-section settings (word count, citations, frameworks, visuals, A+ criteria, writing notes), model selector, writing voice settings, options toggles
+3. **Writing Engine** — section nav sidebar, main content area, personalise drawer, visual insert panel (chart/framework/table/image/analyse), recommendations panel, action bar (humanise, cite, expand, condense)
+4. **Export** — current Stage 4 review/export remains similar
+5. **Revisions** — paste/upload/voice/manual feedback, change list with accept/reject, diff viewer with highlighted changes
+6. **Final Submission** — submission details form, doc preview, final checklist, grade badge
 
-## Changes
+Changes to implement:
 
-| File | Change |
-|------|--------|
-| **Migration** | Create `chat_messages` and `chat_uploads` tables with RLS policies |
-| `src/components/chat/ZoeDashboardChat.tsx` | Fix `run_critique` → rename handler; add `apply_revision` alias to `revise_section`; remove broken `restore_assessment`/`view_trash` handlers; fix textarea styles for mobile |
-| `supabase/functions/zoe-chat/index.ts` | Remove `restore_assessment` and `view_trash` tool definitions; update system prompt to remove soft-delete references |
 
-## Database Migration
+| File                                                  | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/components/writer/types.ts`                      | Add new assessment types from uploaded file (Business Report, Case Study, Reflective Account, Financial Analysis, Research Proposal, Lab Report, Systematic Review, Legal Problem, Discussion Post, Coding Assignment, EBP Assessment). Add tone options (Analytical, Critical, Evaluative, Discursive, Argumentative, Reflective). Add burstiness, source type mix percentages, auto-complete toggle, citation disclaimer toggle, and other settings from the interface. |
+| `src/components/writer/StageBriefIntake.tsx`          | Redesign to match uploaded interface: chip-based selectors for type/word count/citation/level, 4-tab brief input (Type/Paste, Upload, URL, Manual), right-side citation settings panel with per-section count, source date range sliders, source type mix sliders, seminal/auto-balance/disclaimer toggles. Writing settings card with tone chips and burstiness slider. Mobile: stack panels vertically.                                                                 |
+| `src/components/writer/StageExecutionTable.tsx`       | Add expandable section plan cards showing word count, citations, frameworks, visuals, A+ criteria, writing notes per section. Add overview bar. Right sidebar: model selector, writing voice settings, options toggles. Mobile: full-width stacked cards.                                                                                                                                                                                                                 |
+| `src/components/writer/StageWrite.tsx`                | Complete rewrite to match uploaded Stage 3: section nav sidebar (left), main content area (centre) with personalise drawer and visual insert panel, recommendations panel (right). Progress bar, word count badges, action bar (humanise, cite tools). Mobile: hide sidebars, show content only with bottom action bar.                                                                                                                                                   |
+| `src/components/writer/StageReview.tsx`               | Split into separate Edit/Proofread stage (pass buttons: Proofread, Citations, Humanise, Run All) with pass log sidebar, and Critique & Correct stage.                                                                                                                                                                                                                                                                                                                     |
+| New: `src/components/writer/StageRevisionCenter.tsx`  | New revision center: 4 input tabs (Paste, Upload, Voice, Manual), change list with accept/reject, diff viewer with amber/blue highlighting. Voice input using Web Speech API.                                                                                                                                                                                                                                                                                             |
+| New: `src/components/writer/StageFinalSubmission.tsx` | Submission details form (name, student ID, programme, institution, module), formatting options, document preview, final checklist with auto-checks, grade badge, download button.                                                                                                                                                                                                                                                                                         |
+| `src/pages/WriterEngine.tsx`                          | Update stage count from 4 to 6. Wire new stages. Update navigation logic.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `src/components/writer/WriterSidebar.tsx`             | Update stage labels to match 6-stage flow.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-```sql
--- chat_messages table for ZOE conversation persistence
-CREATE TABLE IF NOT EXISTS public.chat_messages (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  chat_id text NOT NULL DEFAULT 'dashboard',
-  role text NOT NULL CHECK (role IN ('user', 'assistant', 'action')),
-  content text NOT NULL DEFAULT '',
-  action_type text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
 
-ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+### Phase 4: Mobile Responsiveness
 
-CREATE POLICY "Users manage own chat messages"
-  ON public.chat_messages FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+All new components must work on the user's 448px viewport:
 
-CREATE INDEX idx_chat_messages_user_chat ON public.chat_messages (user_id, chat_id, created_at);
+- Brief Intake: stack settings below brief input, collapse right panel into accordion
+- Execution Table: full-width cards, hide right sidebar behind toggle
+- Writing: hide section nav and recommendations behind slide-out drawers
+- Revision Center: stack panels vertically, change list below input
+- Final Submission: single-column form
 
--- chat_uploads table for file upload tracking
-CREATE TABLE IF NOT EXISTS public.chat_uploads (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  assessment_id uuid REFERENCES public.assessments(id) ON DELETE SET NULL,
-  file_name text NOT NULL,
-  file_size bigint,
-  file_type text,
-  storage_path text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
+### Assessment Type Additions
 
-ALTER TABLE public.chat_uploads ENABLE ROW LEVEL SECURITY;
+From the uploaded interface, add these types not in the current `types.ts`:
 
-CREATE POLICY "Users manage own chat uploads"
-  ON public.chat_uploads FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
-```
+- Business Report, Case Study, Reflective Account, Financial Analysis, Research Proposal, Lab Report, Systematic Review, Legal Problem (IRAC), Discussion Post, Coding Assignment, EBP Assessment, MBA Assignment, Policy Report, Consultancy Report
 
-## Client Fixes Summary
+### Settings Additions
 
-- `case "quality_critique"` → `case "run_critique"` 
-- Add `case "apply_revision"` that maps to revise_section logic
-- Remove `case "restore_assessment"` and `case "view_trash"` (dead code)
-- Remove `touchAction: "manipulation"` and `WebkitUserSelect` from textarea styles (can block mobile input)
-- Remove the `as any` casts on `chat_messages` and `chat_uploads` now that tables will exist (types will auto-update after migration)
+New settings from the uploaded interface to add to `WriterSettings`:
 
+- `burstiness: number` (1-5 slider)
+- `journalPct, bookPct, reportPct, confPct: number` (source type mix)
+- `autoBalance: boolean` (auto citation balancing)
+- `disclaimer: boolean` (citation disclaimer in docx)
+- `autoComplete: boolean` (write all sections without pausing)
+- `codeEngine: boolean`
+- `aiPatternScore: boolean`
+- `unlimitedImages: boolean`
+- `versionHistory: boolean`
+
+---
+
+## Execution Order
+
+1. Fix references (Phase 1) — immediate impact, addresses core complaint
+2. Update pipeline rules (Phase 2) — improves quality
+3. Adapt UI (Phase 3) — largest change, iterative
+4. Mobile polish (Phase 4) — throughout Phase 3
+
+This is a large set of changes. Shall I proceed with Phase 1 first (fixing references to appear only at the end), or tackle everything together?
+
+All at once.
