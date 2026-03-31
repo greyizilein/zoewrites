@@ -699,11 +699,9 @@ ${prior_sections_summary || "This is the first section."}
 Write this section now. Follow EVERY instruction above precisely.
 
 OUTPUT FORMAT:
-1. Body text — exactly ${section.word_target} words (±1%), with in-text citations throughout
-2. Then on a new line: ## References
-3. Then the complete Harvard-style reference list for all sources cited in this section
-
-Do not write any preamble or commentary. Output body → ## References → reference list, nothing else.`;
+Body text only — exactly ${section.word_target} words (±1%), with in-text citations throughout.
+Do NOT include a ## References block. References are handled at the document level.
+Do not write any preamble or commentary. Output the body text only, nothing else.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
