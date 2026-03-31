@@ -65,6 +65,19 @@ export interface WriterSettings {
   tableCount: number;
   statisticalSourceCount: number;
   preferredDataSources: string[];
+  // New settings from uploaded pipeline
+  burstiness: number;
+  journalPct: number;
+  bookPct: number;
+  reportPct: number;
+  confPct: number;
+  autoBalance: boolean;
+  disclaimer: boolean;
+  autoComplete: boolean;
+  codeEngine: boolean;
+  aiPatternScore: boolean;
+  unlimitedImages: boolean;
+  versionHistory: boolean;
 }
 
 export interface Recommendation {
@@ -80,7 +93,30 @@ export const assessmentTypes = [
   { emoji: "📑", title: "Report", desc: "Business, consulting" },
   { emoji: "🔬", title: "Lit. Review", desc: "Systematic, narrative" },
   { emoji: "💻", title: "Code", desc: "Python, R, SQL, MATLAB" },
+  { emoji: "📋", title: "Business Report", desc: "Strategic, operational" },
+  { emoji: "🔍", title: "Case Study", desc: "Analytical case work" },
+  { emoji: "🪞", title: "Reflective Account", desc: "CPD, Gibbs, Kolb" },
+  { emoji: "💰", title: "Financial Analysis", desc: "Ratio, valuation" },
+  { emoji: "🧪", title: "Research Proposal", desc: "Methodology design" },
+  { emoji: "🔬", title: "Lab Report", desc: "Scientific method" },
+  { emoji: "📚", title: "Systematic Review", desc: "PRISMA, meta-analysis" },
+  { emoji: "⚖️", title: "Legal Problem", desc: "IRAC method" },
+  { emoji: "💬", title: "Discussion Post", desc: "Forum contribution" },
+  { emoji: "🏥", title: "EBP Assessment", desc: "Evidence-based practice" },
+  { emoji: "🎓", title: "MBA Assignment", desc: "Applied business" },
+  { emoji: "📜", title: "Policy Report", desc: "Policy analysis" },
+  { emoji: "🤝", title: "Consultancy Report", desc: "Client advisory" },
   { emoji: "📋", title: "Other", desc: "Custom — specify below" },
+];
+
+export const writingTones = [
+  "Academic Formal",
+  "Analytical",
+  "Critical",
+  "Evaluative",
+  "Discursive",
+  "Argumentative",
+  "Reflective",
 ];
 
 export const citationStyles = [
@@ -110,7 +146,7 @@ export const aiModels = [
   { id: "openai/gpt-5.2",                name: "GPT-5.2",          desc: "Latest OpenAI · enhanced reasoning" },
 ];
 
-export const stageLabels = ["Brief", "Write", "Review", "Export"];
+export const stageLabels = ["Brief", "Plan", "Write", "Review", "Revise", "Export"];
 
 export const DATA_SOURCES_BY_CATEGORY: Record<string, string[]> = {
   "International Bodies": [
@@ -172,7 +208,6 @@ export const DATA_SOURCES_BY_CATEGORY: Record<string, string[]> = {
 export const DATA_SOURCES = Object.values(DATA_SOURCES_BY_CATEGORY).flat();
 
 export const IMAGE_TYPES = [
-  // Standard academic charts
   "Bar chart (grouped)",
   "Bar chart (stacked)",
   "Horizontal bar chart",
@@ -181,7 +216,6 @@ export const IMAGE_TYPES = [
   "Box plot",
   "Histogram",
   "Pie chart",
-  // Statistical / research charts
   "Forest plot",
   "Heatmap / Correlation matrix",
   "Kaplan-Meier curve",
@@ -190,7 +224,6 @@ export const IMAGE_TYPES = [
   "Funnel plot",
   "Treemap",
   "Sankey / Alluvial diagram",
-  // General
   "Infographic",
   "Diagram",
   "Conceptual model",
@@ -232,4 +265,17 @@ export const defaultSettings: WriterSettings = {
   tableCount: 0,
   statisticalSourceCount: 0,
   preferredDataSources: [],
+  // New settings
+  burstiness: 3,
+  journalPct: 55,
+  bookPct: 25,
+  reportPct: 12,
+  confPct: 8,
+  autoBalance: true,
+  disclaimer: false,
+  autoComplete: true,
+  codeEngine: false,
+  aiPatternScore: false,
+  unlimitedImages: false,
+  versionHistory: false,
 };
