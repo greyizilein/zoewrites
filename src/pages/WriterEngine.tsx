@@ -9,6 +9,7 @@ import WriterSidebar from "@/components/writer/WriterSidebar";
 import StageBriefIntake from "@/components/writer/StageBriefIntake";
 import StageExecutionTable from "@/components/writer/StageExecutionTable";
 import StageWrite, { AutoPhase } from "@/components/writer/StageWrite";
+import StageRevisionCenter from "@/components/writer/StageRevisionCenter";
 import StageReview from "@/components/writer/StageReview";
 import StageSubmissionPrep, { SubmissionDetails } from "@/components/writer/StageSubmissionPrep";
 import ProgressBanner from "@/components/writer/ProgressBanner";
