@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ZOE — Writer Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Inter',sans-serif;background:#0A0A0A;color:#e2e8f0;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button,input,textarea,select{font-family:inherit}
+button{cursor:pointer;border:none;background:none}
+input::placeholder,textarea::placeholder{color:#2d4a68}
+input:focus,textarea:focus,select:focus{outline:none}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:#2e4057;border-radius:2px}
+:root{
+  --navy:#0D1B2A;--n2:#071018;--n3:#111f2e;--sl:#2E4057;--sl2:#1a2d40;
+  --teal:#048A81;--td:rgba(4,138,129,.14);--tg:rgba(4,138,129,.3);
+  --gold:#C9A84C;--gd:rgba(201,168,76,.12);--gg:rgba(201,168,76,.25);
+  --green:#1A7A4A;--grd:rgba(26,122,74,.14);
+  --red:#C0392B;--rdd:rgba(192,57,43,.13);
+  --blue:#2563EB;--bld:rgba(37,99,235,.14);
+  --amber:#D97706;--amd:rgba(217,119,6,.14);
+  --b1:#1e3349;--b2:#2d4a68;--b3:#3d6080;
+  --t1:#e2e8f0;--t2:#94a3b8;--t3:#4d6880;--t4:#2a3f55;
+  --mono:'JetBrains Mono',monospace;
+  --r:5px;--r2:8px;--r3:12px;--r4:16px;
+}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes ledP{0%,100%{box-shadow:0 0 0 0 var(--tg)}70%{box-shadow:0 0 0 5px transparent}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes barAnim{from{width:0}to{width:var(--w,100%)}}
+@keyframes checkPop{0%{transform:scale(0)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+.spin{animation:spin .8s linear infinite}
+/* LAYOUT */
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.hd{height:48px;background:var(--navy);border-bottom:1px solid var(--b1);display:flex;align-items:center;padding:0 14px;gap:0;flex-shrink:0;z-index:50}
+.logo{font-size:18px;font-weight:900;letter-spacing:-.8px;color:var(--t1);margin-right:10px;cursor:pointer;user-select:none}
+.logo em{color:var(--gold);font-style:normal}
+.st{display:flex;align-items:center;gap:0;flex:1;overflow-x:auto}
+.st::-webkit-scrollbar{height:0}
+.hs{display:flex;align-items:center;gap:5px;padding:3px 9px;border-radius:var(--r);font-size:11px;font-weight:600;color:var(--t3);cursor:pointer;transition:all .14s;white-space:nowrap;font-family:var(--mono);flex-shrink:0}
+.hs:hover{color:var(--t2)}
+.hs.act{color:var(--t1);background:rgba(255,255,255,.07)}
+.hs.done{color:var(--green)}
+.hs .sn{width:17px;height:17px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:rgba(255,255,255,.06);color:var(--t3);flex-shrink:0}
+.hs.act .sn{background:var(--gold);color:var(--navy)}
+.hs.done .sn{background:var(--green);color:#fff}
+.hs.ns .sn{background:rgba(37,99,235,.3);color:#93c5fd}
+.hs.ns{color:#93c5fd}
+.hssep{width:12px;height:1px;background:var(--b1);flex-shrink:0}
+.hdr{display:flex;align-items:center;gap:6px;margin-left:8px}
+.tier{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--gold);background:var(--gd);border:1px solid rgba(201,168,76,.25);padding:2px 7px;border-radius:20px}
+/* Claude-style nav arrows */
+.nva{width:24px;height:24px;border-radius:50%;border:1px solid var(--b2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t2);transition:all .14s;background:var(--sl2);flex-shrink:0;user-select:none}
+.nva:hover:not(.off){border-color:var(--b3);color:var(--t1);background:var(--sl)}
+.nva.off{opacity:.3;cursor:not-allowed}
+.nva svg{width:9px;height:9px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.app-body{flex:1;display:flex;overflow:hidden}
+.pane{flex:1;display:none;overflow:hidden;flex-direction:column}
+.pane.vis{display:flex;animation:fadeIn .18s ease}
+/* Stage bar */
+.sb{padding:9px 16px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:8px;flex-shrink:0;background:var(--n3)}
+.sb-l{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
+.sb-num{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--navy);background:var(--gold);padding:2px 6px;border-radius:3px;flex-shrink:0}
+.sb-num.blue{background:#3b82f6;color:#fff}
+.sb-num.purple{background:#7c3aed;color:#fff}
+.sb-title{font-size:13px;font-weight:700;color:var(--t1)}
+.sb-sub{font-size:11px;color:var(--t3);font-family:var(--mono)}
+.sb-r{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.pb{display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--b1);color:var(--t3);font-size:11px;font-weight:600;transition:all .14s;cursor:pointer;background:transparent}
+.pb:hover,.pb.on{border-color:var(--gold);color:var(--gold);background:var(--gd)}
+.pb svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.5}
+.ss{flex:1;overflow-y:auto;padding:14px 16px}
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:var(--r2);font-size:13px;font-weight:600;transition:all .14s;white-space:nowrap;line-height:1;border:1px solid transparent}
+.btn-lg{padding:10px 20px;font-size:14px;font-weight:700}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-xs{padding:3px 7px;font-size:11px}
+.btn-full{width:100%;justify-content:center}
+.btn-gold{background:var(--gold);color:var(--navy);border-color:var(--gold);font-weight:700}
+.btn-gold:hover{background:#d9b85e;transform:translateY(-1px)}
+.btn-teal{background:var(--teal);color:#fff;border-color:var(--teal)}
+.btn-sl{background:var(--sl2);color:var(--t1);border-color:var(--b1)}
+.btn-sl:hover{background:var(--sl)}
+.btn-ghost{background:transparent;color:var(--t1);border-color:var(--b2)}
+.btn-ghost:hover{background:rgba(255,255,255,.05)}
+.btn-blue{background:var(--bld);color:#93c5fd;border-color:rgba(37,99,235,.3)}
+.btn-green{background:var(--grd);color:#3bc97a;border-color:rgba(26,122,74,.3)}
+.btn-danger{background:var(--rdd);color:#e06050;border-color:rgba(192,57,43,.3)}
+.btn:disabled,.btn.off{opacity:.38;cursor:not-allowed;transform:none!important}
+/* LED dots */
+.led{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.led-teal{background:var(--teal);animation:ledP 2s infinite}
+.led-gold{background:var(--gold)}.led-green{background:var(--green)}.led-grey{background:#3d6080}.led-blue{background:var(--blue)}
+/* Tags */
+.tag{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;font-family:var(--mono)}
+.tag-teal{background:var(--td);color:var(--teal);border:1px solid var(--tg)}
+.tag-gold{background:var(--gd);color:var(--gold);border:1px solid var(--gg)}
+.tag-green{background:var(--grd);color:#3bc97a;border:1px solid rgba(26,122,74,.25)}
+.tag-grey{background:rgba(45,74,104,.35);color:var(--t3);border:1px solid var(--b1)}
+.tag-blue{background:var(--bld);color:#93c5fd;border:1px solid rgba(37,99,235,.25)}
+.tag-amber{background:var(--amd);color:#fbbf24;border:1px solid rgba(217,119,6,.3)}
+/* Chips */
+.cg{display:flex;flex-wrap:wrap;gap:5px}
+.chip{padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--b1);color:var(--t3);background:var(--sl2);transition:all .13s;user-select:none}
+.chip:hover{border-color:var(--b3);color:var(--t2)}
+.chip.on{border-color:var(--teal);color:var(--teal);background:var(--td)}
+.chip.ong{border-color:var(--gold);color:var(--gold);background:var(--gd)}
+/* Inputs */
+.inp{width:100%;background:var(--n3);border:1px solid var(--b1);border-radius:var(--r2);padding:8px 11px;font-size:13px;color:var(--t1);transition:border .14s}
+.inp:focus{border-color:var(--teal);box-shadow:0 0 0 2px var(--td)}
+.ta{resize:vertical;min-height:80px;line-height:1.65}
+.lbl{font-size:10px;font-weight:700;color:var(--t3);margin-bottom:4px;display:block;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.fld{margin-bottom:11px}
+.sw{position:relative}.sw select{-webkit-appearance:none;appearance:none;padding-right:24px;cursor:pointer}.sw::after{content:'▾';position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--t3);pointer-events:none;font-size:11px}
+/* Cards */
+.card{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r3)}
+.ch{padding:10px 14px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between}
+.ct{font-size:13px;font-weight:700;color:var(--t1)}
+.cb{padding:12px 14px}
+/* Toggles */
+.tgl{width:34px;height:19px;border-radius:10px;background:var(--b1);border:1px solid var(--b2);cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+.tgl::after{content:'';width:13px;height:13px;border-radius:50%;background:var(--t3);position:absolute;top:2px;left:2px;transition:all .2s}
+.tgl.on{background:var(--teal);border-color:var(--teal)}.tgl.on::after{left:17px;background:#fff}
+.tgl-r{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(30,51,73,.3)}
+.tgl-r:last-child{border:none}
+.tgl-l{font-size:12px;color:var(--t1)}.tgl-s{font-size:10px;color:var(--t3);font-family:var(--mono)}
+/* Range */
+.rng{-webkit-appearance:none;height:3px;background:var(--sl);border-radius:2px;outline:none;cursor:pointer;width:100%}
+.rng::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--gold);border:2px solid var(--navy);cursor:pointer}
+.rv{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--gold);min-width:28px;text-align:center}
+/* Rec banners */
+.rb{background:var(--td);border:1px solid var(--tg);border-radius:var(--r2);padding:8px 11px;display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--t1);line-height:1.55}
+.rb.gold{background:var(--gd);border-color:var(--gg)}
+.rb.blue{background:var(--bld);border-color:rgba(37,99,235,.3)}
+.rb.amber{background:var(--amd);border-color:rgba(217,119,6,.3)}
+.rb-ic{font-size:12px;flex-shrink:0;margin-top:1px}
+.rb-ac{font-size:10px;font-family:var(--mono);color:var(--teal);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--td);margin-top:5px;display:inline-block}
+/* Utils */
+.div{height:1px;background:var(--b1);margin:11px 0}
+.mg{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.mf{grid-column:1/-1}
+.ov-bar{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r2);padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ov-i{display:flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono)}
+.hidden{display:none!important}
+.fx{display:flex}.ic{align-items:center}.jb{justify-content:space-between}.jc{justify-content:center}.f1{flex:1;min-width:0}
+.g4{gap:4px}.g6{gap:6px}.g8{gap:8px}.g10{gap:10px}.g12{gap:12px}
+.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mt20{margin-top:20px}
+.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}
+.tc{text-align:center}.wf{width:100%}
+.t1c{color:var(--t1)}.t2c{color:var(--t2)}.t3c{color:var(--t3)}
+.fw7{font-weight:700}.f11{font-size:11px}.f12{font-size:12px}.f13{font-size:13px}
+/* Stage-specific */
+.s1g{display:grid;grid-template-columns:1fr 340px;gap:13px;max-width:1180px}
+.s2g{display:grid;grid-template-columns:1fr 280px;gap:12px;max-width:1260px}
+.s3l{flex:1;display:grid;grid-template-columns:205px 1fr 255px;overflow:hidden;height:100%}
+.s5g{display:grid;grid-template-columns:1fr 1fr;gap:13px;max-width:1180px}
+.s6g{display:grid;grid-template-columns:370px 1fr;gap:13px;max-width:1200px}
+/* Brief tabs */
+.btab{padding:6px 12px;font-size:12px;font-weight:600;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent;transition:all .14s;display:flex;align-items:center;gap:5px}
+.btab:hover{color:var(--t2)}.btab.on{color:var(--t1);border-bottom-color:var(--gold)}
+.btab-p{display:none}.btab-p.on{display:block;animation:fadeUp .18s ease}
+/* Cite */
+.cite-sr{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(30,51,73,.3)}
+.cite-sr:last-child{border:none}
+.cite-sn{font-size:12px;font-weight:600;color:var(--t1);flex:1}
+.cite-ni{width:44px;background:var(--navy);border:1px solid var(--b1);border-radius:var(--r);padding:3px 6px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--gold);text-align:center}
+.cite-rc{font-size:10px;color:var(--teal);font-family:var(--mono);margin-top:1px}
+/* Section plan cards */
+.spc{background:var(--sl2);border:1px solid var(--b1);border-radius:var(--r2);padding:10px;margin-bottom:6px;cursor:pointer;transition:all .13s}
+.spc:hover,.spc.exp{border-color:var(--gold);background:rgba(201,168,76,.04)}
+.spch{display:flex;align-items:center;gap:8px}
+.spcn{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--navy);background:var(--gold);padding:1px 6px;border-radius:3px;flex-shrink:0}
+.spct{font-size:13px;font-weight:700;color:var(--t1);flex:1}
+.spcb{display:none;margin-top:9px;padding-top:9px;border-top:1px solid var(--b1)}
+.spc.exp .spcb{display:block;animation:fadeUp .14s ease}
+/* Writing section nav */
+.snav{background:var(--navy);border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
+.snav-h{padding:10px 12px;border-bottom:1px solid var(--b1);flex-shrink:0}
+.snav-t{font-size:11px;font-weight:700;color:var(--t1);margin-bottom:2px}
+.snav-p{font-family:var(--mono);font-size:10px;color:var(--t3)}
+.snav-l{flex:1;overflow-y:auto;padding:5px}
+.si{padding:7px 9px;border-radius:var(--r2);cursor:pointer;transition:all .13s;display:flex;align-items:flex-start;gap:6px;margin-bottom:2px;border-left:2px solid transparent}
+.si:hover{background:var(--sl2)}
+.si.act{background:var(--sl2);border-left-color:var(--gold)}
+.si.done .si-t{color:var(--green)}.si.done .si-n{color:var(--green)}
+.si-n{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--t4);margin-top:1px;width:14px;flex-shrink:0}
+.si.act .si-n{color:var(--gold)}
+.si-t{font-size:12px;font-weight:600;color:var(--t2);line-height:1.3;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si.act .si-t{color:var(--t1)}
+.si-m{display:flex;gap:4px;margin-top:2px;align-items:center}
+.si-wc{font-family:var(--mono);font-size:10px;color:var(--t4)}
+.snav-ft{padding:8px;border-top:1px solid var(--b1);flex-shrink:0}
+.prog{height:2px;background:var(--sl2);border-radius:1px;overflow:hidden}
+.prog-f{height:100%;border-radius:1px;background:var(--teal);transition:width .4s}
+/* Write main */
+.wmain{overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px;background:#0A0A0A}
+.w-sh{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.w-title{font-size:18px;font-weight:800;letter-spacing:-.5px;color:var(--t1);line-height:1.15}
+.w-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px}
+/* Tool buttons */
+.tb{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:var(--r);font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--b1);color:var(--t3);background:var(--sl2);transition:all .13s;font-family:var(--mono)}
+.tb:hover{border-color:var(--b3);color:var(--t1);background:var(--sl)}
+.tb.on{border-color:var(--teal);color:var(--teal);background:var(--td)}
+.tsep{width:1px;height:14px;background:var(--b1)}
+/* Personalise drawer */
+.pd{background:var(--n3);border:1px solid var(--gold);border-radius:var(--r3);overflow:hidden;display:none}
+.pd.on{display:block;animation:fadeUp .18s ease}
+.pd-h{padding:8px 12px;background:var(--gd);border-bottom:1px solid rgba(201,168,76,.2);display:flex;align-items:center;justify-content:space-between}
+.pd-ht{font-size:11px;font-weight:700;color:var(--gold);font-family:var(--mono)}
+.pd-b{padding:12px}
+.pd-g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.pd-f{grid-column:1/-1}
+/* Content states */
+.w-ns,.w-gen{padding:22px}
+.w-ns{text-align:center}
+.gen-b{height:2px;background:var(--sl);border-radius:1px;overflow:hidden;margin-bottom:6px}
+.gen-f{height:100%;background:var(--teal);animation:barAnim 3.5s ease forwards;--w:90%}
+.gen-steps{display:flex;flex-direction:column;gap:5px;margin-top:12px}
+.gen-st{display:flex;align-items:center;gap:7px;font-size:12px;font-family:var(--mono);color:var(--t3)}
+.gen-st.d{color:var(--green)}.gen-st.a{color:var(--teal)}.gen-st.p{color:var(--t4)}
+.gen-ic{font-size:11px;width:14px;text-align:center}
+/* Content wrap */
+.wcw{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r3);overflow:hidden}
+.wcbar{padding:8px 12px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:6px;background:var(--n2)}
+.wc-bd{padding:18px;font-size:14px;line-height:1.85;color:var(--t1)}
+.wc-bd p{margin-bottom:13px}.wc-bd p:last-child{margin:0}
+.wc-bd .ci{color:var(--teal);font-size:12px;font-family:var(--mono)}
+.wc-bx{font-family:var(--mono);font-size:11px;font-weight:700;padding:3px 7px;border-radius:20px;border:1px solid}
+.wc-ok{background:var(--grd);color:#3bc97a;border-color:rgba(26,122,74,.3)}
+.ais{font-family:var(--mono);font-size:11px;font-weight:700;padding:3px 7px;border-radius:20px;background:rgba(4,138,129,.1);color:var(--teal);border:1px solid rgba(4,138,129,.25)}
+.wabar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:9px;background:var(--n3);border:1px solid var(--b1);border-radius:var(--r3)}
+.revw{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r3);padding:11px;display:none}
+.revw.on{display:block;animation:fadeUp .18s ease}
+.vh{display:none;margin-top:8px;border-top:1px solid var(--b1);padding-top:8px}
+.vh.on{display:block}
+.vi{padding:6px 8px;border-radius:var(--r);background:var(--sl2);border:1px solid var(--b1);margin-bottom:4px;font-size:12px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.vi-b{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--t3)}
+.vi-p{flex:1;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vi-r{font-family:var(--mono);font-size:10px;color:var(--teal)}
+/* Visual insert panel */
+.vsp{background:var(--sl2);border:1px solid var(--b1);border-radius:var(--r3);padding:11px;display:none}
+.vsp.on{display:block;animation:fadeUp .18s ease}
+.vtabs{display:flex;gap:0;border-bottom:1px solid var(--b1);margin-bottom:10px}
+.vt{padding:5px 10px;font-size:11px;font-weight:600;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent;transition:all .14s}
+.vt.on{color:var(--gold);border-bottom-color:var(--gold)}
+.vp{display:none}.vp.on{display:block;animation:fadeUp .14s ease}
+.ctg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:9px}
+.ct-c{padding:5px 6px;border-radius:var(--r);font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--b1);color:var(--t3);background:var(--n3);text-align:center;transition:all .13s}
+.ct-c:hover,.ct-c.on{border-color:var(--teal);color:var(--teal);background:var(--td)}
+.vis-pv{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r2);padding:14px;text-align:center;min-height:75px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--t4);font-family:var(--mono);margin-bottom:8px}
+.cbm{display:flex;align-items:flex-end;gap:6px;height:55px;justify-content:center}
+.cb-bar{border-radius:2px 2px 0 0;background:var(--teal);width:22px}
+.tsg{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;width:max-content}
+.tsc{width:20px;height:20px;border:1px solid var(--b1);border-radius:2px;cursor:pointer;transition:all .1s}
+.tsc:hover,.tsc.sel{background:var(--td);border-color:var(--teal)}
+/* Rec panel */
+.rp{background:var(--navy);border-left:1px solid var(--b1);overflow-y:auto;padding:11px}
+.rp-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.rp-t{font-size:11px;font-weight:700;color:var(--t1);display:flex;align-items:center;gap:5px}
+.ri{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r2);padding:8px;margin-bottom:5px}
+.rt{font-family:var(--mono);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.rt-d{color:var(--teal)}.rt-f{color:#a3d5c6}.rt-i{color:#b48eff}.rt-tb{color:#f9ae58}
+.ri-tx{font-size:11px;color:var(--t2);line-height:1.5;margin-bottom:6px}
+.ri-ac{display:flex;gap:4px}
+.cite-e{padding:6px 0;border-bottom:1px solid rgba(30,51,73,.3);display:flex;gap:6px;align-items:flex-start}
+.cite-e:last-child{border:none}
+.cite-au{font-size:11px;color:var(--t1);font-weight:600;flex:1;line-height:1.3}
+.cite-gs{font-size:10px;font-family:var(--mono);color:var(--teal);cursor:pointer;border:1px solid var(--td);padding:1px 5px;border-radius:3px;white-space:nowrap}
+/* Extras bar */
+.xbar{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r3);padding:7px 11px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.xl{font-size:10px;font-weight:700;color:var(--t4);font-family:var(--mono);margin-right:3px}
+.xb{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:var(--r);font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--b1);color:var(--t3);transition:all .13s}
+.xb:hover{border-color:var(--b3);color:var(--t1);background:rgba(255,255,255,.03)}
+.xb.run{border-color:var(--teal);color:var(--teal);background:var(--td)}
+/* Stage 4 critique */
+.cs-i{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(30,51,73,.3);font-size:12px}
+.cs-i:last-child{border:none}
+.cs-i.done{color:var(--t1)}.cs-i.act{color:var(--teal)}.cs-i.pend{color:var(--t4)}
+.cs-ic{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;border:1px solid var(--b1)}
+.cs-ic.done{background:var(--green);color:#fff;border-color:var(--green);animation:checkPop .3s ease}
+.cs-ic.act{background:var(--td);color:var(--teal);border-color:var(--teal)}
+.cs-ic.pend{background:var(--sl2);color:var(--t4)}
+.cs-lb{flex:1;font-size:12px}
+.cs-dt{font-family:var(--mono);font-size:10px;color:var(--t3);white-space:nowrap}
+/* Revision center */
+.rup{border:2px dashed var(--b2);border-radius:var(--r3);padding:28px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:11px}
+.rup:hover,.rup.drag{border-color:var(--blue);background:var(--bld)}
+.rev-ttab{padding:5px 10px;font-size:11px;font-weight:600;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent;transition:all .14s}
+.rev-ttab:hover{color:var(--t2)}.rev-ttab.on{color:var(--t1);border-bottom-color:var(--blue)}
+.rev-tp{display:none}.rev-tp.on{display:block;animation:fadeUp .18s ease}
+/* Diff view */
+.diff-w{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r3);overflow:hidden}
+.diff-hd{padding:8px 13px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:7px;background:var(--n2)}
+.diff-body{padding:16px;font-size:13px;line-height:1.85;color:var(--t1);overflow-y:auto;max-height:520px}
+.diff-body p{margin-bottom:13px}
+.rev-add{background:rgba(234,179,8,.2);color:#fde68a;border-bottom:1px solid rgba(234,179,8,.45);border-radius:2px;padding:0 2px;cursor:pointer;transition:all .2s}
+.rev-add:hover{background:rgba(234,179,8,.33)}
+.rev-mod{background:rgba(37,99,235,.2);color:#93c5fd;border-bottom:1px solid rgba(37,99,235,.5);border-radius:2px;padding:0 2px;cursor:pointer;transition:all .2s}
+.rev-mod:hover{background:rgba(37,99,235,.33)}
+.rev-del{background:rgba(192,57,43,.18);color:#fca5a5;text-decoration:line-through;border-radius:2px;padding:0 2px;opacity:.7}
+.rev-acc{background:rgba(26,122,74,.18);color:#86efac;border-radius:2px;padding:0 2px}
+.chg-i{background:var(--sl2);border:1px solid var(--b1);border-radius:var(--r2);padding:8px 11px;margin-bottom:5px;cursor:pointer;transition:all .13s}
+.chg-i:hover{border-color:var(--b3)}
+.chg-i.acc{border-color:rgba(26,122,74,.4);background:rgba(26,122,74,.06)}
+.chg-i.rej{border-color:rgba(192,57,43,.3);opacity:.55}
+.chg-type{font-family:var(--mono);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.ct-add{color:#fbbf24}.ct-mod{color:#93c5fd}.ct-del{color:#fca5a5}
+.chg-tx{font-size:12px;color:var(--t2);line-height:1.45;margin-bottom:5px}
+.chg-ac{display:flex;gap:4px}
+.leg{display:flex;align-items:center;gap:10px;padding:7px 11px;background:var(--n2);border:1px solid var(--b1);border-radius:var(--r2);margin-bottom:9px;flex-wrap:wrap}
+.leg-i{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--t2);font-family:var(--mono)}
+.leg-d{width:10px;height:10px;border-radius:2px}
+/* Final submission */
+.sub-sg{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.sub-sf{grid-column:1/-1}
+.sgt{font-size:10px;font-weight:700;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid var(--b1)}
+/* Doc preview */
+.doc-page{background:#fff;color:#111;padding:36px 44px;font-family:'Times New Roman',serif;font-size:13px;line-height:2;min-height:360px;border-radius:var(--r3);box-shadow:0 4px 24px rgba(0,0,0,.4)}
+.doc-page h1{font-size:16px;font-weight:700;text-align:center;margin-bottom:7px;line-height:1.4}
+.doc-meta{text-align:center;font-size:12px;color:#444;margin-bottom:18px;line-height:1.8}
+.doc-toc-item{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dotted #ccc;font-size:12px}
+.doc-disc{font-size:10px;color:#888;border:1px solid #ccc;padding:7px 10px;border-radius:3px;margin-bottom:14px;font-family:Arial,sans-serif}
+.pg-n{font-size:11px;color:#888;text-align:center;margin-top:18px;font-family:Arial,sans-serif}
+/* Final checklist */
+.fc{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid rgba(30,51,73,.3);font-size:12px}
+.fc:last-child{border:none}
+.fc.done{color:var(--t1)}.fc.pend{color:var(--t4)}.fc.act{color:var(--teal)}
+.fc-ic{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0;border:1px solid}
+.fc-ic.done{background:var(--green);border-color:var(--green);color:#fff;animation:checkPop .3s ease}
+.fc-ic.pend{background:var(--sl2);border-color:var(--b1);color:var(--t4)}
+.fc-ic.act{background:var(--td);border-color:var(--teal);color:var(--teal)}
+.grade-badge{background:linear-gradient(135deg,var(--gold),#d4a843);color:var(--navy);font-family:var(--mono);font-size:22px;font-weight:900;padding:14px 28px;border-radius:var(--r3);display:inline-block;letter-spacing:-1px;box-shadow:0 4px 20px var(--gg);margin-bottom:8px}
+/* Modal */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;display:none;backdrop-filter:blur(5px);align-items:center;justify-content:center}
+.ov.on{display:flex}
+.modal{background:var(--n3);border:1px solid var(--b1);border-radius:var(--r4);width:min(660px,94vw);max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.5);animation:fadeUp .2s ease}
+.mhd{padding:12px 16px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--n3);z-index:1}
+.mti{font-size:14px;font-weight:700;color:var(--t1)}
+.msu{font-size:11px;color:var(--t3);font-family:var(--mono)}
+.mclose{font-size:15px;color:var(--t3);cursor:pointer;padding:3px 7px;border-radius:var(--r)}
+.mclose:hover{background:rgba(255,255,255,.07);color:var(--t1)}
+.mbod{padding:16px}
+.mfoot{padding:11px 16px;border-top:1px solid var(--b1);display:flex;justify-content:flex-end;gap:7px;position:sticky;bottom:0;background:var(--n3)}
+.msec{margin-bottom:16px}
+.msec-t{font-size:10px;font-weight:700;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--b1)}
+@media(max-width:900px){.s3l{grid-template-columns:1fr;display:block}.snav,.rp{display:none}.s1g,.s2g,.s5g,.s6g{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<!-- HEADER -->
+<header class="hd">
+  <div class="logo" onclick="gs(1)"><em>Z</em>OE</div>
+  <div class="st">
+    <div class="hs act" onclick="gs(1)" id="hs1"><div class="sn">1</div>Brief</div>
+    <div class="hssep"></div>
+    <div class="hs" onclick="gs(2)" id="hs2"><div class="sn">2</div>Exec Table</div>
+    <div class="hssep"></div>
+    <div class="hs" onclick="gs(3)" id="hs3"><div class="sn">3</div>Writing</div>
+    <div class="hssep"></div>
+    <div class="hs" onclick="gs(4)" id="hs4"><div class="sn">4</div>Export</div>
+    <div class="hssep"></div>
+    <div class="hs ns" onclick="gs(5)" id="hs5"><div class="sn">5</div>Revisions</div>
+    <div class="hssep"></div>
+    <div class="hs ns" onclick="gs(6)" id="hs6"><div class="sn">6</div>Final Submit</div>
+  </div>
+  <div class="hdr">
+    <div class="tier">REGULAR</div>
+    <div class="nva off" id="gPrev" onclick="prevS()"><svg viewBox="0 0 10 10"><polyline points="6.5,2 3.5,5 6.5,8"/></svg></div>
+    <div class="nva" id="gNext" onclick="nextS()"><svg viewBox="0 0 10 10"><polyline points="3.5,2 6.5,5 3.5,8"/></svg></div>
+  </div>
+</header>
+<div class="app-body">
+
+<!-- ████ STAGE 1: BRIEF INTAKE ████ -->
+<div class="pane vis" id="p1">
+  <div class="sb">
+    <div class="sb-l"><div class="sb-num">STAGE 1</div><div><div class="sb-title">Universal Brief Intake</div><div class="sb-sub">Any format · all settings unlocked · nothing blocked</div></div></div>
+    <div class="sb-r">
+      <button class="pb" onclick="openM('s1')"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="2"/><path d="M6 1v1M6 10v1M1 6h1M10 6h1"/></svg>Personalise</button>
+      <div class="nva off"><svg viewBox="0 0 10 10"><polyline points="6.5,2 3.5,5 6.5,8"/></svg></div>
+      <div class="nva" onclick="gs(2)" title="Next: Execution Table"><svg viewBox="0 0 10 10"><polyline points="3.5,2 6.5,5 3.5,8"/></svg></div>
+    </div>
+  </div>
+  <div class="ss">
+    <div class="s1g">
+      <div>
+        <div class="fld">
+          <label class="lbl">Assessment Type — one click</label>
+          <div class="cg" id="at">
+            <div class="chip on" onclick="sc(this,'at')">Business Report</div>
+            <div class="chip" onclick="sc(this,'at')">Essay</div>
+            <div class="chip" onclick="sc(this,'at')">Case Study</div>
+            <div class="chip" onclick="sc(this,'at')">Literature Review</div>
+            <div class="chip" onclick="sc(this,'at')">Reflective Account</div>
+            <div class="chip" onclick="sc(this,'at')">Financial Analysis</div>
+            <div class="chip" onclick="sc(this,'at')">Research Proposal</div>
+            <div class="chip" onclick="sc(this,'at')">Lab Report</div>
+            <div class="chip" onclick="sc(this,'at')">Systematic Review</div>
+            <div class="chip" onclick="sc(this,'at')">Legal Problem (IRAC)</div>
+            <div class="chip" onclick="sc(this,'at')">Discussion Post</div>
+            <div class="chip" onclick="sc(this,'at')">Coding Assignment</div>
+            <div class="chip" onclick="sc(this,'at')">EBP Assessment</div>
+            <div class="chip" onclick="sc(this,'at')">+ Custom</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+          <div class="fld">
+            <label class="lbl">Word Count</label>
+            <div class="cg" id="wcc" style="margin-bottom:6px">
+              <div class="chip" onclick="sc(this,'wcc');document.getElementById('wci').value=500">500</div>
+              <div class="chip" onclick="sc(this,'wcc');document.getElementById('wci').value=1500">1,500</div>
+              <div class="chip on" onclick="sc(this,'wcc');document.getElementById('wci').value=3000">3,000</div>
+              <div class="chip" onclick="sc(this,'wcc');document.getElementById('wci').value=5000">5,000</div>
+              <div class="chip" onclick="sc(this,'wcc');document.getElementById('wci').value=10000">10,000</div>
+              <div class="chip" onclick="sc(this,'wcc')">Custom ↓</div>
+            </div>
+            <input type="number" class="inp" id="wci" value="3000" style="font-family:var(--mono);font-weight:700;color:var(--gold)"/>
+          </div>
+          <div class="fld">
+            <label class="lbl">Citation Style</label>
+            <div class="cg" id="csty">
+              <div class="chip on" onclick="sc(this,'csty')">Harvard (UK)</div>
+              <div class="chip" onclick="sc(this,'csty')">APA 7</div>
+              <div class="chip" onclick="sc(this,'csty')">MLA 9</div>
+              <div class="chip" onclick="sc(this,'csty')">Vancouver</div>
+              <div class="chip" onclick="sc(this,'csty')">IEEE</div>
+              <div class="chip" onclick="sc(this,'csty')">Chicago</div>
+              <div class="chip" onclick="sc(this,'csty')">OSCOLA</div>
+              <div class="chip" onclick="sc(this,'csty')">AMA</div>
+            </div>
+          </div>
+          <div class="fld">
+            <label class="lbl">Academic Level</label>
+            <div class="cg" id="lvl">
+              <div class="chip" onclick="sc(this,'lvl')">Level 4</div>
+              <div class="chip" onclick="sc(this,'lvl')">Level 5</div>
+              <div class="chip" onclick="sc(this,'lvl')">Level 6</div>
+              <div class="chip on" onclick="sc(this,'lvl')">Masters</div>
+              <div class="chip" onclick="sc(this,'lvl')">Doctoral</div>
+              <div class="chip" onclick="sc(this,'lvl')">Professional</div>
+            </div>
+          </div>
+        </div>
+        <div class="card mb12">
+          <div class="ch" style="padding:0 13px;border-bottom:1px solid var(--b1)">
+            <div style="display:flex">
+              <div class="btab on" onclick="bTab('type')">✎ Type/Paste</div>
+              <div class="btab" onclick="bTab('upload')">↑ Upload</div>
+              <div class="btab" onclick="bTab('url')">⌁ URL</div>
+              <div class="btab" onclick="bTab('manual')">≡ Manual</div>
+            </div>
+          </div>
+          <div class="cb">
+            <div class="btab-p on" id="bp-type">
+              <textarea class="inp ta" id="btext" rows="9" style="min-height:175px" oninput="updBC()" placeholder="Paste your full assignment brief here. Include the complete brief, marking rubric, learning outcomes, and any specific requirements.&#10;&#10;ZOE reads everything — nothing gets discarded."></textarea>
+              <div class="fx ic jb mt8"><span style="font-family:var(--mono);font-size:11px;color:var(--t3)" id="bcc">0 characters</span><button class="btn btn-xs btn-sl" onclick="loadSB()">Load sample brief</button></div>
+            </div>
+            <div class="btab-p" id="bp-upload">
+              <div class="rup" onclick="document.getElementById('finp').click()" ondragover="this.classList.add('drag')" ondragleave="this.classList.remove('drag')">
+                <div style="font-size:22px;margin-bottom:7px;opacity:.5">⤒</div>
+                <div style="font-size:13px;font-weight:700;color:var(--t1);margin-bottom:4px">Drop files or click to upload</div>
+                <div style="font-size:11px;color:var(--t3);font-family:var(--mono)">PDF · DOCX · DOC · TXT · PNG · JPG · XLSX · PPTX · HEIC</div>
+                <div style="font-size:11px;color:var(--t3);font-family:var(--mono);margin-top:3px">Multiple files supported · max 50MB each · all merged</div>
+              </div>
+              <input type="file" id="finp" class="hidden" multiple accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg,.webp,.heic,.xlsx,.pptx" onchange="handleF(this)"/>
+              <div id="flist" style="display:flex;flex-direction:column;gap:4px;margin-top:8px"></div>
+            </div>
+            <div class="btab-p" id="bp-url">
+              <div class="fld"><label class="lbl">Brief URL</label><input type="url" class="inp" placeholder="https://moodle.ac.uk/assignment/brief-12345"/></div>
+              <div style="font-size:11px;color:var(--t3)">Supports Blackboard, Moodle, Canvas, Google Classroom, Notion, SharePoint, and standard web pages.</div>
+            </div>
+            <div class="btab-p" id="bp-manual">
+              <div class="mg">
+                <div class="fld"><label class="lbl">Assessment Title</label><input type="text" class="inp" placeholder="e.g. Strategic Analysis of Tesla Inc."/></div>
+                <div class="fld"><label class="lbl">Module Name &amp; Code</label><input type="text" class="inp" placeholder="e.g. Strategic Management — BMG814"/></div>
+                <div class="fld mf"><label class="lbl">Learning Outcomes (one per line)</label><textarea class="inp ta" rows="3" placeholder="LO1: Critically evaluate strategic frameworks…&#10;LO2: Apply financial analysis tools…"></textarea></div>
+                <div class="fld mf"><label class="lbl">Key Requirements &amp; Marking Rubric</label><textarea class="inp ta" rows="3" placeholder="Must include Porter's Five Forces, SWOT. A+ criteria: critical evaluation, evidence quality…"></textarea></div>
+                <div class="fld"><label class="lbl">Institution</label><input type="text" class="inp" id="inst1" placeholder="University of Birmingham"/></div>
+                <div class="fld"><label class="lbl">Deadline</label><input type="date" class="inp"/></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rb mt8"><div class="rb-ic">◈</div><div><strong>ZOE detects:</strong> Strategic Management report · Level 7. Suggested: Porter's Five Forces, SWOT, TOWS, McKinsey 7S · <strong>42–58 citations</strong> · Harvard.<div><span class="rb-ac" onclick="this.textContent='✓ Applied'">✓ Apply ZOE's suggestions</span></div></div></div>
+        <div style="margin-top:14px">
+          <button class="btn btn-gold btn-full btn-lg" onclick="gs(2)">Analyse Brief →</button>
+          <div class="tc mt8" style="font-family:var(--mono);font-size:11px;color:var(--t3)">ZOE generates your complete Execution Table</div>
+        </div>
+      </div>
+      <!-- RIGHT: CITATION SETTINGS -->
+      <div>
+        <div class="card" style="position:sticky;top:0">
+          <div class="ch"><div class="ct">Citation Settings</div><span class="tag tag-teal">Per-section</span></div>
+          <div class="cb">
+            <div class="rb gold mb8"><div class="rb-ic">◈</div><div class="f12">ZOE recommends <strong>42–58 total citations</strong> for a 5,000-word Masters report. Adjust per section below.</div></div>
+            <label class="lbl">Per-Section Citation Count</label>
+            <div>
+              <div class="cite-sr"><div><div class="cite-sn">Introduction</div><div class="cite-rc">Rec: 3–5</div></div><input type="number" class="cite-ni" value="4"/></div>
+              <div class="cite-sr"><div><div class="cite-sn">Porter's Five Forces</div><div class="cite-rc">Rec: 8–12</div></div><input type="number" class="cite-ni" value="10"/></div>
+              <div class="cite-sr"><div><div class="cite-sn">SWOT Analysis</div><div class="cite-rc">Rec: 6–9</div></div><input type="number" class="cite-ni" value="7"/></div>
+              <div class="cite-sr"><div><div class="cite-sn">Strategic Recommendations</div><div class="cite-rc">Rec: 10–15</div></div><input type="number" class="cite-ni" value="12"/></div>
+              <div class="cite-sr"><div><div class="cite-sn">Conclusion</div><div class="cite-rc">Rec: 2–4</div></div><input type="number" class="cite-ni" value="3"/></div>
+            </div>
+            <div class="div"></div>
+            <label class="lbl">Source Date Range</label>
+            <div class="fx ic g8 mb8"><span style="font-size:11px;color:var(--t3);font-family:var(--mono)">From</span><input type="range" min="2000" max="2024" value="2015" class="rng f1" oninput="document.getElementById('dfv').textContent=this.value"/><span class="rv" id="dfv">2015</span></div>
+            <div class="fx ic g8 mb12"><span style="font-size:11px;color:var(--t3);font-family:var(--mono)">To</span><input type="range" min="2020" max="2025" value="2025" class="rng f1" oninput="document.getElementById('dtv').textContent=this.value"/><span class="rv" id="dtv">2025</span></div>
+            <label class="lbl">Source Type Mix</label>
+            <div class="fx ic g8 mb6"><span style="font-size:11px;color:var(--t2);width:108px">Journal Articles</span><input type="range" min="0" max="100" value="60" class="rng f1" oninput="document.getElementById('djv').textContent=this.value+'%'"/><span class="rv" id="djv">60%</span></div>
+            <div class="fx ic g8 mb6"><span style="font-size:11px;color:var(--t2);width:108px">Books &amp; Chapters</span><input type="range" min="0" max="100" value="20" class="rng f1" oninput="document.getElementById('dbv').textContent=this.value+'%'"/><span class="rv" id="dbv">20%</span></div>
+            <div class="fx ic g8 mb6"><span style="font-size:11px;color:var(--t2);width:108px">Reports/Grey Lit.</span><input type="range" min="0" max="100" value="15" class="rng f1" oninput="document.getElementById('drv').textContent=this.value+'%'"/><span class="rv" id="drv">15%</span></div>
+            <div class="fx ic g8 mb12"><span style="font-size:11px;color:var(--t2);width:108px">Conference Papers</span><input type="range" min="0" max="100" value="5" class="rng f1" oninput="document.getElementById('dcv').textContent=this.value+'%'"/><span class="rv" id="dcv">5%</span></div>
+            <div class="div"></div>
+            <div class="tgl-r"><div><div class="tgl-l">Seminal Sources</div><div class="tgl-s">Include pre-2000 foundational works</div></div><div class="tgl" onclick="this.classList.toggle('on')"></div></div>
+            <div class="tgl-r"><div><div class="tgl-l">Auto Citation Balancing</div><div class="tgl-s">ZOE adjusts density across sections</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+            <div class="tgl-r"><div><div class="tgl-l">Citation Disclaimer</div><div class="tgl-s">Navy-border box on page 2 of .docx</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ████ STAGE 2: EXECUTION TABLE ████ -->
+<div class="pane" id="p2">
+  <div class="sb">
+    <div class="sb-l"><div class="sb-num">STAGE 2</div><div><div class="sb-title">Execution Table — Brief Analyser</div><div class="sb-sub">Click any section to expand · every cell editable · all settings available</div></div></div>
+    <div class="sb-r">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--t3)">5,000w · Harvard · Masters</span>
+      <button class="pb" onclick="openM('s2')"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="2"/><path d="M6 1v1M6 10v1M1 6h1M10 6h1"/></svg>Personalise</button>
+      <div class="nva" onclick="gs(1)"><svg viewBox="0 0 10 10"><polyline points="6.5,2 3.5,5 6.5,8"/></svg></div>
+      <div class="nva" onclick="gs(3)"><svg viewBox="0 0 10 10"><polyline points="3.5,2 6.5,5 3.5,8"/></svg></div>
+    </div>
+  </div>
+  <div class="ss">
+    <div class="ov-bar">
+      <div class="ov-i"><span class="led led-green"></span><span class="fw7 t1c">5,000</span>&nbsp;<span class="t3c">words</span></div>
+      <div style="width:1px;height:12px;background:var(--b1)"></div>
+      <div class="ov-i"><span style="color:var(--gold);font-weight:700">5</span>&nbsp;<span class="t3c">sections</span></div>
+      <div style="width:1px;height:12px;background:var(--b1)"></div>
+      <div class="ov-i"><span style="color:var(--teal);font-weight:700">3</span>&nbsp;<span class="t3c">frameworks</span></div>
+      <div style="width:1px;height:12px;background:var(--b1)"></div>
+      <div class="ov-i"><span class="t3c">Harvard · ±1% tolerance · A+ standard</span></div>
+      <div style="margin-left:auto"><button class="btn btn-xs btn-sl">↺ Re-analyse</button></div>
+    </div>
+    <div class="s2g">
+      <div>
+        <div class="card mb12">
+          <div class="ch"><div class="ct">Role &amp; Context</div><span class="tag tag-teal">AI-defined · click to edit</span></div>
+          <div class="cb">
+            <div contenteditable="true" style="background:var(--sl2);border:1px solid var(--b1);border-radius:var(--r2);padding:9px 11px;font-size:13px;line-height:1.55;cursor:text;color:var(--t1)">Level 7 Masters student at a UK business school submitting a Strategic Management assignment. Writing adopts the voice of a student who has engaged critically with the literature, applied analytical frameworks to a real-world case, and synthesised evidence to support original strategic recommendations. ZOE pauses after each section until instructed to continue.</div>
+            <div class="rb mt8"><div class="rb-ic">◈</div><div class="f12">Execution command includes mandatory section-by-section pause. A+ criteria are derived from your brief's marking rubric.</div></div>
+          </div>
+        </div>
+        <div class="lbl mb8">Section Breakdown <span class="tag tag-grey" style="margin-left:5px">Expand any section · all settings editable</span></div>
+        <div id="spl">
+          <div class="spc" onclick="tSPC(this)"><div class="spch"><div class="spcn">01</div><div class="spct">Introduction</div><div class="fx g6 ic"><span class="tag tag-teal">No code</span><span style="font-family:var(--mono);font-size:12px;color:var(--gold)">250w</span><span class="t3c f12">▸</span></div></div>
+            <div class="spcb"><div class="mg">
+              <div class="fld"><label class="lbl">Word Count</label><input type="number" class="inp" value="250" style="font-family:var(--mono);color:var(--gold);font-weight:700"/><div class="cite-rc">±1% = 247–253 words</div></div>
+              <div class="fld"><label class="lbl">Citations</label><input type="number" class="inp" value="4" style="font-family:var(--mono);color:var(--teal);font-weight:700"/><div class="cite-rc">Rec: 3–5</div></div>
+              <div class="fld"><label class="lbl">Frameworks</label><div class="cg" id="fw01"><div class="chip ong" onclick="sc(this,'fw01')">None</div><div class="chip" onclick="sc(this,'fw01')">Roadmap</div></div></div>
+              <div class="fld"><label class="lbl">Visuals Required</label><div class="cg"><div class="chip">None for intro</div></div></div>
+              <div class="fld mf"><label class="lbl">A+ Criteria</label><textarea class="inp ta" rows="2" style="font-size:12px">Clear contextualisation in strategic management literature. Sharp thesis statement. Signposting without mechanical listing. Minimum 3 cited sources.</textarea></div>
+              <div class="fld mf"><label class="lbl">Writing Notes / ZOE Instructions</label><textarea class="inp ta" rows="2" placeholder="e.g. Open with a striking statistic about the EV market…"></textarea></div>
+            </div></div>
+          </div>
+          <div class="spc" onclick="tSPC(this)"><div class="spch"><div class="spcn">02</div><div class="spct">Porter's Five Forces Analysis</div><div class="fx g6 ic"><span class="tag tag-gold">Pentagon + Table</span><span style="font-family:var(--mono);font-size:12px;color:var(--gold)">1,200w</span><span class="t3c f12">▸</span></div></div>
+            <div class="spcb"><div class="mg">
+              <div class="fld"><label class="lbl">Word Count</label><input type="number" class="inp" value="1200" style="font-family:var(--mono);color:var(--gold);font-weight:700"/></div>
+              <div class="fld"><label class="lbl">Citations</label><input type="number" class="inp" value="10" style="font-family:var(--mono);color:var(--teal);font-weight:700"/></div>
+              <div class="fld"><label class="lbl">Framework Depth</label><div class="cg" id="d02"><div class="chip" onclick="sc(this,'d02')">Overview</div><div class="chip on" onclick="sc(this,'d02')">Standard</div><div class="chip" onclick="sc(this,'d02')">Deep Critical</div></div></div>
+              <div class="fld"><label class="lbl">AI Model Override</label><div class="cg" id="m02"><div class="chip on" onclick="sc(this,'m02')">GPT-4o</div><div class="chip" onclick="sc(this,'m02')">Gemini 2.5</div><div class="chip" onclick="sc(this,'m02')">DeepSeek V3</div></div></div>
+              <div class="fld mf"><label class="lbl">Required Visuals</label><div class="cg" id="v02"><div class="chip ong" onclick="sc(this,'v02')">Pentagon Diagram</div><div class="chip ong" onclick="sc(this,'v02')">Force Summary Table</div><div class="chip" onclick="sc(this,'v02')">Intensity Bar Chart</div><div class="chip" onclick="sc(this,'v02')">+ Add visual</div></div></div>
+              <div class="fld mf"><label class="lbl">A+ Criteria</label><textarea class="inp ta" rows="2" style="font-size:12px">Each force applied specifically to the industry. Overall competitive intensity evaluated. Framework limitations critically acknowledged. Data-evidenced claims throughout.</textarea></div>
+              <div class="fld mf"><label class="lbl">Writing Notes</label><textarea class="inp ta" rows="2" placeholder="e.g. Focus on UK EV market. Reference Tesla's 2024 Annual Report…"></textarea></div>
+            </div></div>
+          </div>
+          <div class="spc" onclick="tSPC(this)"><div class="spch"><div class="spcn">03</div><div class="spct">SWOT Analysis + TOWS Matrix</div><div class="fx g6 ic"><span class="tag tag-gold">2×2 Matrix</span><span style="font-family:var(--mono);font-size:12px;color:var(--gold)">900w</span><span class="t3c f12">▸</span></div></div>
+            <div class="spcb"><div class="mg">
+              <div class="fld"><label class="lbl">Word Count</label><input type="number" class="inp" value="900" style="font-family:var(--mono);color:var(--gold);font-weight:700"/></div>
+              <div class="fld"><label class="lbl">Citations</label><input type="number" class="inp" value="7" style="font-family:var(--mono);color:var(--teal);font-weight:700"/></div>
+              <div class="fld mf"><label class="lbl">TOWS Extension</label><div class="cg" id="tows"><div class="chip ong" onclick="sc(this,'tows')">Include TOWS Matrix</div><div class="chip" onclick="sc(this,'tows')">SWOT only</div></div></div>
+              <div class="fld mf"><div class="rb gold"><div class="rb-ic">◈</div><div class="f12">ZOE recommends TOWS — directly satisfies the "theoretical integration" A+ criterion in your rubric.</div></div></div>
+            </div></div>
+          </div>
+          <div class="spc" onclick="tSPC(this)"><div class="spch"><div class="spcn">04</div><div class="spct">Strategic Recommendations</div><div class="fx g6 ic"><span class="tag tag-grey">Ansoff Matrix</span><span style="font-family:var(--mono);font-size:12px;color:var(--gold)">1,400w</span><span class="t3c f12">▸</span></div></div>
+            <div class="spcb"><div class="mg">
+              <div class="fld"><label class="lbl">Word Count</label><input type="number" class="inp" value="1400" style="font-family:var(--mono);color:var(--gold);font-weight:700"/></div>
+              <div class="fld"><label class="lbl">Citations</label><input type="number" class="inp" value="12" style="font-family:var(--mono);color:var(--teal);font-weight:700"/></div>
+              <div class="fld"><label class="lbl">No. of Recommendations</label><input type="number" class="inp" value="3" min="1" max="8"/><div class="cite-rc">ZOE writes one block per recommendation</div></div>
+              <div class="fld"><label class="lbl">Additional Framework</label><div class="cg" id="af04"><div class="chip ong" onclick="sc(this,'af04')">Ansoff Matrix</div><div class="chip" onclick="sc(this,'af04')">BCG</div><div class="chip" onclick="sc(this,'af04')">McKinsey 7S</div><div class="chip" onclick="sc(this,'af04')">None</div></div></div>
+              <div class="fld mf"><label class="lbl">Writing Notes</label><textarea class="inp ta" rows="2" placeholder="e.g. Recommendations should be feasible within 3–5 year horizon…"></textarea></div>
+            </div></div>
+          </div>
+          <div class="spc" onclick="tSPC(this)"><div class="spch"><div class="spcn">05</div><div class="spct">Conclusion</div><div class="fx g6 ic"><span class="tag tag-teal">No code</span><span style="font-family:var(--mono);font-size:12px;color:var(--gold)">250w</span><span class="t3c f12">▸</span></div></div>
+            <div class="spcb"><div class="mg">
+              <div class="fld"><label class="lbl">Word Count</label><input type="number" class="inp" value="250" style="font-family:var(--mono);color:var(--gold);font-weight:700"/></div>
+              <div class="fld"><label class="lbl">Citations</label><input type="number" class="inp" value="3" style="font-family:var(--mono);color:var(--teal);font-weight:700"/></div>
+            </div></div>
+          </div>
+        </div>
+        <div class="fx g8 mt12"><button class="btn btn-sl btn-sm" onclick="addSec()">+ Add section</button><button class="btn btn-sl btn-sm">⇅ Reorder</button></div>
+        <div class="card mt12"><div class="ch"><div class="ct">Non-Negotiable Constraints</div></div><div class="cb"><div class="cg"><div class="chip ong">±1% word count per section</div><div class="chip ong">No bullet points in prose</div><div class="chip ong">All stats in numerals</div><div class="chip ong">No AI fingerprint phrases</div><div class="chip ong">Every claim cited</div><div class="chip ong">Burstiness: sentence variation</div><div class="chip ong">Active voice ≥70%</div><div class="chip ong">Section-by-section pause</div></div></div></div>
+        <div class="mt16"><button class="btn btn-gold btn-full btn-lg" onclick="gs(3)">Confirm Plan &amp; Begin Writing →</button><div class="tc mt8" style="font-family:var(--mono);font-size:11px;color:var(--t3)">All edits saved. ZOE uses this table as its sole instruction set.</div></div>
+      </div>
+      <div>
+        <div class="card mb10">
+          <div class="ch"><div class="ct">AI Model</div></div>
+          <div class="cb">
+            <div class="rb mb8"><div class="rb-ic">◈</div><div class="f12">For Masters strategic analysis: <strong>GPT-4o</strong> (default). DeepSeek R1 for financial sections.</div></div>
+            <div class="cg" id="mod"><div class="chip on" onclick="sc(this,'mod')">GPT-4o</div><div class="chip" onclick="sc(this,'mod')">Gemini 2.5 Pro</div><div class="chip" onclick="sc(this,'mod')">DeepSeek V3</div><div class="chip" onclick="sc(this,'mod')">Grok 3</div><div class="chip" onclick="sc(this,'mod')">Llama 3.3</div><div class="chip" onclick="sc(this,'mod')">Mistral Large</div></div>
+            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:7px">Per-section override available in Stage 3</div>
+          </div>
+        </div>
+        <div class="card mb10">
+          <div class="ch"><div class="ct">Writing Voice</div></div>
+          <div class="cb">
+            <label class="lbl">Tone</label><div class="cg" id="tone"><div class="chip on" onclick="sc(this,'tone')">Analytical</div><div class="chip" onclick="sc(this,'tone')">Critical</div><div class="chip" onclick="sc(this,'tone')">Evaluative</div><div class="chip" onclick="sc(this,'tone')">Discursive</div></div>
+            <label class="lbl mt12">Humanisation</label><div class="cg" id="hum"><div class="chip" onclick="sc(this,'hum')">Standard</div><div class="chip on" onclick="sc(this,'hum')">High</div><div class="chip" onclick="sc(this,'hum')">Maximum</div></div>
+            <label class="lbl mt12">Burstiness</label>
+            <div class="fx ic g8 mt4"><span class="f11 t3c">Low</span><input type="range" min="1" max="5" value="4" class="rng f1" oninput="document.getElementById('bv').textContent=['Very Low','Low','Medium','High','Maximum'][this.value-1]"/><span class="f11 t3c">Max</span></div>
+            <div class="tc mt4" style="font-family:var(--mono);font-size:11px;color:var(--gold)" id="bv">High</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">Options</div></div>
+          <div class="cb">
+            <div class="tgl-r"><div><div class="tgl-l">Auto-Complete Mode</div><div class="tgl-s">Write all sections without pausing</div></div><div class="tgl" onclick="this.classList.toggle('on')"></div></div>
+            <div class="tgl-r"><div><div class="tgl-l">Code Engine</div><div class="tgl-s">Write, test &amp; annotate code blocks</div></div><div class="tgl" onclick="this.classList.toggle('on')"></div></div>
+            <div class="tgl-r"><div><div class="tgl-l">AI-Pattern Score</div><div class="tgl-s">Show humanisation score per section</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+            <div class="tgl-r"><div><div class="tgl-l">Unlimited Images</div><div class="tgl-s">Auto-generate all framework diagrams</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+            <div class="tgl-r"><div><div class="tgl-l">Version History</div><div class="tgl-s">Save all generated versions per section</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ████ STAGE 3: WRITING ENGINE ████ -->
+<div class="pane" id="p3">
+  <div class="sb">
+    <div class="sb-l"><div class="sb-num">STAGE 3</div><div><div class="sb-title">Writing Engine — Section by Section</div><div class="sb-sub" id="s3sub">Section 2 of 5 · Porter's Five Forces · 1,200w target · Writing…</div></div></div>
+    <div class="sb-r">
+      <button class="pb" onclick="togPD()" id="pdBtn"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="2"/><path d="M6 1v1M6 10v1M1 6h1M10 6h1"/></svg>Personalise section</button>
+      <div class="nva" onclick="gs(2)"><svg viewBox="0 0 10 10"><polyline points="6.5,2 3.5,5 6.5,8"/></svg></div>
+      <div class="nva" onclick="gs(4)"><svg viewBox="0 0 10 10"><polyline points="3.5,2 6.5,5 3.5,8"/></svg></div>
+    </div>
+  </div>
+  <div class="s3l">
+    <!-- SECTION NAV -->
+    <div class="snav">
+      <div class="snav-h">
+        <div class="snav-t">Tesla — Strategic Analysis</div>
+        <div class="snav-p">Sec 2/5 · <span style="color:var(--teal)">1,450</span>/5,000w</div>
+      </div>
+      <div class="snav-l">
+        <div class="si done" onclick="selSec(0)"><div class="si-n">01</div><div><div class="si-t">Introduction</div><div class="si-m"><div class="led led-green"></div><span class="si-wc">250/250w</span></div></div></div>
+        <div class="si act" onclick="selSec(1)"><div class="si-n">02</div><div><div class="si-t">Porter's Five Forces</div><div class="si-m"><div class="led led-teal"></div><span class="si-wc">1,200w</span></div></div></div>
+        <div class="si" onclick="selSec(2)"><div class="si-n">03</div><div><div class="si-t">SWOT + TOWS</div><div class="si-m"><div class="led led-gold"></div><span class="si-wc">900w</span></div></div></div>
+        <div class="si" onclick="selSec(3)"><div class="si-n">04</div><div><div class="si-t">Recommendations</div><div class="si-m"><div class="led led-grey"></div><span class="si-wc">1,400w</span></div></div></div>
+        <div class="si" onclick="selSec(4)"><div class="si-n">05</div><div><div class="si-t">Conclusion</div><div class="si-m"><div class="led led-grey"></div><span class="si-wc">250w</span></div></div></div>
+      </div>
+      <div class="snav-ft">
+        <div class="prog mb4"><div class="prog-f" style="width:29%"></div></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--t3)">1,450 / 5,000 words written</div>
+      </div>
+    </div>
+    <!-- MAIN AREA -->
+    <div class="wmain" id="wmain">
+      <div class="w-sh">
+        <div>
+          <div class="w-title" id="secTitle">Porter's Five Forces Analysis</div>
+          <div class="w-meta" id="secMeta"><span class="tag tag-gold">1,200 words</span><span class="tag tag-teal">10 citations</span><span class="tag tag-grey">Pentagon diagram</span><span class="tag tag-grey">Force table</span></div>
+        </div>
+        <div class="fx g4">
+          <div class="nva" onclick="prevSec()" title="Previous section"><svg viewBox="0 0 10 10"><polyline points="6.5,2 3.5,5 6.5,8"/></svg></div>
+          <div class="nva" onclick="nextSec()" title="Next section"><svg viewBox="0 0 10 10"><polyline points="3.5,2 6.5,5 3.5,8"/></svg></div>
+        </div>
+      </div>
+      <!-- PERSONALISE DRAWER -->
+      <div class="pd" id="pdDrawer">
+        <div class="pd-h"><div class="pd-ht">◈ Personalise — Porter's Five Forces</div><button class="btn btn-xs btn-ghost" onclick="togPD()">✕ Close</button></div>
+        <div class="pd-b">
+          <div class="pd-g">
+            <div><label class="lbl">Writing Tone</label><div class="cg" id="pd-tone"><div class="chip on" onclick="sc(this,'pd-tone')">Critical</div><div class="chip" onclick="sc(this,'pd-tone')">Analytical</div><div class="chip" onclick="sc(this,'pd-tone')">Evaluative</div></div></div>
+            <div><label class="lbl">Framework Depth</label><div class="cg" id="pd-dep"><div class="chip" onclick="sc(this,'pd-dep')">Overview</div><div class="chip on" onclick="sc(this,'pd-dep')">Standard</div><div class="chip" onclick="sc(this,'pd-dep')">Deep Critical</div></div></div>
+            <div><label class="lbl">Word Count Override</label><input type="number" class="inp" value="1200" style="font-family:var(--mono);color:var(--gold);font-weight:700"/></div>
+            <div><label class="lbl">Citation Override</label><input type="number" class="inp" value="10" style="font-family:var(--mono);color:var(--teal);font-weight:700"/></div>
+            <div><label class="lbl">AI Model</label><div class="sw"><select class="inp"><option>GPT-4o (default)</option><option>Gemini 2.5 Pro</option><option>DeepSeek V3</option><option>Grok 3</option></select></div></div>
+            <div><label class="lbl">Temperature</label><div class="fx ic g6"><span class="f11 t3c">0.1</span><input type="range" min="1" max="10" value="5" class="rng f1" oninput="document.getElementById('pdtv').textContent='0.'+this.value"/><span class="f11 t3c">1.0</span></div><div class="tc mt4" style="font-family:var(--mono);font-size:11px;color:var(--gold)" id="pdtv">0.5</div></div>
+            <div class="pd-f"><label class="lbl">Required Tables</label><div class="cg" id="pd-tbl"><div class="chip ong" onclick="sc(this,'pd-tbl')">Force Summary Table</div><div class="chip" onclick="sc(this,'pd-tbl')">Competitor Table</div><div class="chip" onclick="sc(this,'pd-tbl')">Market Data Table</div><div class="chip" onclick="sc(this,'pd-tbl')">+ Custom table</div></div></div>
+            <div class="pd-f"><label class="lbl">Required Visuals</label><div class="cg" id="pd-vis"><div class="chip ong" onclick="sc(this,'pd-vis')">Pentagon Diagram</div><div class="chip ong" onclick="sc(this,'pd-vis')">Bar Chart (intensity)</div><div class="chip" onclick="sc(this,'pd-vis')">Market share pie</div><div class="chip" onclick="sc(this,'pd-vis')">+ Custom visual</div></div></div>
+            <div class="pd-f"><label class="lbl">Writing Notes &amp; Instructions</label><textarea class="inp ta" rows="2" placeholder="e.g. Focus on UK EV market. Reference Tesla's 2024 Annual Report specifically for supplier power…"></textarea></div>
+          </div>
+          <div class="fx g8"><button class="btn btn-gold" onclick="applyPD()">✓ Apply &amp; Generate Section</button><button class="btn btn-sl btn-sm" onclick="togPD()">Cancel</button></div>
+        </div>
+      </div>
+      <!-- VISUAL INSERT PANEL -->
+      <div class="vsp" id="vsp">
+        <div class="fx ic jb mb8"><div style="font-size:13px;font-weight:700;color:var(--t1)">Insert Visual</div><button class="btn btn-xs btn-ghost" onclick="closeVSP()">✕</button></div>
+        <div class="vtabs">
+          <div class="vt on" onclick="vTab('chart')">Chart</div>
+          <div class="vt" onclick="vTab('fw')">Framework Diagram</div>
+          <div class="vt" onclick="vTab('tbl')">Table</div>
+          <div class="vt" onclick="vTab('img')">Custom Image</div>
+          <div class="vt" onclick="vTab('anal')">Analyse Image</div>
+        </div>
+        <div class="vp on" id="vp-chart">
+          <label class="lbl">Chart Type</label>
+          <div class="ctg mb8"><div class="ct-c on" onclick="sCC(this)">Grouped Bar</div><div class="ct-c" onclick="sCC(this)">Line</div><div class="ct-c" onclick="sCC(this)">Scatter</div><div class="ct-c" onclick="sCC(this)">Pie/Donut</div><div class="ct-c" onclick="sCC(this)">Waterfall</div><div class="ct-c" onclick="sCC(this)">Radar/Spider</div><div class="ct-c" onclick="sCC(this)">Heatmap</div><div class="ct-c" onclick="sCC(this)">Lollipop</div><div class="ct-c" onclick="sCC(this)">Box Plot</div><div class="ct-c" onclick="sCC(this)">Forest Plot</div><div class="ct-c" onclick="sCC(this)">Sankey</div><div class="ct-c" onclick="sCC(this)">Gantt</div></div>
+          <div class="mg mb8">
+            <div class="fld"><label class="lbl">Data / Description</label><textarea class="inp ta" rows="3" placeholder="Paste CSV data or describe: e.g. Force intensity — New Entrants: 3, Supplier: 4, Buyer: 3, Substitutes: 2, Rivalry: 5"></textarea></div>
+            <div><div class="fld"><label class="lbl">Colour Scheme</label><div class="cg" id="cc"><div class="chip on" onclick="sc(this,'cc')">ZOE Brand</div><div class="chip" onclick="sc(this,'cc')">Monochrome</div><div class="chip" onclick="sc(this,'cc')">Scientific</div></div></div><div class="fld"><label class="lbl">Figure Title</label><input type="text" class="inp" placeholder="Figure N. [auto-populated]"/></div></div>
+          </div>
+          <div class="vis-pv"><div class="cbm"><div class="cb-bar" style="height:35px"></div><div class="cb-bar" style="height:48px"></div><div class="cb-bar" style="height:30px"></div><div class="cb-bar" style="height:24px"></div><div class="cb-bar" style="height:56px"></div></div></div>
+          <div class="fx g6"><button class="btn btn-teal btn-sm">Generate &amp; Embed →</button><button class="btn btn-sl btn-sm">Preview Only</button></div>
+        </div>
+        <div class="vp" id="vp-fw">
+          <label class="lbl">Framework Diagram</label>
+          <div class="cg mb8" id="fwdc"><div class="chip ong" onclick="sc(this,'fwdc')">Porter's Pentagon</div><div class="chip" onclick="sc(this,'fwdc')">SWOT 2×2</div><div class="chip" onclick="sc(this,'fwdc')">BCG Grid</div><div class="chip" onclick="sc(this,'fwdc')">McKinsey 7S</div><div class="chip" onclick="sc(this,'fwdc')">Ansoff Matrix</div><div class="chip" onclick="sc(this,'fwdc')">Value Chain</div><div class="chip" onclick="sc(this,'fwdc')">Balanced Scorecard</div><div class="chip" onclick="sc(this,'fwdc')">TOWS Matrix</div><div class="chip" onclick="sc(this,'fwdc')">ADKAR</div><div class="chip" onclick="sc(this,'fwdc')">Tuckman Stages</div></div>
+          <div class="vis-pv">Pentagon diagram auto-populated with case-specific content</div>
+          <button class="btn btn-teal btn-sm">Generate Diagram →</button>
+        </div>
+        <div class="vp" id="vp-tbl">
+          <label class="lbl">Table Size — hover to select</label>
+          <div class="fx g12 mb8"><div><div class="tsg" id="tsg"></div><div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:4px" id="tsl">Hover to select</div></div>
+          <div class="f1"><div class="fld"><label class="lbl">Table Purpose</label><input type="text" class="inp" placeholder="e.g. Force summary with intensity ratings"/></div><div class="fld"><label class="lbl">Column Headers</label><input type="text" class="inp" value="Force, Key Drivers, Intensity (1–5), Implication"/></div><div class="tgl-r" style="padding:5px 0"><div><div class="tgl-l f13">Let ZOE fill content</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div></div></div>
+          <button class="btn btn-teal btn-sm">Insert Table →</button>
+        </div>
+        <div class="vp" id="vp-img">
+          <div class="fld"><label class="lbl">Image Description</label><textarea class="inp ta" rows="3" placeholder="Describe the image: e.g. A concept diagram showing competitive rivalry and market share erosion in the EV sector…"></textarea></div>
+          <div class="fld"><label class="lbl">Provider</label><div class="cg" id="ipc"><div class="chip on" onclick="sc(this,'ipc')">Auto (best fit)</div><div class="chip" onclick="sc(this,'ipc')">DALL-E 3</div><div class="chip" onclick="sc(this,'ipc')">Ideogram 2.0</div><div class="chip" onclick="sc(this,'ipc')">Flux.1 Pro</div></div></div>
+          <button class="btn btn-teal btn-sm">Generate Image →</button>
+        </div>
+        <div class="vp" id="vp-anal">
+          <div class="rup mb8" onclick="document.getElementById('imgai').click()"><div style="font-size:20px;opacity:.5;margin-bottom:5px">⊕</div><div style="font-size:13px;font-weight:700;color:var(--t1);margin-bottom:3px">Upload image to analyse</div><div style="font-size:11px;color:var(--t3);font-family:var(--mono)">Graph · chart · diagram · data photo — ZOE writes the interpretation</div></div>
+          <input type="file" id="imgai" class="hidden" accept="image/*"/>
+          <div class="fld"><label class="lbl">What do you need?</label><textarea class="inp ta" rows="2" placeholder="e.g. Analyse this regression output and write the findings paragraph including R² interpretation…"></textarea></div>
+          <button class="btn btn-teal btn-sm">Analyse &amp; Write →</button>
+        </div>
+      </div>
+      <!-- CONTENT AREA -->
+      <div id="ca">
+        <div class="hidden w-ns" id="caNS">
+          <div style="font-size:26px;opacity:.35;margin-bottom:10px">⬡</div>
+          <div style="font-size:15px;font-weight:700;color:var(--t1);margin-bottom:5px">Ready to write this section</div>
+          <div style="font-size:13px;color:var(--t3);margin-bottom:16px" id="ns-desc">ZOE will write exactly 1,200 words (±1%) using Porter's framework applied to the Tesla UK EV case.</div>
+          <div class="cg jc mb16" id="ns-tags"></div>
+          <div class="fx jc g8"><button class="btn btn-gold btn-lg" onclick="startGen()">Generate Section →</button><button class="btn btn-sl" onclick="togPD()">Personalise first</button></div>
+        </div>
+        <div class="hidden w-gen" id="caGen">
+          <div style="font-size:14px;font-weight:700;color:var(--t1);margin-bottom:9px;display:flex;align-items:center;gap:7px"><div class="led led-teal"></div><span id="genTitle">Writing Porter's Five Forces Analysis…</span></div>
+          <div class="gen-b"><div class="gen-f"></div></div>
+          <div class="gen-steps">
+            <div class="gen-st d"><div class="gen-ic">✓</div>Applying framework to case-specific context</div>
+            <div class="gen-st d"><div class="gen-ic">✓</div>Generating section with citations and evidence</div>
+            <div class="gen-st a"><div class="gen-ic spin" style="display:inline-block">◌</div>Generating required diagrams and tables</div>
+            <div class="gen-st p"><div class="gen-ic">○</div>Running 7-stage quality pipeline</div>
+            <div class="gen-st p"><div class="gen-ic">○</div>Checking word count (target: ±1%)</div>
+          </div>
+        </div>
+        <div id="caComp">
+          <div class="wcw">
+            <div class="wcbar">
+              <div class="fx ic g8 f1"><div class="led led-green"></div><span style="font-family:var(--mono);font-size:11px;color:var(--t3)">Complete</span><span class="wc-bx wc-ok">1,198w ✓</span><span class="ais">AI Score: 8.4/10</span></div>
+              <div class="fx ic g6"><span class="tag tag-teal">v2</span><button class="tb" onclick="document.getElementById('vh').classList.toggle('on')">⧖ History</button></div>
+            </div>
+            <div style="padding:5px 11px;border-bottom:1px solid var(--b1);background:rgba(13,27,42,.5);display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+              <button class="tb on" onclick="runXT('Proofread')">✦ Proofread</button>
+              <button class="tb" onclick="runXT('Humanise')">◈ Humanise</button>
+              <button class="tb" onclick="runXT('Strengthen')">↑ Strengthen</button>
+              <button class="tb" onclick="runXT('Clarify')">⌀ Clarify</button>
+              <div class="tsep"></div>
+              <button class="tb" onclick="openVSP()">⊕ Add visual</button>
+              <button class="tb" onclick="vTab('tbl');openVSP()">⊞ Add table</button>
+              <button class="tb" onclick="vTab('fw');openVSP()">◎ Add diagram</button>
+              <div class="tsep"></div>
+              <button class="tb" onclick="document.getElementById('vh').classList.toggle('on')">↑↓ Versions</button>
+            </div>
+            <div class="wc-bd" contenteditable="true" id="secContent">
+              <p>The competitive dynamics of the UK electric vehicle (EV) market present Tesla with a strategically complex operating environment — one in which the forces identified by Porter (1980) interact in ways that neither pure industry analysis nor company-level assessment can fully illuminate in isolation. <span class="ci">(Porter, 1980; Teece, 2007)</span></p>
+              <p>Supplier power constitutes perhaps the most pressing structural challenge facing Tesla in the near term. The global lithium-ion supply chain remains heavily concentrated, with three suppliers — CATL, Panasonic, and LG Energy Solution — accounting for approximately 68% of global battery cell production as of 2024 <span class="ci">(BloombergNEF, 2024)</span>. This concentration grants upstream actors considerable pricing leverage, contributing to a 23% increase in Tesla's per-unit battery costs between 2021 and 2023 <span class="ci">(Tesla, 2024; IEA, 2023)</span>. Tesla's vertical integration strategy — most notably through its in-house 4680 cell programme — represents an attempt to reconfigure this structural disadvantage rather than simply absorb it.</p>
+              <p>The threat of new entrants sits at a paradoxical juncture. Regulatory mandates across the UK, EU, and California have lowered the long-run demand risk for EV manufacturers, simultaneously attracting capital at unprecedented scale. Between 2020 and 2024, global EV-related investment exceeded $600 billion <span class="ci">(IEA, 2024)</span>. Yet the capital requirements for competitive gigafactory operation, combined with the consumer trust deficit that historically afflicts new automotive entrants, sustain meaningful barriers to profitable market entry at scale <span class="ci">(Bonnet and Mangold, 2020)</span>.</p>
+              <p>Buyer power has increased materially as the EV market has matured and product differentiation has narrowed. By Q3 2024, Tesla's automotive gross margins had declined to 17.1% under sustained price pressure from increasingly empowered buyers who engage in systematic competitor comparison <span class="ci">(Tesla, 2024; YouGov, 2024; SMMT, 2024)</span>.</p>
+              <p style="border-left:2px solid var(--teal);padding-left:11px;color:var(--t2);font-style:italic;font-size:13px">↳ <strong>Figure 1</strong> — Porter's Five Forces Pentagon · Tesla, UK EV Market · Auto-generated, embedded in .docx</p>
+              <p>Overall competitive rivalry in the UK EV market must be assessed as high and intensifying. The strategic implication for Tesla is clear: the sources of competitive advantage that proved durable in the pioneer phase — range superiority, charging infrastructure exclusivity, software capability — are either being replicated or losing their salience as market norms shift.</p>
+            </div>
+          </div>
+          <div class="vh" id="vh">
+            <label class="lbl">Version History</label>
+            <div class="vi"><span class="vi-b">v1</span><span class="vi-p">The competitive dynamics of the UK electric vehicle market present Tesla with…</span><span class="vi-r">Restore</span></div>
+            <div class="vi" style="border-color:var(--teal)"><span class="vi-b" style="color:var(--teal)">v2 current</span><span class="vi-p">The competitive dynamics of the UK electric vehicle (EV) market present Tesla with a strategically…</span><span class="vi-r" style="opacity:.4">Current</span></div>
+          </div>
+          <div class="wabar">
+            <button class="btn btn-green" onclick="acceptSec()">✓ Accept Section</button>
+            <button class="btn btn-sl" onclick="togRev()">↺ Request Revision</button>
+            <button class="btn btn-ghost" onclick="startGen()">⟳ Regenerate</button>
+            <span style="font-size:10px;color:var(--t4)">—</span>
+            <button class="btn btn-ghost btn-sm" onclick="prevSec()">← Prev</button>
+            <button class="btn btn-sl btn-sm" onclick="nextSec()">Next →</button>
+          </div>
+          <div class="revw" id="revw">
+            <div style="font-size:13px;font-weight:700;color:var(--t1);margin-bottom:7px;display:flex;align-items:center;gap:6px"><span class="tag tag-grey">v2</span>Revision Instructions</div>
+            <div class="rb mb8"><div class="rb-ic">◈</div><div class="f12">ZOE rewrites the entire section using your feedback. Word count, citations, and quality pipeline all re-run from scratch.</div></div>
+            <textarea class="inp ta" rows="3" placeholder="e.g. The supplier power section is strong but buyer power needs to go deeper. Include the specific impact of Tesla's 2023 price cuts on margin compression. Add a competitive rivalry intensity table."></textarea>
+            <div class="fx g8 mt8"><button class="btn btn-gold" onclick="startGen();togRev()">Regenerate with feedback →</button><button class="btn btn-ghost btn-sm" onclick="togRev()">Cancel</button></div>
+          </div>
+        </div>
+      </div>
+      <!-- EXTRAS BAR -->
+      <div class="xbar">
+        <span class="xl">EXTRAS</span>
+        <button class="xb" onclick="runXT('Proofread')">✦ Proofread</button>
+        <button class="xb" onclick="runXT('Humanise')">◈ Humanise</button>
+        <button class="xb" onclick="runXT('Strengthen')">↑ Strengthen Argument</button>
+        <button class="xb" onclick="runXT('Simplify')">⌀ Simplify</button>
+        <button class="xb" onclick="runXT('Consistency')">⊙ Consistency Check</button>
+        <button class="xb" onclick="runXT('Citations')">⊕ Citation Audit</button>
+        <button class="xb" onclick="runXT('Paraphrase')">◑ Paraphrase Check</button>
+        <button class="xb" onclick="runXT('Expand')">+ Expand</button>
+        <button class="xb" onclick="runXT('Condense')">− Condense</button>
+      </div>
+    </div>
+    <!-- RIGHT: RECOMMENDATIONS -->
+    <div class="rp">
+      <div class="rp-hd"><div class="rp-t"><div class="led led-teal"></div>ZOE Recommendations</div><span class="tag tag-teal">4 active</span></div>
+      <div class="ri"><div class="rt rt-d">▲ Depth Flag</div><div class="ri-tx">The Porter's analysis describes each force but doesn't evaluate overall competitive intensity as a synthesised conclusion. Adding a final paragraph would satisfy the Critical Evaluation A+ criterion.</div><div class="ri-ac"><button class="btn btn-xs btn-teal" onclick="accRec(this)">✓ Apply</button><button class="btn btn-xs btn-ghost" onclick="accRec(this)">Dismiss</button></div></div>
+      <div class="ri"><div class="rt rt-f">⊞ Framework Extension</div><div class="ri-tx">Adding a brief VRIO analysis of Tesla's core resources alongside Porter's would score on the Multiple Framework criterion — approximately 200 words.</div><div class="ri-ac"><button class="btn btn-xs btn-teal" onclick="accRec(this)">✓ Apply</button><button class="btn btn-xs btn-ghost" onclick="accRec(this)">Dismiss</button></div></div>
+      <div class="ri"><div class="rt rt-i">⬡ Visual Missing</div><div class="ri-tx">Execution Table requires a Force Intensity Bar Chart for this section. Not yet generated.</div><div class="ri-ac"><button class="btn btn-xs btn-teal" onclick="openVSP()">Generate →</button><button class="btn btn-xs btn-ghost" onclick="accRec(this)">Dismiss</button></div></div>
+      <div class="ri"><div class="rt rt-tb">⊞ Table Suggestion</div><div class="ri-tx">A 5-row summary table (Force / Drivers / Intensity / Implication) would improve scannability and satisfy the Structured Presentation criterion.</div><div class="ri-ac"><button class="btn btn-xs btn-teal" onclick="vTab('tbl');openVSP()">Insert Table</button><button class="btn btn-xs btn-ghost" onclick="accRec(this)">Dismiss</button></div></div>
+      <div class="div"></div>
+      <div class="rp-hd" style="margin-bottom:7px"><div class="rp-t f11">Citations (10/10)</div><span class="tag tag-grey">Harvard</span></div>
+      <div>
+        <div class="cite-e"><div><div class="cite-au">Porter (1980)</div><div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Competitive Strategy</div></div><a class="cite-gs" href="https://scholar.google.com/scholar?q=Porter+competitive+strategy+1980" target="_blank">GS↗</a></div>
+        <div class="cite-e"><div><div class="cite-au">BloombergNEF (2024)</div><div style="font-size:10px;color:var(--t3);font-family:var(--mono)">EV Battery Supply Chain</div></div><a class="cite-gs" href="https://scholar.google.com" target="_blank">GS↗</a></div>
+        <div class="cite-e"><div><div class="cite-au">Tesla, Inc. (2024)</div><div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Annual Report 2024</div></div><a class="cite-gs" href="https://scholar.google.com" target="_blank">GS↗</a></div>
+        <div class="cite-e"><div><div class="cite-au">IEA (2024)</div><div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Global EV Outlook 2024</div></div><a class="cite-gs" href="https://scholar.google.com" target="_blank">GS↗</a></div>
+        <div class="cite-e"><div><div class="cite-au">Teece (2007)</div><div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Dynamic capabilities</div></div><a class="cite-gs" href="https://scholar.google.com" target="_blank">GS↗</a></div>
+      </div>
+      <div style="font-size:10px;color:var(--t4);font-family:var(--mono);margin-top:6px;padding:5px 7px;background:var(--rdd);border-radius:var(--r);border:1px solid rgba(192,57,43,.2)">⚠ AI-generated placeholders. Verify all before submission.</div>
+    </div>
+  </div>
+</div>
+<!-- ████ STAGE 4: EXPORT ████ -->
+<div class="pane" id="p4">
+  <div class="sb">
+    <div class="sb-l"><div class="sb-num">STAGE 4</div><div><div class="sb-title">Self-Critique, Correction &amp; Final Delivery</div><div class="sb-sub">ZOE evaluates the complete assessment against A+ criteria and delivers one .docx</div></div></div>
+    <div class="sb-r">
+      <div class="nva" onclick="gs(3)"><svg viewBox="0 0 10 10"><polyline points="6.5,2 3.5,5 6.5,8"/></svg></div>
+      <div class="nva" onclick="gs(5)"><svg viewBox="0 0 10 10"><polyline points="3.5,2 6.5,5 3.5,8"/></svg></div>
+    </div>
+  </div>
+  <div class="ss">
+    <div style="max-width:620px;margin:0 auto;padding:8px 0">
+      <div class="tc mb20">
+        <div style="font-size:10px;font-weight:700;font-family:var(--mono);color:var(--teal);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">Stage 4 Running</div>
+        <div style="font-size:20px;font-weight:800;letter-spacing:-.6px;color:var(--t1);margin-bottom:5px">Strategic Analysis — Tesla Inc.</div>
+        <div style="font-size:12px;color:var(--t3)">5,000 words · Harvard · Masters level · 5 sections accepted</div>
+      </div>
+      <div class="ov-bar mb12">
+        <div class="fx ic g6"><div class="led led-green"></div><span style="font-family:var(--mono);font-size:11px;color:var(--t3)">5/5 sections accepted</span></div>
+        <div class="fx ic g6"><span style="font-family:var(--mono);font-weight:700;color:var(--gold);font-size:13px">4,993</span><span style="font-family:var(--mono);font-size:11px;color:var(--t3)">/5,000 words</span></div>
+        <div class="fx ic g6"><span class="tag tag-teal">Harvard ✓</span></div>
+        <div class="fx ic g6"><span style="font-family:var(--mono);font-size:11px;color:var(--t3)">42 citations</span></div>
+      </div>
+      <div class="card mb12">
+        <div class="ch jb"><div class="ct">Critique Checklist</div><span class="tag tag-teal" id="critiqueCount">7/10 complete</span></div>
+        <div class="cb">
+          <div class="cs-i done"><div class="cs-ic done"><span style="font-size:8px">✓</span></div><div class="cs-lb">A+ criteria compliance check</div><div class="cs-dt">All sections evaluated</div></div>
+          <div class="cs-i done"><div class="cs-ic done"><span style="font-size:8px">✓</span></div><div class="cs-lb">Argument quality — descriptive → evaluative</div><div class="cs-dt">2 paragraphs rewritten</div></div>
+          <div class="cs-i done"><div class="cs-ic done"><span style="font-size:8px">✓</span></div><div class="cs-lb">Evidence density — unsupported claims cited</div><div class="cs-dt">3 claims cited</div></div>
+          <div class="cs-i done"><div class="cs-ic done"><span style="font-size:8px">✓</span></div><div class="cs-lb">Framework application — specific vs generic</div><div class="cs-dt">Porter's deepened</div></div>
+          <div class="cs-i done"><div class="cs-ic done"><span style="font-size:8px">✓</span></div><div class="cs-lb">Banned phrase scan</div><div class="cs-dt">0 instances found</div></div>
+          <div class="cs-i done"><div class="cs-ic done"><span style="font-size:8px">✓</span></div><div class="cs-lb">Sentence uniformity — burstiness pass</div><div class="cs-dt">High variance maintained</div></div>
+          <div class="cs-i done"><div class="cs-ic done"><span style="font-size:8px">✓</span></div><div class="cs-lb">Word count precision pass</div><div class="cs-dt">4,993/5,000 (±0.14%)</div></div>
+          <div class="cs-i act" id="cs8"><div class="cs-ic act"><div class="spin f11">◌</div></div><div class="cs-lb">Citation audit — in-text ↔ reference list</div><div class="cs-dt">Checking 42…</div></div>
+          <div class="cs-i pend" id="cs9"><div class="cs-ic pend"><span style="font-size:9px;font-family:var(--mono)">9</span></div><div class="cs-lb">Formatting audit — headings, figures, refs</div><div class="cs-dt">Pending</div></div>
+          <div class="cs-i pend" id="cs10"><div class="cs-ic pend"><span style="font-size:9px;font-family:var(--mono)">10</span></div><div class="cs-lb">Final .docx assembly with all elements</div><div class="cs-dt">Pending</div></div>
+        </div>
+      </div>
+      <div id="dlSec" style="display:none">
+        <div class="card mb12">
+          <div class="cb tc">
+            <div style="font-size:24px;margin-bottom:8px">◎</div>
+            <div style="font-size:16px;font-weight:800;letter-spacing:-.4px;color:var(--t1);margin-bottom:5px">Assessment Complete</div>
+            <div style="font-size:12px;color:var(--t3);margin-bottom:14px">Self-critique complete. Your document is ready to download.</div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--t3);margin-bottom:10px">Strategic-Analysis-Tesla-Inc.docx</div>
+            <button class="btn btn-gold btn-full btn-lg">↓ Download Assessment</button>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-top:8px">~1.4MB · A4 · Calibri 12pt · Harvard · Link expires in 47 hours</div>
+            <button class="btn btn-ghost btn-sm mt8" onclick="document.getElementById('corrS').style.display=document.getElementById('corrS').style.display==='none'?'block':'none'">View correction summary ▾</button>
+            <div id="corrS" style="display:none;text-align:left;margin-top:9px;background:var(--sl2);border:1px solid var(--b1);border-radius:var(--r2);padding:10px">
+              <div style="font-size:12px;color:var(--t2);padding:5px 0;border-bottom:1px solid rgba(30,51,73,.3);display:flex;gap:7px"><span style="color:var(--teal);font-family:var(--mono);flex-shrink:0">→</span>Added evaluative conclusion to Porter's Five Forces (competitive intensity synthesis)</div>
+              <div style="font-size:12px;color:var(--t2);padding:5px 0;border-bottom:1px solid rgba(30,51,73,.3);display:flex;gap:7px"><span style="color:var(--teal);font-family:var(--mono);flex-shrink:0">→</span>3 unsupported claims received citations in Strategic Recommendations</div>
+              <div style="font-size:12px;color:var(--t2);padding:5px 0;border-bottom:1px solid rgba(30,51,73,.3);display:flex;gap:7px"><span style="color:var(--teal);font-family:var(--mono);flex-shrink:0">→</span>Porter's section deepened — supplier power paragraph extended by 87 words</div>
+              <div style="font-size:12px;color:var(--t2);padding:5px 0;display:flex;gap:7px"><span style="color:var(--teal);font-family:var(--mono);flex-shrink:0">→</span>Removed 2 banned phrases: "It is important to note" and "In conclusion"</div>
+            </div>
+          </div>
+        </div>
+        <div class="fx jc g12">
+          <button class="btn btn-blue" onclick="gs(5)">→ Send for Revisions (Stage 5)</button>
+          <button class="btn btn-teal" onclick="gs(6)">→ Prepare Final Submission (Stage 6)</button>
+        </div>
+      </div>
+      <div class="tc mt12"><button class="btn btn-sl btn-sm" onclick="simS4()">▶ Simulate Stage 4 Completion</button></div>
+    </div>
+  </div>
+</div>
+<!-- ████ STAGE 5: REVISION CENTER ████ -->
+<div class="pane" id="p5">
+  <div class="sb">
+    <div class="sb-l"><div class="sb-num blue">STAGE 5</div><div><div class="sb-title">Revision &amp; Submission Center</div><div class="sb-sub">Upload returned work · add corrections · ZOE implements with live amber/blue highlighting</div></div></div>
+    <div class="sb-r">
+      <button class="pb" onclick="openM('s5')"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="2"/><path d="M6 1v1M6 10v1M1 6h1M10 6h1"/></svg>Revision Settings</button>
+      <div class="nva" onclick="gs(4)"><svg viewBox="0 0 10 10"><polyline points="6.5,2 3.5,5 6.5,8"/></svg></div>
+      <div class="nva" onclick="gs(6)"><svg viewBox="0 0 10 10"><polyline points="3.5,2 6.5,5 3.5,8"/></svg></div>
+    </div>
+  </div>
+  <div class="ss">
+    <div class="rb blue mb12"><div class="rb-ic">📋</div><div><strong>Revision Center:</strong> Upload your marked-up returned work and add supervisor/examiner corrections. ZOE implements all changes, highlights additions in <span style="color:#fde68a;font-weight:700">amber</span> and modifications in <span style="color:#93c5fd;font-weight:700">blue</span>. Review each change individually, then accept all and download the corrected version.</div></div>
+    <div class="s5g">
+      <!-- LEFT: INPUT -->
+      <div>
+        <div class="card mb12">
+          <div class="ch"><div class="ct">Step 1 — Upload Original / Returned Work</div><span class="tag tag-blue">Marked-up document</span></div>
+          <div class="cb">
+            <div class="rup" onclick="document.getElementById('revDoc').click()" ondragover="this.classList.add('drag')" ondragleave="this.classList.remove('drag')">
+              <div style="font-size:20px;margin-bottom:6px;opacity:.5">⤒</div>
+              <div style="font-size:13px;font-weight:700;color:var(--t1);margin-bottom:3px">Upload your returned / marked-up document</div>
+              <div style="font-size:11px;color:var(--t3);font-family:var(--mono)">.docx · .doc · .pdf · scanned image of annotated printout</div>
+            </div>
+            <input type="file" id="revDoc" class="hidden" accept=".docx,.doc,.pdf,.png,.jpg,.jpeg"/>
+            <div id="revDocInfo" style="display:none;padding:8px;background:var(--grd);border:1px solid rgba(26,122,74,.3);border-radius:var(--r2);margin-top:7px">
+              <div class="fx ic g8"><div class="led led-green"></div><span style="font-size:12px;font-weight:700;color:var(--t1)" id="revDocName">Strategic-Analysis-Tesla.docx</span></div>
+              <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px">Document loaded · 4,993 words · ready for revision input</div>
+            </div>
+            <button class="btn btn-ghost btn-full btn-sm mt8" onclick="showRevLoaded()">Demo: Simulate document loaded</button>
+          </div>
+        </div>
+        <div class="card mb12">
+          <div class="ch"><div class="ct">Step 2 — Add Corrections &amp; Feedback</div><span class="tag tag-teal">4 input methods</span></div>
+          <div class="cb">
+            <div style="display:flex;gap:0;border-bottom:1px solid var(--b1);margin-bottom:11px">
+              <div class="rev-ttab on" onclick="revTab('paste')">✎ Paste Feedback</div>
+              <div class="rev-ttab" onclick="revTab('upload')">↑ Upload</div>
+              <div class="rev-ttab" onclick="revTab('comments')">💬 Comments</div>
+              <div class="rev-ttab" onclick="revTab('manual')">≡ Manual</div>
+            </div>
+            <div class="rev-tp on" id="rt-paste">
+              <div class="fld"><label class="lbl">Supervisor / Examiner Feedback — paste in full</label>
+              <textarea class="inp ta" rows="7" style="min-height:140px" placeholder="Paste the complete feedback text here. Examples:&#10;&#10;'Page 3: The Porter's section describes each force but lacks overall synthesis. Add a concluding paragraph evaluating competitive intensity.'&#10;&#10;'Page 7: TOWS strategic options are underdeveloped. Each SO/ST/WO/WT option should be justified with evidence.'&#10;&#10;'Reference 7 (Johnson et al., 2017) is missing the publisher.'&#10;&#10;ZOE will parse every instruction and map each to the relevant section."></textarea></div>
+              <div class="rb gold"><div class="rb-ic">◈</div><div class="f12">ZOE parses every instruction in the feedback text, maps each to the relevant section and paragraph, and implements all changes. You review and approve before downloading.</div></div>
+            </div>
+            <div class="rev-tp" id="rt-upload">
+              <div class="rup" onclick="document.getElementById('corrFile').click()"><div style="font-size:18px;margin-bottom:5px;opacity:.5">⤒</div><div style="font-size:13px;font-weight:700;color:var(--t1);margin-bottom:3px">Upload correction document</div><div style="font-size:11px;color:var(--t3);font-family:var(--mono)">Track-changes .docx · PDF with annotations · feedback text file</div></div>
+              <input type="file" id="corrFile" class="hidden" accept=".docx,.doc,.pdf,.txt"/>
+            </div>
+            <div class="rev-tp" id="rt-comments">
+              <div class="fld"><label class="lbl">Paste Inline Comments — one per line</label>
+              <textarea class="inp ta" rows="6" placeholder="[Para 3]: Add overall competitive intensity conclusion&#10;[Page 5, SWOT]: Expand TOWS strategic options with evidence&#10;[Ref 7]: Missing publisher — Johnson et al., Pearson, 2017&#10;[Conclusion]: Strengthen link back to learning outcomes LO1 and LO3&#10;[Grammar, Para 4]: Convert passive voice to active throughout"></textarea></div>
+            </div>
+            <div class="rev-tp" id="rt-manual">
+              <div id="manualCh" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">
+                <div class="chg-i"><div class="chg-type ct-mod">MODIFICATION</div><div class="chg-tx">Porter's section — Add overall competitive intensity synthesis paragraph after force-by-force analysis</div><div class="chg-ac"><button class="btn btn-xs btn-blue">Edit</button><button class="btn btn-xs btn-danger" onclick="this.closest('.chg-i').remove()">Remove</button></div></div>
+                <div class="chg-i"><div class="chg-type ct-add">ADDITION</div><div class="chg-tx">TOWS section — Expand all four strategic options with evidence and 2 citations each</div><div class="chg-ac"><button class="btn btn-xs btn-blue">Edit</button><button class="btn btn-xs btn-danger" onclick="this.closest('.chg-i').remove()">Remove</button></div></div>
+                <div class="chg-i"><div class="chg-type ct-mod">REFERENCE FIX</div><div class="chg-tx">Reference 7: Johnson et al. (2017) — add publisher: Pearson Education, and fix DOI</div><div class="chg-ac"><button class="btn btn-xs btn-blue">Edit</button><button class="btn btn-xs btn-danger" onclick="this.closest('.chg-i').remove()">Remove</button></div></div>
+              </div>
+              <button class="btn btn-blue btn-sm" onclick="addManualCh()">+ Add change manually</button>
+            </div>
+            <div class="fx g8 mt12"><button class="btn btn-gold btn-full btn-lg" onclick="runRevisions()">◈ Implement Revisions →</button></div>
+          </div>
+        </div>
+        <!-- CHANGE LIST after implementation -->
+        <div class="card" id="changeList" style="display:none">
+          <div class="ch jb"><div class="ct">Identified Changes — Review Each</div><div class="fx g6"><button class="btn btn-xs btn-green" onclick="acceptAll()">✓ Accept All</button><button class="btn btn-xs btn-danger" onclick="rejectAll()">✕ Reject All</button></div></div>
+          <div class="cb">
+            <div class="chg-i" onclick="hlChange('c1')"><div class="chg-type ct-mod">§ MODIFICATION — Porter's §5</div><div class="chg-tx">Added competitive intensity synthesis conclusion paragraph (187 words) to Porter's Five Forces section</div><div class="chg-ac"><button class="btn btn-xs btn-green" onclick="event.stopPropagation();accCh(this,'c1')">✓ Accept</button><button class="btn btn-xs btn-danger" onclick="event.stopPropagation();rejCh(this,'c1')">✕ Reject</button></div></div>
+            <div class="chg-i" onclick="hlChange('c2')"><div class="chg-type ct-add">+ ADDITION — TOWS §2–§5</div><div class="chg-tx">Expanded all four TOWS strategic options with evidence and two citations each (+340 words)</div><div class="chg-ac"><button class="btn btn-xs btn-green" onclick="event.stopPropagation();accCh(this,'c2')">✓ Accept</button><button class="btn btn-xs btn-danger" onclick="event.stopPropagation();rejCh(this,'c2')">✕ Reject</button></div></div>
+            <div class="chg-i" onclick="hlChange('c3')"><div class="chg-type ct-mod">📚 REFERENCE — Johnson et al. (2017)</div><div class="chg-tx">Added publisher (Pearson Education), updated DOI link, fixed year formatting</div><div class="chg-ac"><button class="btn btn-xs btn-green" onclick="event.stopPropagation();accCh(this,'c3')">✓ Accept</button><button class="btn btn-xs btn-danger" onclick="event.stopPropagation();rejCh(this,'c3')">✕ Reject</button></div></div>
+            <div class="chg-i" onclick="hlChange('c4')"><div class="chg-type ct-mod">✦ GRAMMAR — Active voice, Recommendations §</div><div class="chg-tx">Converted 7 passive constructions to active voice in Strategic Recommendations section</div><div class="chg-ac"><button class="btn btn-xs btn-green" onclick="event.stopPropagation();accCh(this,'c4')">✓ Accept</button><button class="btn btn-xs btn-danger" onclick="event.stopPropagation();rejCh(this,'c4')">✕ Reject</button></div></div>
+            <div class="cb" style="border-top:1px solid var(--b1);padding:10px 14px 0">
+              <div class="rb gold"><div class="rb-ic">◈</div><div class="f12"><strong>4 changes identified.</strong> Review each in the diff view on the right. Accept all when satisfied, then download the corrected version.</div></div>
+              <button class="btn btn-gold btn-full mt8" onclick="downloadRevised()">↓ Download Corrected Version</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- RIGHT: DIFF VIEWER -->
+      <div>
+        <div class="leg">
+          <div class="leg-i"><div class="leg-d" style="background:rgba(234,179,8,.35);border:1px solid rgba(234,179,8,.5)"></div>Added</div>
+          <div class="leg-i"><div class="leg-d" style="background:rgba(37,99,235,.25);border:1px solid rgba(37,99,235,.5)"></div>Modified</div>
+          <div class="leg-i"><div class="leg-d" style="background:rgba(192,57,43,.2);border:1px solid rgba(192,57,43,.4)"></div>Removed</div>
+          <div class="leg-i"><div class="leg-d" style="background:rgba(26,122,74,.18);border:1px solid rgba(26,122,74,.4)"></div>Accepted</div>
+          <div style="margin-left:auto;display:flex;gap:5px"><button class="btn btn-xs btn-sl" onclick="showClean()">Clean View</button></div>
+        </div>
+        <div class="diff-w">
+          <div class="diff-hd">
+            <div class="led led-blue"></div>
+            <span style="font-size:12px;font-weight:700;color:var(--t1)">Live Diff View</span>
+            <span class="tag tag-blue" style="margin-left:4px" id="diffStatus">Awaiting revisions</span>
+          </div>
+          <div class="diff-body" id="diffBody"><p style="color:var(--t3);font-style:italic;font-size:13px;text-align:center;padding:36px 18px">Implement revisions to see live highlighted changes here.<br><br>Additions appear in <span style="color:#fde68a">amber</span>, modifications in <span style="color:#93c5fd">blue</span>.<br>Click any highlighted passage to toggle accept/reject.</p></div>
+        </div>
+        <div id="diffAfter" style="display:none;margin-top:12px">
+          <div class="diff-w">
+            <div class="diff-hd"><div class="led led-green"></div><span style="font-size:12px;font-weight:700;color:var(--t1)">Corrected Document Preview</span><span class="tag tag-green" style="margin-left:4px">4 changes applied</span></div>
+            <div class="diff-body">
+              <p><strong>2.0 Porter's Five Forces Analysis</strong></p>
+              <p>The competitive dynamics of the UK electric vehicle (EV) market present Tesla with a strategically complex operating environment — one in which the forces identified by Porter (1980) interact in ways that neither pure industry analysis nor company-level assessment can fully illuminate in isolation.</p>
+              <p>Supplier power constitutes perhaps the most pressing structural challenge facing Tesla in the near term. The global lithium-ion supply chain remains heavily concentrated, with three suppliers — CATL, Panasonic, and LG Energy Solution — accounting for approximately 68% of global battery cell production as of 2024 (BloombergNEF, 2024).</p>
+              <p><span class="rev-add" onclick="togCh(this)" title="ADDITION — click to accept/reject">Overall, the UK EV market must be assessed as highly competitive with intensifying rivalry. The five-force analysis reveals a structural environment in which Tesla's historical advantages — range superiority, charging infrastructure, and software integration — are under simultaneous pressure from all five dimensions. This convergent competitive pressure places a premium on strategic reconfiguration rather than defensive positioning (Porter, 1980; Teece, 2007).</span></p>
+              <p><strong>3.0 SWOT Analysis and TOWS Matrix</strong></p>
+              <p>A systematic SWOT analysis of Tesla's current strategic position reveals significant internal capability coupled with meaningful external vulnerability.</p>
+              <p><span class="rev-mod" onclick="togCh(this)" title="MODIFICATION — TOWS expanded with evidence — click to accept/reject">The SO strategic option — leveraging Tesla's first-mover brand equity and charging infrastructure to accelerate market penetration in fleet and commercial EV segments — is strongly supported by evidence that fleet operators currently represent the fastest-growing EV buyer category in the UK (SMMT, 2024). SMMT data indicates fleet EV registrations grew 47% year-on-year in Q3 2024, suggesting significant untapped revenue potential (SMMT, 2024; YouGov, 2024). The ST option — using Tesla's vertical integration capabilities to create proprietary cost advantages — responds directly to intensifying price competition identified in the Five Forces analysis (IEA, 2024).</span></p>
+              <p><strong>References (corrections applied)</strong></p>
+              <p>Johnson, G., Whittington, R., Scholes, K., Angwin, D. and Regner, P. (2017) <em>Exploring Strategy: Text and Cases</em>. <span class="rev-add" onclick="togCh(this)">11th edn. Harlow: Pearson Education. DOI: https://doi.org/10.1017/9781108367974.</span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ████ STAGE 6: FINAL SUBMISSION ████ -->
+<div class="pane" id="p6">
+  <div class="sb">
+    <div class="sb-l"><div class="sb-num purple">STAGE 6</div><div><div class="sb-title">Final Submission Preparation</div><div class="sb-sub">Fill your details · ZOE proofreads &amp; formats · submission-ready A+ .docx delivered</div></div></div>
+    <div class="sb-r">
+      <button class="pb" onclick="openM('s6')"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="2"/><path d="M6 1v1M6 10v1M1 6h1M10 6h1"/></svg>Format Settings</button>
+      <div class="nva" onclick="gs(5)"><svg viewBox="0 0 10 10"><polyline points="6.5,2 3.5,5 6.5,8"/></svg></div>
+      <div class="nva off"><svg viewBox="0 0 10 10"><polyline points="3.5,2 6.5,5 3.5,8"/></svg></div>
+    </div>
+  </div>
+  <div class="ss">
+    <div class="s6g">
+      <!-- LEFT: SUBMISSION FIELDS -->
+      <div>
+        <div class="rb amber mb12"><div class="rb-ic">★</div><div><strong>Final Stage.</strong> Fill your submission details below. ZOE will proofread the completed document, add page numbers, generate a hyperlinked Table of Contents, format the reference list, insert appendices if required, confirm all formatting standards, and deliver one submission-ready .docx — grade A+ quality (98–100).</div></div>
+        <div class="card">
+          <div class="ch"><div class="ct">Submission Details</div><span class="tag tag-amber">Fill required fields</span></div>
+          <div class="cb">
+            <div style="margin-bottom:14px">
+              <div class="sgt">Student / Author Information</div>
+              <div class="sub-sg">
+                <div class="fld"><label class="lbl">Full Name <span style="color:var(--red)">*</span></label><input type="text" class="inp" id="sf-name" placeholder="e.g. Sarah J. Okonkwo"/></div>
+                <div class="fld"><label class="lbl">Student ID <span style="color:var(--red)">*</span></label><input type="text" class="inp" id="sf-id" placeholder="e.g. 21234567"/></div>
+                <div class="fld sub-sf"><label class="lbl">Programme / Degree</label><input type="text" class="inp" placeholder="e.g. MSc International Business Management"/></div>
+                <div class="fld"><label class="lbl">Year of Study</label><div class="cg" id="yr"><div class="chip" onclick="sc(this,'yr')">Year 1</div><div class="chip on" onclick="sc(this,'yr')">Year 2</div><div class="chip" onclick="sc(this,'yr')">Final Year</div><div class="chip" onclick="sc(this,'yr')">Postgrad</div></div></div>
+                <div class="fld"><label class="lbl">Email Address</label><input type="email" class="inp" placeholder="s.okonkwo@bham.ac.uk"/></div>
+              </div>
+            </div>
+            <div style="margin-bottom:14px">
+              <div class="sgt">Institution &amp; Module</div>
+              <div class="sub-sg">
+                <div class="fld"><label class="lbl">University / Institution <span style="color:var(--red)">*</span></label><input type="text" class="inp" id="sf-inst" value="University of Birmingham"/></div>
+                <div class="fld"><label class="lbl">School / Department</label><input type="text" class="inp" placeholder="Birmingham Business School"/></div>
+                <div class="fld"><label class="lbl">Module Name <span style="color:var(--red)">*</span></label><input type="text" class="inp" id="sf-mod" value="Strategic Management"/></div>
+                <div class="fld"><label class="lbl">Module Code</label><input type="text" class="inp" value="BMG814"/></div>
+                <div class="fld"><label class="lbl">Module Leader</label><input type="text" class="inp" placeholder="Dr. A. Thompson"/></div>
+                <div class="fld"><label class="lbl">Submission Deadline</label><input type="date" class="inp" id="sf-dl"/></div>
+              </div>
+            </div>
+            <div style="margin-bottom:14px">
+              <div class="sgt">Assessment Details</div>
+              <div class="sub-sg">
+                <div class="fld sub-sf"><label class="lbl">Assessment Title <span style="color:var(--red)">*</span></label><input type="text" class="inp" id="sf-title" value="Strategic Analysis of Tesla, Inc. in the UK Electric Vehicle Market"/></div>
+                <div class="fld"><label class="lbl">Word Count (actual)</label><input type="number" class="inp" value="4993" style="font-family:var(--mono);color:var(--gold);font-weight:700"/></div>
+                <div class="fld"><label class="lbl">Academic Year</label><input type="text" class="inp" value="2025/2026"/></div>
+              </div>
+            </div>
+            <div style="margin-bottom:14px">
+              <div class="sgt">Professional / Company (optional — for MBA/CPD)</div>
+              <div class="sub-sg">
+                <div class="fld"><label class="lbl">Company / Organisation</label><input type="text" class="inp" placeholder="e.g. Deloitte UK"/></div>
+                <div class="fld"><label class="lbl">Job Title</label><input type="text" class="inp" placeholder="e.g. Business Analyst"/></div>
+              </div>
+            </div>
+            <div style="margin-bottom:14px">
+              <div class="sgt">Document Options</div>
+              <div class="tgl-r"><div><div class="tgl-l">Table of Contents</div><div class="tgl-s">Hyperlinked · H1 and H2 entries · dot leaders</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+              <div class="tgl-r"><div><div class="tgl-l">Page Numbers</div><div class="tgl-s">Footer · right-aligned · starts page 3</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+              <div class="tgl-r"><div><div class="tgl-l">Title Page</div><div class="tgl-s">Auto-populated with all submission details</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+              <div class="tgl-r"><div><div class="tgl-l">Appendices</div><div class="tgl-s">Append supporting materials after references</div></div><div class="tgl" onclick="this.classList.toggle('on')"></div></div>
+              <div class="tgl-r"><div><div class="tgl-l">Word Count Declaration</div><div class="tgl-s">On title page — excludes refs, figures, tables</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+              <div class="tgl-r"><div><div class="tgl-l">Final AI Proofreading Pass</div><div class="tgl-s">Grammar · tense · consistency · passive voice</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+              <div class="tgl-r"><div><div class="tgl-l">Citation Disclaimer</div><div class="tgl-s">Navy-border box on page 2 (remove before submit)</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div>
+            </div>
+            <button class="btn btn-gold btn-full btn-lg" onclick="runFinalPrep()">Prepare Final Submission →</button>
+          </div>
+        </div>
+      </div>
+      <!-- RIGHT: CHECKLIST + PREVIEW -->
+      <div>
+        <div class="card mb12" id="finalChecklist" style="display:none">
+          <div class="ch jb"><div class="ct">Final Preparation</div><span class="tag tag-amber" id="fcCount">0/10</span></div>
+          <div class="cb">
+            <div class="fc pend" id="fc1"><div class="fc-ic pend"><span>1</span></div><div>Title page generation</div></div>
+            <div class="fc pend" id="fc2"><div class="fc-ic pend"><span>2</span></div><div>Table of Contents with hyperlinks</div></div>
+            <div class="fc pend" id="fc3"><div class="fc-ic pend"><span>3</span></div><div>Final AI proofreading pass</div></div>
+            <div class="fc pend" id="fc4"><div class="fc-ic pend"><span>4</span></div><div>Banned phrase final scan</div></div>
+            <div class="fc pend" id="fc5"><div class="fc-ic pend"><span>5</span></div><div>Citation format audit (Harvard)</div></div>
+            <div class="fc pend" id="fc6"><div class="fc-ic pend"><span>6</span></div><div>Reference list — hanging indent, DOI links, alphabetical</div></div>
+            <div class="fc pend" id="fc7"><div class="fc-ic pend"><span>7</span></div><div>Figure numbering and caption placement</div></div>
+            <div class="fc pend" id="fc8"><div class="fc-ic pend"><span>8</span></div><div>Page numbers (footer, right-aligned)</div></div>
+            <div class="fc pend" id="fc9"><div class="fc-ic pend"><span>9</span></div><div>Word count declaration confirmed</div></div>
+            <div class="fc pend" id="fc10"><div class="fc-ic pend"><span>10</span></div><div>Final .docx assembly — submission ready</div></div>
+          </div>
+        </div>
+        <!-- Doc preview -->
+        <div class="card mb12" id="docPreview" style="display:none">
+          <div class="ch jb"><div class="ct">Document Preview</div><span class="tag tag-green">A4 · Calibri 12pt · Double-spaced</span></div>
+          <div class="cb">
+            <div class="doc-page">
+              <div class="doc-disc">⚠ All citations are AI-generated placeholders. Verify all sources before submission.</div>
+              <h1 id="dp-title">Strategic Analysis of Tesla, Inc. in the UK Electric Vehicle Market</h1>
+              <div class="doc-meta">
+                <div id="dp-name">Student Name</div>
+                <div id="dp-id">Student ID: —</div>
+                <div id="dp-mod">Module: Strategic Management (BMG814)</div>
+                <div id="dp-inst">Birmingham Business School, University of Birmingham</div>
+                <div style="margin-top:7px;font-size:11px;color:#666">Word Count: 4,993 words (excluding references, figures, and tables)</div>
+              </div>
+              <div>
+                <div style="font-weight:700;margin-bottom:5px;font-size:12px">Table of Contents</div>
+                <div class="doc-toc-item"><span>1.0 Introduction</span><span>3</span></div>
+                <div class="doc-toc-item"><span>2.0 Porter's Five Forces Analysis</span><span>3</span></div>
+                <div class="doc-toc-item"><span>3.0 SWOT Analysis and TOWS Matrix</span><span>7</span></div>
+                <div class="doc-toc-item"><span>4.0 Strategic Recommendations</span><span>11</span></div>
+                <div class="doc-toc-item"><span>5.0 Conclusion</span><span>16</span></div>
+                <div class="doc-toc-item"><span>References</span><span>17</span></div>
+              </div>
+              <div class="pg-n">Page 2</div>
+            </div>
+          </div>
+        </div>
+        <!-- Final download -->
+        <div id="finalDL" style="display:none">
+          <div class="card">
+            <div class="cb tc">
+              <div class="grade-badge">A+</div>
+              <div style="font-size:16px;font-weight:800;letter-spacing:-.4px;color:var(--t1);margin-bottom:4px">Submission Ready</div>
+              <div style="font-size:12px;color:var(--t3);margin-bottom:14px">10/10 checks complete · Grade A+ quality (98–100) · Formatted to institutional standards</div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--t3);margin-bottom:11px">Strategic-Analysis-Tesla-Inc_FINAL.docx</div>
+              <button class="btn btn-gold btn-full btn-lg" style="font-size:15px;padding:12px 22px">↓ Download Submission-Ready Document</button>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-top:7px">~1.6MB · A4 · Calibri 12pt · Double-spaced · Harvard · All standards met</div>
+              <div class="rb mt12" style="text-align:left"><div class="rb-ic">★</div><div class="f12">This document has passed ZOE's complete 10-stage final preparation pipeline. Open it, read it, and submit it. <strong>You are done.</strong></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app-body -->
+</div><!-- /app -->
+
+<!-- MODAL -->
+<div class="ov" id="ov" onclick="closeM(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="mhd"><div><div class="mti" id="mTitle">Personalise</div><div class="msu" id="mSub">Settings</div></div><div class="mclose" onclick="closeM()">✕</div></div>
+    <div class="mbod" id="mBody"></div>
+    <div class="mfoot"><button class="btn btn-ghost btn-sm" onclick="closeM()">Cancel</button><button class="btn btn-gold" onclick="closeM()">✓ Apply</button></div>
+  </div>
+</div>
+<script>
+let cur=1;
+function gs(n){
+  cur=n;
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('vis'));
+  document.getElementById('p'+n).classList.add('vis');
+  for(let i=1;i<=6;i++){
+    const h=document.getElementById('hs'+i);
+    h.classList.remove('act','done');
+    if(i===n)h.classList.add('act');
+    else if(i<n)h.classList.add('done');
+  }
+  document.getElementById('gPrev').classList.toggle('off',n===1);
+  document.getElementById('gNext').classList.toggle('off',n===6);
+}
+function prevS(){if(cur>1)gs(cur-1);}
+function nextS(){if(cur<6)gs(cur+1);}
+
+// Chip select
+function sc(el,gid){
+  document.querySelectorAll('#'+gid+' .chip').forEach(c=>c.classList.remove('on','ong'));
+  el.classList.add('on');
+}
+
+// Brief tabs
+function bTab(t){
+  document.querySelectorAll('.btab,.btab-p').forEach(e=>e.classList.remove('on'));
+  const ts=['type','upload','url','manual'];
+  document.querySelectorAll('.btab').forEach((e,i)=>{if(ts[i]===t)e.classList.add('on');});
+  document.getElementById('bp-'+t).classList.add('on');
+}
+function updBC(){const v=document.getElementById('btext').value;document.getElementById('bcc').textContent=v.length.toLocaleString()+' characters';}
+function loadSB(){
+  document.getElementById('btext').value='MODULE: Strategic Management (BMG814) — Level 7\nWORD COUNT: 5,000 words (excluding references, tables, and figures)\nCITATION STYLE: Harvard (UK)\n\nASSIGNMENT BRIEF:\nYou are required to produce a comprehensive strategic analysis of Tesla, Inc. with specific focus on the UK electric vehicle market.\n\nYour analysis must:\n1. Apply Porter\'s Five Forces Framework to assess competitive dynamics\n2. Conduct a SWOT analysis followed by a TOWS matrix identifying four strategic options\n3. Develop three evidence-based strategic recommendations\n\nLEARNING OUTCOMES:\nLO1: Critically evaluate strategic frameworks in real-world contexts\nLO2: Synthesise primary and secondary evidence to support analytical conclusions\nLO3: Develop original strategic recommendations grounded in rigorous analysis\n\nMARKING RUBRIC (A+ = 85-100%):\n- Critical evaluation of frameworks (not description): 30%\n- Quality and integration of evidence: 25%\n- Strategic recommendations (originality, feasibility): 25%\n- Academic writing quality and referencing: 20%';
+  updBC();
+}
+function handleF(inp){
+  const list=document.getElementById('flist');
+  Array.from(inp.files).forEach(f=>{
+    const d=document.createElement('div');
+    d.style.cssText='display:flex;align-items:center;gap:7px;padding:5px 9px;background:var(--sl2);border:1px solid var(--b1);border-radius:var(--r);font-size:12px';
+    d.innerHTML=`<span style="color:var(--teal);font-family:var(--mono);font-size:10px">${f.name.split('.').pop().toUpperCase()}</span><span style="flex:1;color:var(--t1)">${f.name}</span><span style="color:var(--t3);font-family:var(--mono)">${(f.size/1024).toFixed(0)}KB</span><span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--t3)">✕</span>`;
+    list.appendChild(d);
+  });
+}
+
+// Stage 2
+function tSPC(card){
+  card.classList.toggle('exp');
+  const arr=card.querySelector('.spch .t3c');
+  if(arr)arr.textContent=card.classList.contains('exp')?'▾':'▸';
+}
+function addSec(){
+  const list=document.getElementById('spl');
+  const n=String(list.querySelectorAll('.spc').length+1).padStart(2,'0');
+  const d=document.createElement('div');
+  d.className='spc';
+  d.innerHTML=`<div class="spch" onclick="tSPC(this.closest('.spc'))"><div class="spcn">${n}</div><input type="text" class="inp" style="flex:1;margin:0 7px;font-size:13px;font-weight:700" placeholder="Section title…" onclick="event.stopPropagation()"/><div class="fx g6 ic"><span style="font-family:var(--mono);font-size:12px;color:var(--gold)">0w</span><span class="t3c f12">▸</span></div></div><div class="spcb"><div class="mg"><div class="fld"><label class="lbl">Word Count</label><input type="number" class="inp" value="500" style="font-family:var(--mono);color:var(--gold);font-weight:700"/></div><div class="fld"><label class="lbl">Citations</label><input type="number" class="inp" value="5" style="font-family:var(--mono);color:var(--teal);font-weight:700"/></div><div class="fld mf"><label class="lbl">Writing Notes</label><textarea class="inp ta" rows="2" placeholder="Instructions for this section…"></textarea></div></div></div>`;
+  list.appendChild(d);
+}
+
+// Stage 3
+const sections=[
+  {title:'Introduction',meta:'<span class="tag tag-gold">250 words</span><span class="tag tag-teal">4 citations</span>',state:'done',desc:'ZOE will write exactly 250 words (±1%) for the introduction.'},
+  {title:"Porter's Five Forces Analysis",meta:'<span class="tag tag-gold">1,200 words</span><span class="tag tag-teal">10 citations</span><span class="tag tag-grey">Pentagon diagram</span><span class="tag tag-grey">Force table</span>',state:'active',desc:'ZOE will write exactly 1,200 words (±1%) using Porter\'s framework applied to the Tesla UK EV case.'},
+  {title:'SWOT + TOWS Matrix',meta:'<span class="tag tag-gold">900 words</span><span class="tag tag-teal">7 citations</span><span class="tag tag-grey">2×2 Matrix</span>',state:'pending',desc:'ZOE will write exactly 900 words (±1%) covering the SWOT analysis and TOWS strategic matrix.'},
+  {title:'Strategic Recommendations',meta:'<span class="tag tag-gold">1,400 words</span><span class="tag tag-teal">12 citations</span><span class="tag tag-grey">Ansoff Matrix</span>',state:'pending',desc:'ZOE will write exactly 1,400 words (±1%) covering three evidence-based strategic recommendations.'},
+  {title:'Conclusion',meta:'<span class="tag tag-gold">250 words</span><span class="tag tag-teal">3 citations</span>',state:'pending',desc:'ZOE will write exactly 250 words (±1%) synthesising the key arguments and strategic implications.'}
+];
+let curSec=1;
+
+function selSec(i){
+  curSec=i;
+  document.querySelectorAll('.si').forEach((el,idx)=>el.classList.toggle('act',idx===i));
+  document.getElementById('secTitle').textContent=sections[i].title;
+  document.getElementById('secMeta').innerHTML=sections[i].meta;
+  document.getElementById('pdDrawer').classList.remove('on');
+  document.getElementById('pdBtn').classList.remove('on');
+  if(sections[i].state==='done'||sections[i].state==='active'){showComp();}
+  else{showNS(i);}
+}
+function showComp(){document.getElementById('caNS').classList.add('hidden');document.getElementById('caGen').classList.add('hidden');document.getElementById('caComp').classList.remove('hidden');}
+function showNS(i){
+  document.getElementById('caComp').classList.add('hidden');
+  document.getElementById('caGen').classList.add('hidden');
+  document.getElementById('caNS').classList.remove('hidden');
+  if(i!==undefined)document.getElementById('ns-desc').textContent=sections[i].desc;
+}
+function showGen(){document.getElementById('caNS').classList.add('hidden');document.getElementById('caComp').classList.add('hidden');document.getElementById('caGen').classList.remove('hidden');}
+
+function startGen(){
+  showGen();
+  document.getElementById('genTitle').textContent='Writing '+sections[curSec].title+'…';
+  setTimeout(()=>{showComp();sections[curSec].state='done';const si=document.querySelectorAll('.si')[curSec];si.classList.add('done');},3600);
+}
+function togPD(){const d=document.getElementById('pdDrawer');d.classList.toggle('on');document.getElementById('pdBtn').classList.toggle('on',d.classList.contains('on'));}
+function applyPD(){document.getElementById('pdDrawer').classList.remove('on');document.getElementById('pdBtn').classList.remove('on');startGen();}
+function togRev(){document.getElementById('revw').classList.toggle('on');}
+function acceptSec(){sections[curSec].state='done';const si=document.querySelectorAll('.si')[curSec];si.classList.add('done');if(curSec<4){curSec++;document.querySelectorAll('.si')[curSec].classList.add('act');showNS(curSec);}}
+function prevSec(){if(curSec>0)selSec(curSec-1);}
+function nextSec(){if(curSec<4)selSec(curSec+1);}
+function runXT(t){const btns=document.querySelectorAll('.xb');btns.forEach(b=>{if(b.textContent.includes(t)){b.classList.add('run');setTimeout(()=>b.classList.remove('run'),2000);}});}
+function openVSP(){document.getElementById('vsp').classList.add('on');}
+function closeVSP(){document.getElementById('vsp').classList.remove('on');}
+function vTab(t){
+  const ts=['chart','fw','tbl','img','anal'];
+  document.querySelectorAll('.vt').forEach((e,i)=>e.classList.toggle('on',ts[i]===t));
+  document.querySelectorAll('.vp').forEach(p=>p.classList.remove('on'));
+  const p=document.getElementById('vp-'+t);if(p)p.classList.add('on');
+}
+function sCC(el){document.querySelectorAll('.ct-c').forEach(c=>c.classList.remove('on'));el.classList.add('on');}
+function accRec(btn){const item=btn.closest('.ri');item.style.opacity=0;setTimeout(()=>item.remove(),280);}
+
+// Table size grid
+(function(){
+  const g=document.getElementById('tsg');
+  if(!g)return;
+  for(let r=1;r<=5;r++){
+    for(let c=1;c<=6;c++){
+      const cell=document.createElement('div');
+      cell.className='tsc';
+      cell.onmouseover=()=>{document.querySelectorAll('.tsc').forEach(el=>{el.classList.toggle('sel',el.dataset.r<=r&&el.dataset.c<=c);});document.getElementById('tsl').textContent=r+'×'+c;};
+      cell.dataset.r=r;cell.dataset.c=c;
+      g.appendChild(cell);
+    }
+  }
+})();
+
+// Stage 4
+function simS4(){
+  const items=['cs8','cs9','cs10'];
+  const dts=['42 citations verified','Formatting correct','Assembly complete'];
+  let i=0;
+  const iv=setInterval(()=>{
+    if(i>=items.length){clearInterval(iv);document.getElementById('dlSec').style.display='block';document.getElementById('critiqueCount').textContent='10/10 complete';return;}
+    const el=document.getElementById(items[i]);
+    el.className='cs-i done';
+    el.querySelector('.cs-ic').className='cs-ic done';
+    el.querySelector('.cs-ic').innerHTML='<span style="font-size:8px">✓</span>';
+    el.querySelector('.cs-dt').textContent=dts[i];
+    i++;
+  },900);
+}
+
+// Stage 5
+function revTab(t){
+  document.querySelectorAll('.rev-ttab,.rev-tp').forEach(e=>e.classList.remove('on'));
+  const ts=['paste','upload','comments','manual'];
+  document.querySelectorAll('.rev-ttab').forEach((e,i)=>{if(ts[i]===t)e.classList.add('on');});
+  document.getElementById('rt-'+t).classList.add('on');
+}
+function showRevLoaded(){document.getElementById('revDocInfo').style.display='block';}
+function runRevisions(){
+  showRevLoaded();
+  document.getElementById('changeList').style.display='block';
+  document.getElementById('diffStatus').textContent='4 changes identified';
+  document.getElementById('diffBody').innerHTML=`
+    <p style="font-size:10px;font-family:var(--mono);color:var(--t3);margin-bottom:11px">Click any highlighted passage to accept or reject individually.</p>
+    <p><strong>2.0 Porter's Five Forces Analysis</strong></p>
+    <p>The competitive dynamics of the UK electric vehicle (EV) market present Tesla with a strategically complex operating environment — one in which the forces identified by Porter (1980) interact in ways that neither pure industry analysis nor company-level assessment can fully illuminate in isolation.</p>
+    <p>Supplier power constitutes perhaps the most pressing structural challenge facing Tesla in the near term. The global lithium-ion supply chain remains heavily concentrated, with three suppliers — CATL, Panasonic, and LG Energy Solution — accounting for approximately 68% of global battery cell production as of 2024 (BloombergNEF, 2024).</p>
+    <p><span class="rev-add" onclick="togCh(this)" title="ADDITION — competitive intensity synthesis — click to toggle">Overall, the UK EV market must be assessed as highly competitive with intensifying rivalry. The five-force analysis reveals a structural environment in which Tesla's historical advantages are under simultaneous pressure from all five dimensions. This convergent competitive pressure places a premium on strategic reconfiguration rather than defensive positioning (Porter, 1980; Teece, 2007).</span></p>
+    <p><strong>3.0 SWOT Analysis and TOWS Matrix</strong></p>
+    <p>A systematic SWOT analysis of Tesla's current strategic position reveals significant internal capability coupled with meaningful external vulnerability.</p>
+    <p><span class="rev-mod" onclick="togCh(this)" title="MODIFICATION — TOWS options expanded with evidence — click to toggle">The SO strategic option — leveraging Tesla's first-mover brand equity to accelerate market penetration in fleet EV segments — is strongly supported by evidence that fleet operators represent the fastest-growing EV buyer category in the UK (SMMT, 2024). Fleet EV registrations grew 47% year-on-year in Q3 2024, suggesting significant untapped revenue potential (SMMT, 2024; YouGov, 2024). The ST option — using Tesla's vertical integration capabilities to create proprietary cost advantages — responds directly to intensifying price competition (IEA, 2024).</span></p>
+    <p><strong>References (corrections applied)</strong></p>
+    <p>Johnson, G., Whittington, R., Scholes, K., Angwin, D. and Regner, P. (2017) <em>Exploring Strategy</em>. <span class="rev-add" onclick="togCh(this)">11th edn. Harlow: Pearson Education. DOI: https://doi.org/10.1017/9781108367974.</span></p>
+  `;
+}
+function togCh(el){
+  if(el.classList.contains('rev-acc')){el.className=el.title.includes('ADD')?'rev-add':'rev-mod';el.title=el.title;}
+  else{el.classList.add('rev-acc');}
+}
+function addManualCh(){
+  const l=document.getElementById('manualCh');
+  const d=document.createElement('div');d.className='chg-i';
+  d.innerHTML='<div class="chg-type ct-add">ADDITION</div><input type="text" class="inp" style="margin-bottom:5px" placeholder="Describe the change…"/><div class="chg-ac"><button class="btn btn-xs btn-danger" onclick="this.closest(\'.chg-i\').remove()">Remove</button></div>';
+  l.appendChild(d);
+}
+function accCh(btn,id){const i=btn.closest('.chg-i');i.classList.add('acc');i.querySelector('.chg-ac').innerHTML='<span style="font-size:11px;color:var(--green);font-family:var(--mono)">✓ Accepted</span>';}
+function rejCh(btn,id){const i=btn.closest('.chg-i');i.classList.add('rej');i.querySelector('.chg-ac').innerHTML='<span style="font-size:11px;color:var(--red);font-family:var(--mono)">✕ Rejected</span>';}
+function acceptAll(){document.querySelectorAll('.chg-i').forEach(i=>{i.classList.add('acc');const ac=i.querySelector('.chg-ac');if(ac)ac.innerHTML='<span style="font-size:11px;color:var(--green);font-family:var(--mono)">✓ Accepted</span>';});}
+function rejectAll(){document.querySelectorAll('.chg-i').forEach(i=>{i.classList.add('rej');const ac=i.querySelector('.chg-ac');if(ac)ac.innerHTML='<span style="font-size:11px;color:var(--red);font-family:var(--mono)">✕ Rejected</span>';});}
+function hlChange(id){}
+function showClean(){document.querySelectorAll('.rev-add,.rev-mod,.rev-del').forEach(e=>{e.className='rev-acc';});}
+function downloadRevised(){document.getElementById('diffAfter').style.display='block';document.getElementById('diffAfter').scrollIntoView({behavior:'smooth'});}
+
+// Stage 6
+function runFinalPrep(){
+  const name=document.getElementById('sf-name').value||'Student Name';
+  const id=document.getElementById('sf-id').value||'—';
+  const inst=document.getElementById('sf-inst').value||'Institution';
+  const mod=document.getElementById('sf-mod').value||'Module';
+  const title=document.getElementById('sf-title').value||'Assessment Title';
+  document.getElementById('dp-name').textContent=name;
+  document.getElementById('dp-id').textContent='Student ID: '+id;
+  document.getElementById('dp-mod').textContent='Module: '+mod;
+  document.getElementById('dp-inst').textContent=inst;
+  document.getElementById('dp-title').textContent=title;
+  document.getElementById('finalChecklist').style.display='block';
+  document.getElementById('docPreview').style.display='block';
+  document.getElementById('finalDL').style.display='none';
+  const ids=['fc1','fc2','fc3','fc4','fc5','fc6','fc7','fc8','fc9','fc10'];
+  const dts=['Title page generated with all submission details','Table of Contents — 5 entries, hyperlinked, dot leaders','Grammar, tense, and consistency — 11 minor edits applied','Banned phrase scan — 0 instances found','Citation format verified — Harvard compliant throughout','Reference list — hanging indent, DOI links, alphabetical order','Figures 1–4 numbered sequentially, captions correctly placed','Page numbers — footer, right-aligned, from page 3','Word count declaration: 4,993 words (excl. refs, figs, tables)','Final .docx assembled — A+ submission ready'];
+  let i=0;
+  document.getElementById('fcCount').textContent='0/10';
+  const iv=setInterval(()=>{
+    if(i>=ids.length){clearInterval(iv);document.getElementById('finalDL').style.display='block';document.getElementById('fcCount').textContent='10/10';document.getElementById('finalDL').scrollIntoView({behavior:'smooth'});return;}
+    const el=document.getElementById(ids[i]);
+    el.className='fc done';
+    const ic=el.querySelector('.fc-ic');ic.className='fc-ic done';ic.innerHTML='<span>✓</span>';
+    const tx=el.childNodes[1];
+    if(tx){const f=document.createElement('div');f.innerHTML=tx.textContent+'<div style="font-family:var(--mono);font-size:10px;color:var(--t3);margin-top:1px">'+dts[i]+'</div>';el.replaceChild(f,tx);}
+    document.getElementById('fcCount').textContent=(i+1)+'/10';
+    i++;
+  },650);
+}
+
+// Modal
+const mCfg={
+  s1:{t:'Personalise — Brief Intake',s:'Language, output and quality settings',b:`<div class="msec"><div class="msec-t">Language &amp; Localisation</div><div class="mg"><div class="fld mf"><label class="lbl">Writing Language</label><div class="cg" id="ml"><div class="chip on" onclick="sc(this,'ml')">UK English</div><div class="chip" onclick="sc(this,'ml')">US English</div><div class="chip" onclick="sc(this,'ml')">Australian English</div></div></div><div class="fld"><label class="lbl">Subject Area</label><div class="sw"><select class="inp"><option>Business &amp; Management</option><option>Finance &amp; Accounting</option><option>Healthcare</option><option>Law</option><option>Social Sciences</option><option>STEM</option></select></div></div><div class="fld"><label class="lbl">Institution Type</label><div class="cg" id="mit"><div class="chip on" onclick="sc(this,'mit')">UK University</div><div class="chip" onclick="sc(this,'mit')">US University</div><div class="chip" onclick="sc(this,'mit')">Professional CPD</div></div></div></div></div>
+  <div class="msec"><div class="msec-t">Output Preferences</div><div class="mg"><div class="fld"><label class="lbl">Number Format</label><div class="cg" id="mnf"><div class="chip on" onclick="sc(this,'mnf')">Numerals always</div><div class="chip" onclick="sc(this,'mnf')">Words below ten</div></div></div><div class="fld"><label class="lbl">Heading Style</label><div class="cg" id="mhs"><div class="chip on" onclick="sc(this,'mhs')">Numbered (1.1, 1.2)</div><div class="chip" onclick="sc(this,'mhs')">Unnumbered</div><div class="chip" onclick="sc(this,'mhs')">All-caps</div></div></div><div class="fld mf"><label class="lbl">Excluded Keywords</label><input type="text" class="inp" placeholder="e.g. Do not mention specific employee names…"/></div></div></div>
+  <div class="msec"><div class="msec-t">Quality Pipeline</div><div class="tgl-r"><div><div class="tgl-l">Auto-humanisation</div><div class="tgl-s">Burstiness and AI-pattern checks</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div><div class="tgl-r"><div><div class="tgl-l">Passive voice limit (≤30%)</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div><div class="tgl-r"><div><div class="tgl-l">Banned phrase detection</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div></div>`},
+  s2:{t:'Personalise — Execution Table',s:'AI temperature, formatting and document settings',b:`<div class="msec"><div class="msec-t">AI Temperature Per Section Type</div><div class="rb mb8"><div class="rb-ic">◈</div><div class="f12">ZOE sets temperature automatically. Adjust only if you need specific behaviour.</div></div>${[['Introduction','0.60'],['Framework Analysis','0.45'],['Discussion/Critical','0.65'],['Financial Analysis','0.15'],['Code Sections','0.10'],['Conclusion','0.40']].map(([l,v])=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><span style="font-size:12px;color:var(--t2);width:170px;flex-shrink:0">${l}</span><input type="range" min="0" max="10" value="${parseFloat(v)*10}" class="rng f1"/><span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--gold);width:26px">${v}</span></div>`).join('')}</div>
+  <div class="msec"><div class="msec-t">Document Formatting</div><div class="mg"><div class="fld"><label class="lbl">Paper Size</label><div class="cg" id="ps"><div class="chip on" onclick="sc(this,'ps')">A4</div><div class="chip" onclick="sc(this,'ps')">Letter (US)</div></div></div><div class="fld"><label class="lbl">Body Font</label><div class="cg" id="bf"><div class="chip on" onclick="sc(this,'bf')">Calibri 12pt</div><div class="chip" onclick="sc(this,'bf')">Times New Roman 12pt</div><div class="chip" onclick="sc(this,'bf')">Arial 12pt</div></div></div><div class="fld"><label class="lbl">Line Spacing</label><div class="cg" id="ls"><div class="chip on" onclick="sc(this,'ls')">Double (2.0)</div><div class="chip" onclick="sc(this,'ls')">1.5</div><div class="chip" onclick="sc(this,'ls')">Single</div></div></div><div class="fld"><label class="lbl">Margins</label><div class="cg" id="mg2"><div class="chip on" onclick="sc(this,'mg2')">Standard (25mm)</div><div class="chip" onclick="sc(this,'mg2')">Wide (30mm binding)</div></div></div></div></div>`},
+  s5:{t:'Revision Settings',s:'Configure how ZOE implements corrections',b:`<div class="msec"><div class="msec-t">Highlight Colours</div><div class="mg"><div class="fld"><label class="lbl">Additions</label><div class="cg" id="hc1"><div class="chip on" onclick="sc(this,'hc1')">Amber (yellow)</div><div class="chip" onclick="sc(this,'hc1')">Green</div></div></div><div class="fld"><label class="lbl">Modifications</label><div class="cg" id="hc2"><div class="chip on" onclick="sc(this,'hc2')">Blue</div><div class="chip" onclick="sc(this,'hc2')">Purple</div></div></div></div></div>
+  <div class="msec"><div class="msec-t">Revision Scope</div><div class="tgl-r"><div><div class="tgl-l">Grammar corrections</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div><div class="tgl-r"><div><div class="tgl-l">Reference list corrections</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div><div class="tgl-r"><div><div class="tgl-l">Content additions</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div><div class="tgl-r"><div><div class="tgl-l">Word count re-targeting after revisions</div></div><div class="tgl on" onclick="this.classList.toggle('on')"></div></div></div>`},
+  s6:{t:'Format Settings — Final Submission',s:'Institutional formatting standards for final .docx',b:`<div class="msec"><div class="msec-t">Formatting Standards</div><div class="mg"><div class="fld"><label class="lbl">Paper Size</label><div class="cg" id="f6ps"><div class="chip on" onclick="sc(this,'f6ps')">A4</div><div class="chip" onclick="sc(this,'f6ps')">Letter</div></div></div><div class="fld"><label class="lbl">Font</label><div class="cg" id="f6fn"><div class="chip on" onclick="sc(this,'f6fn')">Calibri 12pt</div><div class="chip" onclick="sc(this,'f6fn')">Times New Roman 12pt</div></div></div><div class="fld"><label class="lbl">Spacing</label><div class="cg" id="f6sp"><div class="chip on" onclick="sc(this,'f6sp')">Double</div><div class="chip" onclick="sc(this,'f6sp')">1.5</div></div></div><div class="fld"><label class="lbl">Page Numbers Start</label><div class="cg" id="f6pn"><div class="chip on" onclick="sc(this,'f6pn')">Page 3 (after TOC)</div><div class="chip" onclick="sc(this,'f6pn')">Page 1</div><div class="chip" onclick="sc(this,'f6pn')">Page 2</div></div></div></div></div>
+  <div class="msec"><div class="msec-t">Additional Elements</div><div class="tgl-r"><div><div class="tgl-l">List of Figures</div><div class="tgl-s">After Table of Contents</div></div><div class="tgl" onclick="this.classList.toggle('on')"></div></div><div class="tgl-r"><div><div class="tgl-l">List of Tables</div></div><div class="tgl" onclick="this.classList.toggle('on')"></div></div><div class="tgl-r"><div><div class="tgl-l">Abstract (200 words)</div><div class="tgl-s">Before Table of Contents</div></div><div class="tgl" onclick="this.classList.toggle('on')"></div></div><div class="tgl-r"><div><div class="tgl-l">Appendices section</div><div class="tgl-s">After reference list</div></div><div class="tgl" onclick="this.classList.toggle('on')"></div></div></div>`}
+};
+function openM(stage){
+  const c=mCfg[stage];if(!c)return;
+  document.getElementById('mTitle').textContent=c.t;
+  document.getElementById('mSub').textContent=c.s;
+  document.getElementById('mBody').innerHTML=c.b;
+  document.getElementById('ov').classList.add('on');
+}
+function closeM(e){if(!e||e.target===document.getElementById('ov'))document.getElementById('ov').classList.remove('on');}
+
+document.addEventListener('keydown',e=>{
+  if(e.altKey&&e.key==='ArrowLeft')prevS();
+  if(e.altKey&&e.key==='ArrowRight')nextS();
+  if(e.key==='Escape')closeM();
+});
+</script>
+</body>
+</html>
