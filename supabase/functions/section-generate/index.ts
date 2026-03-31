@@ -657,14 +657,9 @@ This section must satisfy all of the following without exception:
 ═══════════════════════════════════════════════
 WORD COUNT — CRITICAL
 ═══════════════════════════════════════════════
-BODY: Exactly ${section.word_target} words (±1%: ${Math.floor(section.word_target * 0.99)}–${Math.ceil(section.word_target * 1.01)} words). Count your words before outputting. If outside this range, revise until it meets the target. Word count does NOT include figure captions, table headings, in-text citation brackets, or the reference list.
+BODY: Exactly ${section.word_target} words (±1%: ${Math.floor(section.word_target * 0.99)}–${Math.ceil(section.word_target * 1.01)} words). Count your words before outputting. If outside this range, revise until it meets the target. Word count does NOT include figure captions, table headings, or in-text citation brackets.
 
-REFERENCES: After the body text, on a new line, write the heading "## References" followed immediately by a complete, properly formatted ${citation_style || "Harvard"}-style reference list covering every source cited in-text in this section. Each reference must be:
-— Genuine and verifiable (searchable via Google)
-— Correctly formatted in ${citation_style || "Harvard"} style
-— One entry per line
-— Listed alphabetically by first author's surname
-References are NOT counted in the body word count.`;
+Do NOT include a ## References block at the end of this section. References are compiled separately at the document level. Write in-text citations only.`;
 
     const userPrompt = `SECTION: ${section.title}
 TARGET WORDS: ${section.word_target}
