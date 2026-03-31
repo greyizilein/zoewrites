@@ -59,7 +59,7 @@ const WriterEngine = () => {
   const [submissionDetails, setSubmissionDetails] = useState<SubmissionDetails | undefined>();
   const [selectedFont, setSelectedFont] = useState("Calibri 12pt");
   const [briefText, setBriefText] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
   const [urlInput, setUrlInput] = useState("");
   const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
 
