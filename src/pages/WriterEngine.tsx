@@ -9,6 +9,7 @@ import WriterSidebar from "@/components/writer/WriterSidebar";
 import StageBriefIntake from "@/components/writer/StageBriefIntake";
 import StageExecutionTable from "@/components/writer/StageExecutionTable";
 import StageWrite, { AutoPhase } from "@/components/writer/StageWrite";
+import StageRevisionCenter from "@/components/writer/StageRevisionCenter";
 import StageReview from "@/components/writer/StageReview";
 import StageSubmissionPrep, { SubmissionDetails } from "@/components/writer/StageSubmissionPrep";
 import ProgressBanner from "@/components/writer/ProgressBanner";
@@ -58,7 +59,7 @@ const WriterEngine = () => {
   const [submissionDetails, setSubmissionDetails] = useState<SubmissionDetails | undefined>();
   const [selectedFont, setSelectedFont] = useState("Calibri 12pt");
   const [briefText, setBriefText] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
   const [urlInput, setUrlInput] = useState("");
   const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
 

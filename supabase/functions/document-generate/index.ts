@@ -86,6 +86,7 @@ serve(async (req) => {
     const includeTables = settings?.includeTables !== false;
     const statisticalSourceCount = settings?.statisticalSourceCount || 0;
     const preferredDataSources: string[] = settings?.preferredDataSources || [];
+    const burstiness = settings?.burstiness || 3;
 
     const totalWords = sections.reduce((a: number, s: any) => a + (s.word_target || 0), 0);
 
@@ -96,9 +97,7 @@ You are writing the COMPLETE document in one continuous response. Write all sect
 ${topic ? `SUBJECT — NON-NEGOTIABLE: This assessment is specifically about "${topic}". Write exclusively about this subject. Do NOT substitute or default to a different organisation, country, or topic.` : ""}
 ${brief_text ? `ORIGINAL BRIEF — ALL CONTENT MUST BE GROUNDED IN THIS:\n${brief_text.slice(0, 3000)}\nFollow every requirement exactly — company names, specified frameworks, marking criteria, and constraints must all be reflected throughout.` : ""}
 
-═══════════════════════════════════════════════
 ACADEMIC LEVEL AND CRITICAL THINKING
-═══════════════════════════════════════════════
 Level: ${levelExpectations.depth}
 Critical thinking requirement: ${levelExpectations.criticalThinking}
 Analysis guidance: ${levelExpectations.analysisGuidance}
@@ -110,25 +109,15 @@ ${analysisDepth === "Deep Critical"
   ? "Thorough analysis with evidence-based evaluation throughout. Every claim must be justified."
   : "Clear, accurate overview with structured explanation and critical comment where relevant."}
 
-Writing must be:
-— Analytical: examine causes, effects, interactions, and relationships between ideas
-— Logical: construct arguments step by step with clear, traceable reasoning
-— Critical: challenge assumptions, interrogate evidence, identify limitations and contradictions
-— Evaluative: assess significance, weigh competing perspectives, make well-reasoned judgements
-— Synthetic: integrate multiple sources to build an original, coherent argument
-
-═══════════════════════════════════════════════
 WRITING STANDARDS — NON-NEGOTIABLE
-═══════════════════════════════════════════════
 Produce rigorous academic writing in formal UK English, maintaining ${firstPerson ? "first-person voice where it adds precision to the argument" : "strictly third-person voice — no 'I', 'we', 'my', 'our' unless directly quoting"}, with no contractions. Demonstrate sophisticated critical evaluation, theoretical integration, and precise disciplinary terminology. Synthesise complex ideas rather than offering descriptive narration. Arguments must be coherent, analytically robust, and grounded in high-quality research, incorporating empirical data and statistics. Include well-developed scholarly examples where appropriate. Define key concepts clearly. Examine differences and similarities between theoretical perspectives. Critically appraise frameworks against their strengths, limitations, assumptions, and practical applicability. Interrogate evidence rather than accepting it uncritically. Connect theory, research, and practice. Focus on depth, specificity, and quality.
 
 Numbers must be written in numerals (1, 2, 3, percentages as %) not words — except at the start of a sentence. No bullet points anywhere in the body text. All analytical content in fully developed paragraphs.
-
+Abbreviations such as "e.g.", "i.e.", and "etc." must be avoided entirely.
 Passive voice must not exceed 30% of sentences. Prefer active constructions with a clear agent.
+PUNCTUATION: NEVER use em dashes (—) or en dashes (–) as punctuation substitutes. Use commas, full stops, colons, semicolons, parentheses, and hyphens for compound words only.
 
-═══════════════════════════════════════════════
 CITATION REQUIREMENTS — NON-NEGOTIABLE
-═══════════════════════════════════════════════
 ALL sources must be genuine, verifiable, and searchable via Google. No fabricated references — this is an absolute rule.
 
 Vary citation format throughout — use all of these patterns:
@@ -147,9 +136,7 @@ Do not cite the same source more than twice per section.
 ${statisticalSourceCount > 0 ? `Include at least ${statisticalSourceCount} statistical or empirical data sources with real, verifiable figures across the document.` : ""}
 ${preferredDataSources.length > 0 ? `Prioritise statistics and data from: ${preferredDataSources.join(", ")}.` : ""}
 
-═══════════════════════════════════════════════
 STRUCTURE AND FORMATTING
-═══════════════════════════════════════════════
 Each section begins with its heading as a markdown ## heading.
 Paragraph structure: ${paragraphLength} — ${paragraphLength === "Short" ? "2–4 sentences per paragraph" : paragraphLength === "Long" ? "6–12 sentences per paragraph" : "mix of short (2–4), medium (4–7), and longer (7–10) paragraphs to vary rhythm"}
 Never open a paragraph by restating the conclusion of the previous one.
@@ -164,12 +151,10 @@ ${includeTables
   ? `TABLES: Include tables where data comparison genuinely adds analytical value. Use markdown table format with caption above: "Table X: [title]".`
   : "Do not include tables unless absolutely essential."}
 
-═══════════════════════════════════════════════
 HUMANISING — MANDATORY
-═══════════════════════════════════════════════
 The complete document must read as authored by a human scholar, not generated by AI.
 
-1. SENTENCE BURSTINESS (highest priority): Vary sentence length aggressively. Place short punchy sentences (6–12 words) directly next to long analytical ones (25–45 words). Never write 3 consecutive sentences of similar length (±5 words). This variation is the single most detectable difference between human and AI prose.
+1. SENTENCE BURSTINESS (highest priority — level ${burstiness}/5): Vary sentence length aggressively. Place short punchy sentences (6–12 words) directly next to long analytical ones (25–45 words). Never write 3 consecutive sentences of similar length (±5 words). This variation is the single most detectable difference between human and AI prose.
 
 2. STRIP AI FINGERPRINTS: Never use: "utilise", "Furthermore", "Moreover", "In conclusion", "It is worth noting", "It is important to", "plays a crucial role", "leveraging", "synergies", "paradigm shift", "holistic approach", "robust framework", "multifaceted", "nuanced understanding", "delve into", "shed light on", "pave the way", "it is evident that", "myriad", "plethora", "cutting-edge", "game-changer", "groundbreaking", "tapestry", "in the realm of", "advent of", "undeniable", "indispensable".
 
@@ -184,32 +169,13 @@ The complete document must read as authored by a human scholar, not generated by
 7. LEXICAL UNPREDICTABILITY: When the obvious word is an AI cliché, use the second-best option. Vary every adjective and adverb — never repeat descriptive words within 200 words unless required by the discipline.
 
 Sentence complexity: ${sentenceComplexity}
-Hedging: ${hedgingIntensity} — ${hedgingIntensity === "Low" ? "direct claims, minimal hedging" : hedgingIntensity === "High" ? "frequent varied hedging throughout" : "balanced direct claims with appropriate academic hedging"}
+Hedging: ${hedgingIntensity}
 Formality: ${formalityLevel}/5
 
-═══════════════════════════════════════════════
 QUALITY CRITERIA — ALL 18 MUST BE MET
-═══════════════════════════════════════════════
-1. Clarity of argument — central argument immediately apparent and sustained
-2. Depth of analysis — beyond surface level; causes, effects, implications explored
-3. Critical thinking — assumptions challenged; evidence interrogated; perspectives weighed
-4. Proper synthesis — sources integrated into coherent argument, not reported
-5. Coherence and structure — paragraphs flow logically; document reads as unified whole
-6. Accurate citations — every citation genuine, formatted correctly, integrated naturally
-7. Originality — argument constructed analytically, not generically paraphrased
-8. Relevance — every sentence connects to purpose and broader brief
-9. Scholarly sources — academic, credible, current, appropriate to level
-10. Formal academic tone — no contractions, no colloquialisms
-11. No contractions — "it is" not "it's", "do not" not "don't", throughout
-12. Proper grammar and spelling — UK English throughout
-13. Logical flow — argument builds progressively; no idea appears without preparation
-14. Thorough research — breadth and depth of source engagement reflects level
-15. Formatting — word count, paragraph structure, heading format all as specified
-16. Balanced discussion — competing perspectives and counter-arguments addressed
-17. Data and statistics — empirical evidence grounds analytical claims; all figures in numerals
-18. Ethical writing — no fabricated sources, no plagiarism, no falsification
+1. Clarity of argument 2. Depth of analysis 3. Critical thinking 4. Proper synthesis 5. Coherence and structure 6. Accurate citations 7. Originality 8. Relevance 9. Scholarly sources 10. Formal academic tone 11. No contractions 12. Proper grammar and spelling (UK English) 13. Logical flow 14. Thorough research 15. Formatting 16. Balanced discussion 17. Data and statistics 18. Ethical writing
 
-CROSS-SECTION COHERENCE (write the full document — these are now your responsibility):
+CROSS-SECTION COHERENCE:
 — Use consistent terminology and definitions throughout; never define a term two different ways
 — Build the argument progressively — later sections extend and build on earlier ones
 — Do not repeat the same evidence or examples across sections
@@ -251,23 +217,23 @@ FULL BRIEF:
 ${brief_text ? brief_text.slice(0, 3000) : "See execution plan above."}
 
 OUTPUT FORMAT — FOLLOW EXACTLY:
-For each section, write:
+Write every section continuously, each beginning with its ## heading:
 
-## [Section Title]
-
+## [Section 1 Title]
 [Body text — exactly the specified word count]
 
+## [Section 2 Title]
+[Body text — exactly the specified word count]
+
+...continue for all sections...
+
 ## References
-[Complete Harvard-format reference list for all sources cited in this section, alphabetical by surname]
-
----
-
-Then immediately continue with the next section using the same format.
+[ONE complete reference list covering ALL sources cited across the ENTIRE document, formatted in ${citStyle} style, alphabetical by first author's surname. Every in-text citation must have a corresponding entry here. The reference list is EXCLUDED from the word count.]
 
 CRITICAL RULES:
 - Write every section — do not skip any
 - Meet every section's word count independently (±1%)
-- Each section must have its own ## References block
+- Do NOT include per-section reference lists — produce ONE combined reference list at the very end
 - Write continuously without meta-commentary, preamble, or announcements
 - Begin with the first section heading immediately
 
