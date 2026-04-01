@@ -61,7 +61,7 @@ const WriterEngine = () => {
   const [briefText, setBriefText] = useState("");
   const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
   const [urlInput, setUrlInput] = useState("");
-  const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   const [generating, setGenerating] = useState(false);
   const [streamContent, setStreamContent] = useState("");

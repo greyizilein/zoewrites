@@ -403,13 +403,6 @@ serve(async (req) => {
     const aiModel = model || "google/gemini-2.5-flash";
     const density = getCitationDensity(section.title);
     const wordsInK = section.word_target / 1000;
-    // Use per-section citation_count, then global override proportional share, then auto density
-    const citTarget = section.citation_count ||
-      (totalCitationsOverride ? Math.round(totalCitationsOverride * wordsInK / Math.max((execution_plan?.total_words || 3000) / 1000, 1)) : null) ||
-      Math.round(density.recommended * wordsInK);
-    const citMin = Math.round(density.min * wordsInK);
-    const citMax = Math.round(density.max * wordsInK);
-
     // Extract advanced settings with defaults
     const formalityLevel = settings?.formalityLevel || 4;
     const hedgingIntensity = settings?.hedgingIntensity || "Medium";
@@ -424,6 +417,12 @@ serve(async (req) => {
     const technicalDensity = settings?.technicalDensity || 3;
     // Content & quality settings
     const totalCitationsOverride = settings?.totalCitations > 0 ? settings.totalCitations : null;
+    // Use per-section citation_count, then global override proportional share, then auto density
+    const citTarget = section.citation_count ||
+      (totalCitationsOverride ? Math.round(totalCitationsOverride * wordsInK / Math.max((execution_plan?.total_words || 3000) / 1000, 1)) : null) ||
+      Math.round(density.recommended * wordsInK);
+    const citMin = Math.round(density.min * wordsInK);
+    const citMax = Math.round(density.max * wordsInK);
     const includeImages = settings?.includeImages !== false;
     const imageCount = settings?.imageCount || 0;
     const imageTypes: string[] = settings?.imageTypes || [];

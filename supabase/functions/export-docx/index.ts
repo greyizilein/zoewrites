@@ -566,7 +566,6 @@ serve(async (req) => {
               alignment: AlignmentType.CENTER,
               spacing: { before: 200, after: 100 },
               children: [new ImageRun({
-                type: imgType,
                 data: imgData,
                 transformation: { width: 450, height: 300 },
                 altText: { title: img.caption || "Figure", description: img.caption || "Assessment figure", name: `figure_${img.figure_number || ""}` },
