@@ -924,12 +924,10 @@ const WriterEngine = () => {
               {stage === 3 && (
                 <StageRevisionCenter
                   sections={sections}
-                  fullDocContent={sections.filter(s => s.content && s.content.trim().length > 50).map(s => `## ${s.title}\n\n${s.content}`).join("\n\n---\n\n")}
                   generating={generating}
                   streamContent={streamContent}
                   writeError={writeError}
-                  isProcessing={isProcessing}
-                  onRevise={handleReviseDocument}
+                  onReviseDocument={handleReviseDocument}
                   onClearError={() => setWriteError(null)}
                   onBack={() => setStage(2)}
                   onNext={() => setStage(4)}
