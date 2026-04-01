@@ -277,7 +277,7 @@ const WriterEngine = () => {
       if (sErr) throw sErr;
       setSections((newSections || []).map((s: any) => ({ ...s, suggested_frameworks: Array.isArray(s.suggested_frameworks) ? s.suggested_frameworks : [] })));
 
-      setStage(1);
+      setStage(2);
       toast({ title: "Plan confirmed — start writing" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
