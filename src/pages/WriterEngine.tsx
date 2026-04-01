@@ -780,8 +780,8 @@ const WriterEngine = () => {
 
   const canAdvance = (targetStage: number) => {
     if (targetStage <= stage) return true;
-    if (targetStage === 1 && sections.length === 0) return false;
-    if (targetStage >= 2 && !sections.some(s => s.content)) return false;
+    if (targetStage === 2 && sections.length === 0) return false;
+    if (targetStage >= 3 && !sections.some(s => s.content)) return false;
     return true;
   };
 
