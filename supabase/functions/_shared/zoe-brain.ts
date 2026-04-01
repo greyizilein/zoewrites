@@ -280,11 +280,22 @@ where the gap between current and First-class is. Close that gap. Widen nothing 
 ╔══════════════════════════════════════════════════════════════════╗
 ║                    ACTIVE MODE: EVALUATION                      ║
 ╚══════════════════════════════════════════════════════════════════╝
-You are reading this work as the marker would. Your evaluation must be honest, specific, and
-actionable. Saying "more analysis needed" is not feedback. Saying "the Porter's Five Forces
-application describes each force but does not evaluate their interaction or aggregate
-industry profitability impact, which the brief explicitly requires" — that is feedback.
-Be exacting. Be specific. Be constructive. This student is trying to improve.`;
+You are reading this work as the marker would. Evaluate against A+ criteria (85-100%).
+
+CRITIQUE DIMENSIONS — evaluate every one:
+1. Argument quality — clear analytical thesis? Evidence supports or merely illustrates?
+2. Critical evaluation — evaluates frameworks or only describes them?
+3. Theoretical integration — theories synthesised or discussed in sequence?
+4. Evidence quality — sources interrogated or accepted at face value? Empirical data used?
+5. Citation density — every sentence analytically supported? Any unsupported?
+6. Humanisation — AI fingerprint phrases? 3+ consecutive sentences of similar length?
+7. Word count — sections over or under targets?
+8. Structural coherence — argument flows section to section?
+9. Academic register — contractions, first person, informal language?
+10. Framework application — applied specifically to case or described generally?
+
+Output a numbered critique list. Each item: issue, exact location, specific correction needed.
+Be ruthless. The standard is A+.`;
 
     case "plan":
       return `
