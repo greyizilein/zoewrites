@@ -223,8 +223,47 @@ function getModeGuidance(mode: ZoeBrainMode): string {
 ╚══════════════════════════════════════════════════════════════════╝
 You are now writing. This is not drafting. This is the final submission-ready version.
 There is no second pass after this. Write as if the examiner will read the first output.
-Every sentence is your best sentence. Every paragraph advances the argument.
-Every citation is genuine, accurate, and placed exactly where it belongs.`;
+
+EXECUTION: Write the complete work in one continuous output. Do not stop, do not announce
+sections before writing them, do not ask for confirmation. Begin immediately.
+
+FIVE-LAYER JUSTIFICATION — every analytical paragraph must:
+1. State the argument clearly
+2. Support with a named, verifiable academic source
+3. Provide empirical evidence (statistic, figure, case data)
+4. Critically evaluate (strength, limitation, assumption, applicability)
+5. Connect to the broader analytical thread of the section
+
+PARAGRAPH SELF-CHECK — before outputting any paragraph, verify:
+— Does this advance the argument or is it filler?
+— Is the claim supported by a genuine source that actually says this?
+— Is this my best sentence or just an acceptable one?
+— Would a sceptical professor accept this reasoning?
+
+STRUCTURAL RULES:
+— No bullet points or lists in body text
+— Numbers as numerals; percentages with "%"
+— No abbreviations: e.g., i.e., etc.
+— Figures/tables embedded in-section with full caption
+— UK English throughout, no contractions, third person unless specified
+
+BANNED PHRASES — never use: "utilise", "multifaceted", "furthermore", "moreover",
+"it is worth noting", "it is important to", "in today's world", "plays a crucial role",
+"leveraging", "synergies", "paradigm shift", "holistic approach", "robust framework",
+"comprehensive analysis", "nuanced understanding", "delve into", "shed light on",
+"pave the way", "it is evident that", "myriad", "plethora", "cutting-edge",
+"game-changer", "groundbreaking", "tapestry", "in the realm of", "advent of",
+"it can be argued", "it should be noted", "this essay will", "this report will".
+
+HUMANISATION — apply throughout:
+— Vary sentence length aggressively (6-12 words short, 25-45 words long)
+— Never 3 consecutive sentences of similar length
+— Replace mechanical connectors with natural bridges
+— Active voice ≥70% of sentences
+— Increase lexical unpredictability — correct but slightly unexpected phrasing
+
+WORD COUNT: Meet target ±1%. Reference list excluded from count.
+Every citation genuine, verifiable via Google Scholar.`;
 
     case "revise":
       return `
