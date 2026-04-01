@@ -61,7 +61,7 @@ const WriterEngine = () => {
   const [briefText, setBriefText] = useState("");
   const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
   const [urlInput, setUrlInput] = useState("");
-  const [activeIntakeMode, setActiveIntakeMode] = useState<"paste" | "upload" | "url" | "fields">("paste");
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   const [generating, setGenerating] = useState(false);
   const [streamContent, setStreamContent] = useState("");
@@ -901,7 +901,7 @@ const WriterEngine = () => {
                 />
               )}
 
-              {/* Stage 2: Review */}
+              {/* Stage 2: Review (Edit & Proofread) */}
               {stage === 2 && (
                 <StageReview
                   sections={sections}
@@ -920,8 +920,22 @@ const WriterEngine = () => {
                 />
               )}
 
-              {/* Stage 3: Export */}
+              {/* Stage 3: Revise (Revision Center) */}
               {stage === 3 && (
+                <StageRevisionCenter
+                  sections={sections}
+                  generating={generating}
+                  streamContent={streamContent}
+                  writeError={writeError}
+                  onReviseDocument={handleReviseDocument}
+                  onClearError={() => setWriteError(null)}
+                  onBack={() => setStage(2)}
+                  onNext={() => setStage(4)}
+                />
+              )}
+
+              {/* Stage 4: Export */}
+              {stage === 4 && (
                 <StageSubmissionPrep
                   assessmentTitle={assessment?.title || "Assessment"}
                   totalWords={totalWords}
