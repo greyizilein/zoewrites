@@ -878,12 +878,18 @@ const WriterEngine = () => {
               )}
 
               {/* Stage 1: Plan (Execution Table) */}
-              {stage === 1 && (
+              {stage === 1 && executionPlan && (
                 <StageExecutionTable
                   plan={executionPlan} onPlanChange={setExecutionPlan}
                   settings={settings} onBack={() => { setExecutionPlan(null); setStage(0); }}
                   onConfirm={handleConfirmPlan} isProcessing={isProcessing}
                 />
+              )}
+              {stage === 1 && !executionPlan && (
+                <div className="text-center py-10">
+                  <p className="text-muted-foreground text-sm">No plan generated yet.</p>
+                  <button onClick={() => setStage(0)} className="mt-3 text-terracotta text-sm font-semibold hover:underline">← Back to Brief</button>
+                </div>
               )}
 
               {/* Stage 2: Write */}
