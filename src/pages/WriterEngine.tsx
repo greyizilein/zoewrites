@@ -901,7 +901,7 @@ const WriterEngine = () => {
                 />
               )}
 
-              {/* Stage 2: Review */}
+              {/* Stage 2: Review (Edit & Proofread) */}
               {stage === 2 && (
                 <StageReview
                   sections={sections}
@@ -920,8 +920,24 @@ const WriterEngine = () => {
                 />
               )}
 
-              {/* Stage 3: Export */}
+              {/* Stage 3: Revise (Revision Center) */}
               {stage === 3 && (
+                <StageRevisionCenter
+                  sections={sections}
+                  fullDocContent={sections.filter(s => s.content && s.content.trim().length > 50).map(s => `## ${s.title}\n\n${s.content}`).join("\n\n---\n\n")}
+                  generating={generating}
+                  streamContent={streamContent}
+                  writeError={writeError}
+                  isProcessing={isProcessing}
+                  onRevise={handleReviseDocument}
+                  onClearError={() => setWriteError(null)}
+                  onBack={() => setStage(2)}
+                  onNext={() => setStage(4)}
+                />
+              )}
+
+              {/* Stage 4: Export */}
+              {stage === 4 && (
                 <StageSubmissionPrep
                   assessmentTitle={assessment?.title || "Assessment"}
                   totalWords={totalWords}
