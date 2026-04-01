@@ -130,9 +130,9 @@ const WriterEngine = () => {
         setBriefText(aData.brief_text || "");
         if (sData && sData.length > 0) {
           const allComplete = sData.every(s => s.status === "complete");
-          setStage(allComplete ? 2 : 1);
+          setStage(allComplete ? 3 : 2);
         } else if (aData.execution_plan) {
-          setStage(0); // show plan review
+          setStage(1); // show plan review
         }
       }
       setSections((sData || []).map((s: any) => ({ ...s, suggested_frameworks: Array.isArray(s.suggested_frameworks) ? s.suggested_frameworks : [] })));
