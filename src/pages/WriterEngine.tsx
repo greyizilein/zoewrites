@@ -215,7 +215,7 @@ const WriterEngine = () => {
       if (planError) throw planError;
 
       setExecutionPlan(planData?.plan);
-      // Stay at stage 0 — routing shows StageExecutionTable automatically
+      setStage(1); // Move to Plan stage
       toast({ title: "Plan ready — review before writing" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
