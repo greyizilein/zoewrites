@@ -865,8 +865,8 @@ const WriterEngine = () => {
             <ProgressBanner message={progressMessage} active={!!progressMessage} />
             <div className="px-3.5 sm:px-6 md:px-14 py-5 sm:py-7 md:py-10">
             <div className="max-w-[820px] mx-auto">
-              {/* Stage 0: Brief — intake form, then plan review inline */}
-              {stage === 0 && !executionPlan && (
+              {/* Stage 0: Brief intake */}
+              {stage === 0 && (
                 <StageBriefIntake
                   settings={settings} onSettingsChange={setSettings}
                   briefText={briefText} onBriefTextChange={setBriefText}
@@ -876,16 +876,18 @@ const WriterEngine = () => {
                   onAnalyse={handleAnalyseBrief} isProcessing={isProcessing}
                 />
               )}
-              {stage === 0 && executionPlan && (
+
+              {/* Stage 1: Plan (Execution Table) */}
+              {stage === 1 && (
                 <StageExecutionTable
                   plan={executionPlan} onPlanChange={setExecutionPlan}
-                  settings={settings} onBack={() => setExecutionPlan(null)}
+                  settings={settings} onBack={() => { setExecutionPlan(null); setStage(0); }}
                   onConfirm={handleConfirmPlan} isProcessing={isProcessing}
                 />
               )}
 
-              {/* Stage 1: Write */}
-              {stage === 1 && (
+              {/* Stage 2: Write */}
+              {stage === 2 && (
                 <StageWrite
                   sections={sections}
                   generating={generating}
@@ -893,16 +895,16 @@ const WriterEngine = () => {
                   fullDocContent={sections.filter(s => s.content && s.content.trim().length > 50).map(s => `## ${s.title}\n\n${s.content}`).join("\n\n---\n\n")}
                   onWrite={() => handleWriteDocument(false)}
                   onRewrite={() => handleWriteDocument(true)}
-                  onBack={() => { setExecutionPlan(executionPlan); setStage(0); }}
-                  onNext={() => setStage(2)}
+                  onBack={() => setStage(1)}
+                  onNext={() => setStage(3)}
                   settings={settings}
                   writeError={writeError}
                   onClearError={() => setWriteError(null)}
                 />
               )}
 
-              {/* Stage 2: Review (Edit & Proofread) */}
-              {stage === 2 && (
+              {/* Stage 3: Review (Edit & Proofread) */}
+              {stage === 3 && (
                 <StageReview
                   sections={sections}
                   fullDocContent={sections.filter(s => s.content && s.content.trim().length > 50).map(s => `## ${s.title}\n\n${s.content}`).join("\n\n---\n\n")}
@@ -915,13 +917,13 @@ const WriterEngine = () => {
                   onRunScan={handleRunScan}
                   onReviseDocument={handleReviseDocument}
                   onClearError={() => setWriteError(null)}
-                  onBack={() => setStage(1)}
-                  onNext={() => setStage(3)}
+                  onBack={() => setStage(2)}
+                  onNext={() => setStage(4)}
                 />
               )}
 
-              {/* Stage 3: Revise (Revision Center) */}
-              {stage === 3 && (
+              {/* Stage 4: Revise (Revision Center) */}
+              {stage === 4 && (
                 <StageRevisionCenter
                   sections={sections}
                   generating={generating}
@@ -929,13 +931,13 @@ const WriterEngine = () => {
                   writeError={writeError}
                   onReviseDocument={handleReviseDocument}
                   onClearError={() => setWriteError(null)}
-                  onBack={() => setStage(2)}
-                  onNext={() => setStage(4)}
+                  onBack={() => setStage(3)}
+                  onNext={() => setStage(5)}
                 />
               )}
 
-              {/* Stage 4: Export */}
-              {stage === 4 && (
+              {/* Stage 5: Export */}
+              {stage === 5 && (
                 <StageSubmissionPrep
                   assessmentTitle={assessment?.title || "Assessment"}
                   totalWords={totalWords}
