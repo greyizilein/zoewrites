@@ -14,7 +14,7 @@ interface Props {
   recentAssessments: { id: string; title: string; status: string }[];
 }
 
-const stageIcons = ["📋", "🧩", "✍️", "🔧", "🔍", "🔄", "📥"];
+const stageIcons = ["📋", "🗂️", "✍️", "🔍", "🔄", "📥"];
 
 export default function WriterSidebar({ currentStage, onStageChange, onClose, userName, userTier, initials, recentAssessments }: Props) {
   const [profileOpen, setProfileOpen] = useState(false);

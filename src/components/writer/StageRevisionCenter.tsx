@@ -135,7 +135,7 @@ export default function StageRevisionCenter({
   return (
     <div className="max-w-[640px] mx-auto flex flex-col gap-4">
       <div>
-        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 6 of 7</p>
+        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 5 of 6</p>
         <h1 className="text-[22px] font-bold tracking-tight mb-0.5">Revision Centre</h1>
         <p className="text-[13px] text-muted-foreground">
           Paste supervisor feedback, upload marked scripts, or dictate corrections. ZOE applies them precisely.

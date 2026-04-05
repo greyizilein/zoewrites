@@ -8,26 +8,14 @@ import JSZip from "jszip";
 import WriterSidebar from "@/components/writer/WriterSidebar";
 import StageBriefIntake from "@/components/writer/StageBriefIntake";
 import StageExecutionTable from "@/components/writer/StageExecutionTable";
-import StagePromptBuilder from "@/components/writer/StagePromptBuilder";
-import StageWrite from "@/components/writer/StageWrite";
-import StageEditProofHumanise from "@/components/writer/StageEditProofHumanise";
-import StageCritiqueCorrect from "@/components/writer/StageCritiqueCorrect";
+import StageWrite, { AutoPhase } from "@/components/writer/StageWrite";
 import StageRevisionCenter from "@/components/writer/StageRevisionCenter";
+import StageReview from "@/components/writer/StageReview";
 import StageSubmissionPrep, { SubmissionDetails } from "@/components/writer/StageSubmissionPrep";
 import ProgressBanner from "@/components/writer/ProgressBanner";
 import { Section, WriterSettings, defaultSettings, stageLabels } from "@/components/writer/types";
 import { readContentStream } from "@/lib/sseStream";
 import { countWords, countBodyWords, getBodyContent, truncateToWordCeiling } from "@/lib/wordCount";
-import {
-  buildMasterPrompt,
-  buildAnalysePrompt,
-  buildProofreadPrompt,
-  buildCitationAuditPrompt,
-  buildHumanisePrompt,
-  buildCritiquePrompt,
-  buildCorrectionPrompt,
-  type PromptSettings,
-} from "@/lib/pipelineRules";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -55,7 +43,6 @@ const WriterEngine = () => {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // 7 stages: 0=Brief 1=Prompt 2=Write 3=Edit 4=Critique 5=Revise 6=Export
   const [stage, setStage] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(!!id);
@@ -67,6 +54,7 @@ const WriterEngine = () => {
   const [settings, setSettings] = useState<WriterSettings>({ ...defaultSettings });
   const [qualityReport, setQualityReport] = useState<any>(null);
   const [coherenceReport, setCoherenceReport] = useState<any>(null);
+  const [autoPhase, setAutoPhase] = useState<AutoPhase>(null);
   const [progressMessage, setProgressMessage] = useState("");
   const [submissionDetails, setSubmissionDetails] = useState<SubmissionDetails | undefined>();
   const [selectedFont, setSelectedFont] = useState("Calibri 12pt");
@@ -79,20 +67,8 @@ const WriterEngine = () => {
   const [streamContent, setStreamContent] = useState("");
   const [writeError, setWriteError] = useState<string | null>(null);
 
-  // Full document content for continuous generation
-  const [fullDocContent, setFullDocContent] = useState("");
-  // Prompt builder state
-  const [sectionSpecs, setSectionSpecs] = useState("");
-  const [masterPrompt, setMasterPrompt] = useState("");
-  const [isPromptBuilt, setIsPromptBuilt] = useState(false);
-  // Edit stage state
-  const [editedContent, setEditedContent] = useState("");
-  // Critique stage state
-  const [critiqueText, setCritiqueText] = useState("");
-  const [correctedContent, setCorrectedContent] = useState("");
-  const [critiquePhase, setCritiquePhase] = useState<"idle" | "critiquing" | "correcting" | "done">("idle");
-
   const [imageVariants, setImageVariants] = useState<any[]>([]);
+  const [imagesSkipped, setImagesSkipped] = useState(false);
   const [assessmentImages, setAssessmentImages] = useState<any[]>([]);
 
   const [recentAssessments, setRecentAssessments] = useState<{ id: string; title: string; status: string }[]>([]);
@@ -125,7 +101,7 @@ const WriterEngine = () => {
       if (document.hidden && isActivelyGenerating) {
         toast({
           title: "Tab is hidden — AI generation may slow",
-          description: "Keep this tab active for best results.",
+          description: "Keep this tab active for best results. Progress is saved per section.",
           variant: "destructive",
         });
       }
@@ -154,16 +130,9 @@ const WriterEngine = () => {
         setBriefText(aData.brief_text || "");
         if (sData && sData.length > 0) {
           const allComplete = sData.every(s => s.status === "complete");
-          // Reconstruct full doc content from sections
-          const docContent = sData.filter(s => s.content && s.content.trim().length > 50)
-            .map(s => s.content).join("\n\n");
-          if (docContent) {
-            setFullDocContent(docContent);
-            setEditedContent(docContent);
-          }
           setStage(allComplete ? 3 : 2);
         } else if (aData.execution_plan) {
-          setStage(1);
+          setStage(1); // show plan review
         }
       }
       setSections((sData || []).map((s: any) => ({ ...s, suggested_frameworks: Array.isArray(s.suggested_frameworks) ? s.suggested_frameworks : [] })));
@@ -192,39 +161,13 @@ const WriterEngine = () => {
     return () => { cancelled = true; };
   }, [id, user]);
 
-  const selectedModel = settings.model || "google/gemini-2.5-pro";
+  const selectedModel = settings.model || "google/gemini-2.5-flash";
   const userName = profile?.full_name || user?.email?.split("@")[0] || "User";
   const initials = userName.slice(0, 2).toUpperCase();
   const totalWords = sections.reduce((a, s) => a + s.word_current, 0);
   const totalTarget = sections.reduce((a, s) => a + s.word_target, 0);
 
-  // Helper: fetch with retry
-  const fetchWithRetry = async (url: string, opts: RequestInit, maxRetries = 3): Promise<Response> => {
-    let lastErr: Error | null = null;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
-      try {
-        const resp = await fetch(url, opts);
-        if (resp.status === 429 || resp.status === 402) return resp;
-        return resp;
-      } catch (e: any) {
-        lastErr = e;
-      }
-    }
-    throw lastErr || new Error("Network error after retries");
-  };
-
-  // ─── Helper: get access token ──────────────────────────────────────────────
-  const getAccessToken = async (): Promise<string> => {
-    const session = await supabase.auth.getSession();
-    const token = session.data.session?.access_token;
-    if (!token) throw new Error("Session expired — please sign in again.");
-    return token;
-  };
-
-  // ═══════════════════════════════════════════
-  // STAGE 0: Analyse Brief
-  // ═══════════════════════════════════════════
+  // ─── STAGE 0: Analyse Brief ───
   const handleAnalyseBrief = async () => {
     const hasContent =
       (activeIntakeMode === "paste" && briefText.trim()) ||
@@ -272,8 +215,8 @@ const WriterEngine = () => {
       if (planError) throw planError;
 
       setExecutionPlan(planData?.plan);
-      setStage(1); // Move to Prompt Builder stage
-      toast({ title: "Plan ready — build your execution prompt" });
+      setStage(1); // Move to Plan stage
+      toast({ title: "Plan ready — review before writing" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
@@ -281,131 +224,7 @@ const WriterEngine = () => {
     }
   };
 
-  // ═══════════════════════════════════════════
-  // STAGE 1: Prompt Builder
-  // ═══════════════════════════════════════════
-  const handleBuildPrompt = async () => {
-    setIsProcessing(true);
-    try {
-      const accessToken = await getAccessToken();
-      const wc = parseInt(settings.wordCount) || 3000;
-
-      // Step 1: Use AI to build section specifications from the brief
-      const analysePromptText = buildAnalysePrompt({
-        assessmentType: settings.type || "Essay",
-        wordCount: wc,
-        citStyle: settings.citationStyle || "Harvard",
-        level: settings.level || "Postgraduate L7",
-        tone: settings.writingTone || "Analytical",
-        humanisation: settings.humanisation || "High",
-        burstiness: settings.burstiness || 4,
-        briefText: briefText || "",
-        title: executionPlan?.title || settings.topic || "",
-        module: settings.module || "",
-        moduleCode: settings.moduleCode || "",
-        learningOutcomes: settings.learningOutcomes || "",
-        rubric: settings.rubric || "",
-        sectionSpecs: "",
-        dateFrom: parseInt(settings.sourceDateFrom) || 2015,
-        dateTo: parseInt(settings.sourceDateTo) || 2025,
-        seminal: settings.useSeminalSources,
-        totalCitations: settings.totalCitations || 0,
-        topic: settings.topic || "",
-      });
-
-      const resp = await fetchWithRetry(`${CHAT_URL}/section-generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          section: {
-            title: "Section Specifications",
-            word_target: 2000,
-            framework: null,
-            citation_count: 0,
-          },
-          execution_plan: executionPlan,
-          prior_sections_summary: "",
-          citation_style: settings.citationStyle,
-          academic_level: settings.level,
-          model: selectedModel,
-          settings,
-          brief_text: analysePromptText,
-          topic: settings.topic || "",
-        }),
-      });
-
-      if (!resp.ok || !resp.body) throw new Error(`Build failed (${resp.status})`);
-
-      const specs = await readContentStream(resp.body);
-      setSectionSpecs(specs);
-
-      // Step 2: Build the master prompt
-      const promptSettings: PromptSettings = {
-        assessmentType: settings.type || "Essay",
-        wordCount: wc,
-        citStyle: settings.citationStyle || "Harvard",
-        level: settings.level || "Postgraduate L7",
-        tone: settings.writingTone || "Analytical",
-        humanisation: settings.humanisation || "High",
-        burstiness: settings.burstiness || 4,
-        briefText: briefText || "",
-        title: executionPlan?.title || settings.topic || "",
-        module: settings.module || "",
-        moduleCode: settings.moduleCode || "",
-        learningOutcomes: settings.learningOutcomes || "",
-        rubric: settings.rubric || "",
-        sectionSpecs: specs,
-        dateFrom: parseInt(settings.sourceDateFrom) || 2015,
-        dateTo: parseInt(settings.sourceDateTo) || 2025,
-        seminal: settings.useSeminalSources,
-        totalCitations: settings.totalCitations || 0,
-        topic: settings.topic || "",
-      };
-
-      const prompt = buildMasterPrompt(promptSettings);
-      setMasterPrompt(prompt);
-      setSettings(prev => ({ ...prev, sectionSpecs: specs, masterPrompt: prompt }));
-      setIsPromptBuilt(true);
-      toast({ title: "Execution prompt built — ready to generate" });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleRebuildPrompt = () => {
-    const wc = parseInt(settings.wordCount) || 3000;
-    const prompt = buildMasterPrompt({
-      assessmentType: settings.type || "Essay",
-      wordCount: wc,
-      citStyle: settings.citationStyle || "Harvard",
-      level: settings.level || "Postgraduate L7",
-      tone: settings.writingTone || "Analytical",
-      humanisation: settings.humanisation || "High",
-      burstiness: settings.burstiness || 4,
-      briefText: briefText || "",
-      title: executionPlan?.title || settings.topic || "",
-      module: settings.module || "",
-      moduleCode: settings.moduleCode || "",
-      learningOutcomes: settings.learningOutcomes || "",
-      rubric: settings.rubric || "",
-      sectionSpecs: sectionSpecs,
-      dateFrom: parseInt(settings.sourceDateFrom) || 2015,
-      dateTo: parseInt(settings.sourceDateTo) || 2025,
-      seminal: settings.useSeminalSources,
-      totalCitations: settings.totalCitations || 0,
-      topic: settings.topic || "",
-    });
-    setMasterPrompt(prompt);
-    setSettings(prev => ({ ...prev, masterPrompt: prompt }));
-    setIsPromptBuilt(true);
-    toast({ title: "Prompt rebuilt" });
-  };
-
-  // ═══════════════════════════════════════════
-  // STAGE 1 (Plan): Confirm execution plan + create sections in DB
-  // ═══════════════════════════════════════════
+  // ─── STAGE 1: Confirm Plan ───
   const handleConfirmPlan = async () => {
     if (!user || !executionPlan) return;
     setIsProcessing(true);
@@ -458,8 +277,8 @@ const WriterEngine = () => {
       if (sErr) throw sErr;
       setSections((newSections || []).map((s: any) => ({ ...s, suggested_frameworks: Array.isArray(s.suggested_frameworks) ? s.suggested_frameworks : [] })));
 
-      // Auto-advance — the plan is confirmed, now build the prompt
-      toast({ title: "Plan confirmed — building prompt…" });
+      setStage(2);
+      toast({ title: "Plan confirmed — start writing" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
@@ -467,110 +286,26 @@ const WriterEngine = () => {
     }
   };
 
-  // ═══════════════════════════════════════════
-  // STAGE 2: Full-document generation (single pass)
-  // ═══════════════════════════════════════════
-  const handleWriteDocument = async (forceRewrite = false) => {
-    const prompt = masterPrompt || settings.masterPrompt;
-    if (!prompt) {
-      toast({ title: "No execution prompt", description: "Go back to the Prompt Builder and build your prompt.", variant: "destructive" });
-      return;
-    }
-
-    setGenerating(true);
-    setWriteError(null);
-    setStreamContent("");
-    setFullDocContent("");
-
-    try {
-      const accessToken = await getAccessToken();
-
-      setProgressMessage("Writing complete document…");
-
-      // Send the full master prompt as a single generation call
-      const resp = await fetchWithRetry(`${CHAT_URL}/section-generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          section: {
-            title: "Complete Document",
-            word_target: parseInt(settings.wordCount) || 3000,
-            framework: null,
-            citation_count: settings.totalCitations || 0,
-          },
-          execution_plan: executionPlan,
-          prior_sections_summary: "",
-          citation_style: settings.citationStyle || "Harvard",
-          academic_level: settings.level || "Postgraduate L7",
-          model: selectedModel,
-          settings,
-          brief_text: prompt, // The full master prompt IS the brief
-          topic: settings.topic || "",
-        }),
-      });
-
-      if (!resp.ok || !resp.body) {
-        if (resp.status === 429) throw new Error("Rate limited — please wait a moment.");
-        if (resp.status === 402) throw new Error("Credits exhausted.");
-        throw new Error(`Write failed (${resp.status})`);
-      }
-
-      const fullText = await readContentStream(resp.body, (chunk) => {
-        setStreamContent(chunk);
-      });
-
-      // Apply Harvard citation fix
-      const isHarvard = (settings.citationStyle || "Harvard").toLowerCase().includes("harvard");
-      let fixedText = fullText;
-      if (isHarvard) {
-        fixedText = fullText.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
-      }
-
-      setFullDocContent(fixedText);
-      setEditedContent(fixedText);
-
-      // Parse the full document into sections for DB storage
-      if (sections.length > 0) {
-        const parsedMap = parseFullDocument(fixedText);
-        await saveParsedSections(parsedMap);
-      }
-
-      // Update assessment word count
-      const bodyWc = countBodyWords(fixedText);
-      if (assessment?.id) {
-        await supabase.from("assessments").update({ word_current: bodyWc }).eq("id", assessment.id);
-      }
-
-      toast({ title: "Document written — proceed to edit" });
-    } catch (e: any) {
-      setWriteError(e.message || "Generation failed");
-    } finally {
-      setGenerating(false);
-      setStreamContent("");
-      setProgressMessage("");
-    }
-  };
-
-  // ─── Parse full document into sections (for DB storage) ──────────────────────
+  // ─── Parse full document into sections ───────────────────────────────────────
   const parseFullDocument = (fullContent: string): Record<string, string> => {
     const result: Record<string, string> = {};
     for (let i = 0; i < sections.length; i++) {
       const section = sections[i];
       const escapedTitle = section.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const headingRe = new RegExp(`(?:^|\\n)##\\s*${escapedTitle}\\s*(?:\\n|$)`, "i");
+      const headingRe = new RegExp(`(?:^|\n)##\s*${escapedTitle}\s*(?:\n|$)`, "i");
       const headingMatch = headingRe.exec(fullContent);
       if (!headingMatch) continue;
       const afterHeading = fullContent.slice(headingMatch.index + headingMatch[0].length);
+      // Find end: next known section heading or --- separator
       let endIdx = afterHeading.length;
       for (let j = i + 1; j < sections.length; j++) {
         const nextTitle = sections[j].title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const nextRe = new RegExp(`\\n##\\s*${nextTitle}\\s*(?:\\n|$)`, "i");
+        const nextRe = new RegExp(`\n##\s*${nextTitle}\s*(?:\n|$)`, "i");
         const nextMatch = nextRe.exec(afterHeading);
         if (nextMatch && nextMatch.index < endIdx) endIdx = nextMatch.index;
       }
-      // Stop before ## References
-      const refMatch = /\n## References[\s\S]*$/i.exec(afterHeading);
-      if (refMatch && refMatch.index < endIdx) endIdx = refMatch.index;
+      const sepMatch = /\n---\n/.exec(afterHeading);
+      if (sepMatch && sepMatch.index < endIdx) endIdx = sepMatch.index;
       result[section.id] = afterHeading.slice(0, endIdx).trim();
     }
     return result;
@@ -585,92 +320,137 @@ const WriterEngine = () => {
       await supabase.from("sections").update({ content, word_current: wc, status: "complete" }).eq("id", section.id);
       setSections(prev => prev.map(s => s.id === section.id ? { ...s, content, word_current: wc, status: "complete" } : s));
     }
+    const newTotal = sections.reduce((a, s) => a + (parsedMap[s.id] ? countBodyWords(parsedMap[s.id]) : s.word_current), 0);
+    if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
   };
 
-  // ═══════════════════════════════════════════
-  // STAGE 3: Edit / Proofread / Humanise passes
-  // ═══════════════════════════════════════════
-  const callEditPass = async (prompt: string): Promise<string> => {
-    const accessToken = await getAccessToken();
+  // ─── Full document generation (sequential section-generate loop) ─────────────
+  // Helper: fetch with retry (network errors, e.g. from background suspension)
+  const fetchWithRetry = async (url: string, opts: RequestInit, maxRetries = 3): Promise<Response> => {
+    let lastErr: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
+      try {
+        const resp = await fetch(url, opts);
+        if (resp.status === 429 || resp.status === 402) return resp; // don't retry rate limits
+        return resp;
+      } catch (e: any) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error("Network error after retries");
+  };
+
+  const handleWriteDocument = async (forceRewrite = false) => {
+    if (sections.length === 0) return;
     setGenerating(true);
+    setWriteError(null);
     setStreamContent("");
 
-    const resp = await fetchWithRetry(`${CHAT_URL}/section-revise`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({
-        content: editedContent,
-        feedback: prompt,
-        word_target: parseInt(settings.wordCount) || 3000,
-        section_title: "Complete Document",
-        model: selectedModel,
-        settings,
-        brief_text: briefText || "",
-        topic: settings.topic || "",
-      }),
-    });
-
-    if (!resp.ok || !resp.body) throw new Error(`Edit pass failed (${resp.status})`);
-
-    const result = await readContentStream(resp.body, (chunk) => {
-      setStreamContent(chunk);
-    });
-
-    setGenerating(false);
-    setStreamContent("");
-    return result;
-  };
-
-  const handleRunEditPass = async (pass: "proofread" | "citation" | "humanise") => {
-    try {
-      let prompt: string;
-      if (pass === "proofread") prompt = buildProofreadPrompt(editedContent);
-      else if (pass === "citation") prompt = buildCitationAuditPrompt(editedContent, settings.citationStyle || "Harvard");
-      else prompt = buildHumanisePrompt(editedContent, settings.burstiness || 4);
-
-      const result = await callEditPass(prompt);
-      setEditedContent(result);
-      setFullDocContent(result);
-
-      // Update sections in DB
-      if (sections.length > 0) {
-        const parsedMap = parseFullDocument(result);
-        await saveParsedSections(parsedMap);
-      }
-    } catch (e: any) {
-      setWriteError(e.message);
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token;
+    if (!accessToken) {
+      setWriteError("Session expired — please sign in again.");
       setGenerating(false);
-      setStreamContent("");
+      return;
     }
-  };
 
-  const handleRunAllEditPasses = async () => {
+    // Resume: start from first section that has no content, unless forceRewrite
+    const startIdx = forceRewrite ? 0 : sections.findIndex(s => !s.content || s.content.trim().length < 50);
+    if (startIdx === -1) {
+      // All sections already written and not forced — prompt rewrite
+      setGenerating(false);
+      return;
+    }
+
+    // Pre-populate writtenContent with already-complete sections
+    const writtenContent: Record<string, string> = {};
+    let displayContent = sections
+      .slice(0, startIdx)
+      .filter(s => s.content && s.content.trim().length > 50)
+      .map(s => `## ${s.title}\n\n${s.content}`)
+      .join("\n\n---\n\n");
+    for (const s of sections.slice(0, startIdx)) {
+      if (s.content) writtenContent[s.id] = s.content;
+    }
+    if (displayContent) setStreamContent(displayContent);
+
+    const isHarvard = (settings.citationStyle || "Harvard").toLowerCase().includes("harvard");
+
     try {
-      // 1. Proofread
-      setProgressMessage("Running proofread pass…");
-      let result = await callEditPass(buildProofreadPrompt(editedContent));
-      setEditedContent(result);
+      for (let i = startIdx; i < sections.length; i++) {
+        const section = sections[i];
+        const isResume = i === startIdx && startIdx > 0;
+        setProgressMessage(isResume
+          ? `Resuming from section ${i + 1} of ${sections.length}: ${section.title}…`
+          : `Writing ${i + 1} of ${sections.length}: ${section.title}…`);
 
-      // 2. Citation audit
-      setProgressMessage("Running citation audit…");
-      result = await callEditPass(buildCitationAuditPrompt(result, settings.citationStyle || "Harvard"));
-      setEditedContent(result);
+        // Build prior sections context from already-written content this run
+        const priorParts = sections.slice(0, i)
+          .filter(s => writtenContent[s.id])
+          .map(s => `## ${s.title}\n${getBodyContent(writtenContent[s.id]).slice(0, 1000)}`);
+        const priorSummary = priorParts.join("\n\n");
 
-      // 3. Humanise
-      setProgressMessage("Running humanisation pass…");
-      result = await callEditPass(buildHumanisePrompt(result, settings.burstiness || 4));
-      setEditedContent(result);
-      setFullDocContent(result);
+        const reqBody = JSON.stringify({
+          section: {
+            title: section.title, word_target: section.word_target,
+            framework: section.framework, citation_count: section.citation_count,
+            a_plus_criteria: section.a_plus_criteria || "",
+            purpose_scope: section.purpose_scope || "",
+            learning_outcomes: section.learning_outcomes || "",
+            required_inputs: section.required_inputs || "",
+            structure_formatting: section.structure_formatting || "",
+            constraints_text: section.constraints_text || "",
+          },
+          execution_plan: assessment?.execution_plan || executionPlan,
+          prior_sections_summary: priorSummary,
+          citation_style: settings.citationStyle || "Harvard",
+          academic_level: settings.level || "Postgraduate L7",
+          model: selectedModel, settings,
+          brief_text: assessment?.brief_text || briefText || "",
+          topic: settings.topic || "",
+        });
 
-      // Update sections in DB
-      if (sections.length > 0) {
-        const parsedMap = parseFullDocument(result);
-        await saveParsedSections(parsedMap);
+        const resp = await fetchWithRetry(`${CHAT_URL}/section-generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: reqBody,
+        });
+
+        if (!resp.ok || !resp.body) {
+          if (resp.status === 429) throw new Error("Rate limited — please wait a moment.");
+          if (resp.status === 402) throw new Error("Credits exhausted.");
+          throw new Error(`Write failed (${resp.status})`);
+        }
+
+        const sectionPrefix = (displayContent ? "\n\n---\n\n" : "") + `## ${section.title}\n\n`;
+        const baseDisplay = displayContent + sectionPrefix;
+
+        const sectionBody = await readContentStream(resp.body, (chunk) => {
+          setStreamContent(baseDisplay + chunk);
+        });
+
+        // Apply Harvard citation fix
+        let fixedBody = sectionBody;
+        if (isHarvard) {
+          fixedBody = sectionBody.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
+        }
+
+        writtenContent[section.id] = fixedBody;
+        displayContent = baseDisplay + fixedBody;
+
+        // Save section to DB
+        const wc = countBodyWords(fixedBody);
+        await supabase.from("sections").update({ content: fixedBody, word_current: wc, status: "complete" }).eq("id", section.id);
+        setSections(prev => prev.map(s => s.id === section.id ? { ...s, content: fixedBody, word_current: wc, status: "complete" } : s));
       }
 
-      toast({ title: "All three edit passes complete" });
+      // Update total word count on assessment
+      const newTotal = Object.values(writtenContent).reduce((a, c) => a + countBodyWords(c), 0);
+      if (assessment?.id) await supabase.from("assessments").update({ word_current: newTotal }).eq("id", assessment.id);
+
     } catch (e: any) {
-      setWriteError(e.message);
+      setWriteError(e.message || "Generation failed");
     } finally {
       setGenerating(false);
       setStreamContent("");
@@ -678,166 +458,106 @@ const WriterEngine = () => {
     }
   };
 
-  // ═══════════════════════════════════════════
-  // STAGE 4: Critique & Correct
-  // ═══════════════════════════════════════════
-  const handleCritiqueAndCorrect = async () => {
-    try {
-      const accessToken = await getAccessToken();
-      setCritiquePhase("critiquing");
-      setGenerating(true);
-      setStreamContent("");
-      setCritiqueText("");
-      setCorrectedContent("");
-
-      // Phase 1: Critique
-      setProgressMessage("Running critique…");
-      const critiquePrompt = buildCritiquePrompt(
-        editedContent,
-        settings.type || "Essay",
-        settings.level || "Postgraduate L7"
-      );
-
-      const critiqueResp = await fetchWithRetry(`${CHAT_URL}/section-generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          section: { title: "Critique", word_target: 2000, framework: null, citation_count: 0 },
-          execution_plan: executionPlan,
-          prior_sections_summary: "",
-          citation_style: settings.citationStyle,
-          academic_level: settings.level,
-          model: selectedModel,
-          settings,
-          brief_text: critiquePrompt,
-          topic: settings.topic || "",
-        }),
-      });
-
-      if (!critiqueResp.ok || !critiqueResp.body) throw new Error(`Critique failed (${critiqueResp.status})`);
-
-      const critique = await readContentStream(critiqueResp.body, (chunk) => {
-        setCritiqueText(chunk);
-      });
-      setCritiqueText(critique);
-
-      // Phase 2: Correct
-      setCritiquePhase("correcting");
-      setProgressMessage("Applying corrections…");
-      setStreamContent("");
-
-      const correctionPrompt = buildCorrectionPrompt(
-        editedContent,
-        critique,
-        parseInt(settings.wordCount) || 3000
-      );
-
-      const corrResp = await fetchWithRetry(`${CHAT_URL}/section-revise`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          content: editedContent,
-          feedback: correctionPrompt,
-          word_target: parseInt(settings.wordCount) || 3000,
-          section_title: "Complete Document",
-          model: selectedModel,
-          settings,
-          brief_text: briefText || "",
-          topic: settings.topic || "",
-        }),
-      });
-
-      if (!corrResp.ok || !corrResp.body) throw new Error(`Correction failed (${corrResp.status})`);
-
-      const corrected = await readContentStream(corrResp.body, (chunk) => {
-        setStreamContent(chunk);
-      });
-
-      setCorrectedContent(corrected);
-      setEditedContent(corrected);
-      setFullDocContent(corrected);
-      setCritiquePhase("done");
-
-      // Update sections in DB
-      if (sections.length > 0) {
-        const parsedMap = parseFullDocument(corrected);
-        await saveParsedSections(parsedMap);
-      }
-
-      toast({ title: "Critique & corrections applied" });
-    } catch (e: any) {
-      setWriteError(e.message);
-      setCritiquePhase("idle");
-    } finally {
-      setGenerating(false);
-      setStreamContent("");
-      setProgressMessage("");
-    }
-  };
-
-  // ═══════════════════════════════════════════
-  // STAGE 5: Revision Center (existing)
-  // ═══════════════════════════════════════════
+  // ─── Full document revision (sequential section-revise loop) ─────────────────
   const handleReviseDocument = async (feedback: string) => {
     if (!feedback.trim()) return;
-    if (!editedContent && !fullDocContent) {
-      toast({ title: "Nothing to revise — write the document first.", variant: "destructive" });
-      return;
+    const contentSections = sections.filter(s => s.content && s.content.trim().length > 50);
+    if (contentSections.length === 0) {
+      toast({ title: "Nothing to revise — write the document first.", variant: "destructive" }); return;
     }
 
     setGenerating(true);
     setWriteError(null);
     setStreamContent("");
 
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token;
+    if (!accessToken) {
+      setWriteError("Session expired — please sign in again.");
+      setGenerating(false);
+      return;
+    }
+
+    let displayContent = "";
+    const isHarvard = (settings.citationStyle || "Harvard").toLowerCase().includes("harvard");
+
     try {
-      const accessToken = await getAccessToken();
-      setProgressMessage("Revising document…");
+      // Helper: filter feedback lines to what's relevant for a specific section
+      const filterFeedback = (fullFeedback: string, sectionTitle: string): string => {
+        const lines = fullFeedback.split("\n");
+        const titleLower = sectionTitle.toLowerCase();
+        const additionalIdx = lines.findIndex(l => l.startsWith("ADDITIONAL INSTRUCTIONS"));
+        const issueLines = additionalIdx >= 0 ? lines.slice(0, additionalIdx) : lines;
+        const additional = additionalIdx >= 0 ? lines.slice(additionalIdx).join("\n") : "";
 
-      const resp = await fetchWithRetry(`${CHAT_URL}/section-revise`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          content: editedContent || fullDocContent,
-          feedback,
-          word_target: parseInt(settings.wordCount) || 3000,
-          section_title: "Complete Document",
-          model: selectedModel,
-          settings,
-          brief_text: briefText || "",
-          topic: settings.topic || "",
-        }),
-      });
+        const relevant = issueLines.filter(line => {
+          if (!line.trim()) return false;
+          // Always include document-wide and coherence issues
+          if (/\[document\]/i.test(line) || /\[coherence/i.test(line)) return true;
+          // Include if no section tag (bare instruction)
+          if (!/\[[^\]]+\]\s*\[[^\]]+\]/.test(line)) return true;
+          // Include if section tag matches this section's title
+          const sectionTagMatch = line.match(/\[([^\]]+)\]\s*\[([^\]]+)\]/);
+          if (sectionTagMatch) {
+            const tag = sectionTagMatch[2].toLowerCase();
+            return titleLower.includes(tag) || tag.includes(titleLower);
+          }
+          return false;
+        });
 
-      if (!resp.ok || !resp.body) {
-        if (resp.status === 429) throw new Error("Rate limited — please wait a moment.");
-        if (resp.status === 402) throw new Error("Credits exhausted.");
-        throw new Error(`Revision failed (${resp.status})`);
+        const parts = [relevant.join("\n"), additional].filter(s => s.trim());
+        return parts.join("\n\n");
+      };
+
+      for (let i = 0; i < contentSections.length; i++) {
+        const section = contentSections[i];
+        setProgressMessage(`Revising ${i + 1} of ${contentSections.length}: ${section.title}…`);
+
+        const sectionFeedback = filterFeedback(feedback, section.title);
+        if (!sectionFeedback.trim()) continue; // nothing relevant for this section
+
+        const resp = await fetch(`${CHAT_URL}/section-revise`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({
+            content: section.content,
+            feedback: sectionFeedback,
+            word_target: section.word_target,
+            section_title: section.title,
+            model: selectedModel, settings,
+            brief_text: assessment?.brief_text || briefText || "",
+            topic: settings.topic || "",
+          }),
+        });
+
+        if (!resp.ok || !resp.body) {
+          if (resp.status === 429) throw new Error("Rate limited — please wait a moment.");
+          if (resp.status === 402) throw new Error("Credits exhausted.");
+          throw new Error(`Revision failed (${resp.status})`);
+        }
+
+        const sectionPrefix = (displayContent ? "\n\n---\n\n" : "") + `## ${section.title}\n\n`;
+        const baseDisplay = displayContent + sectionPrefix;
+
+        const sectionBody = await readContentStream(resp.body, (chunk) => {
+          setStreamContent(baseDisplay + chunk);
+        });
+
+        let fixedBody = sectionBody;
+        if (isHarvard) {
+          fixedBody = sectionBody.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
+        }
+
+        displayContent = baseDisplay + fixedBody;
+
+        const wc = countBodyWords(fixedBody);
+        await supabase.from("sections").update({ content: fixedBody, word_current: wc }).eq("id", section.id);
+        setSections(prev => prev.map(s => s.id === section.id ? { ...s, content: fixedBody, word_current: wc } : s));
       }
 
-      const result = await readContentStream(resp.body, (chunk) => {
-        setStreamContent(chunk);
-      });
-
-      // Apply Harvard citation fix
-      const isHarvard = (settings.citationStyle || "Harvard").toLowerCase().includes("harvard");
-      let fixedResult = result;
-      if (isHarvard) {
-        fixedResult = result.replace(/\(([A-Z][^)]*?)&([^)]*?\d{4}[a-z]?)\)/g, "($1and$2)");
-      }
-
-      setEditedContent(fixedResult);
-      setFullDocContent(fixedResult);
-
-      // Update sections in DB
-      if (sections.length > 0) {
-        const parsedMap = parseFullDocument(fixedResult);
-        await saveParsedSections(parsedMap);
-      }
-
-      const bodyWc = countBodyWords(fixedResult);
-      if (assessment?.id) {
-        await supabase.from("assessments").update({ word_current: bodyWc }).eq("id", assessment.id);
-      }
+      // Recalculate from latest sections state
+      const latestTotal = sections.reduce((a, s) => a + (s.word_current || 0), 0);
+      if (assessment?.id) await supabase.from("assessments").update({ word_current: latestTotal }).eq("id", assessment.id);
 
     } catch (e: any) {
       setWriteError(e.message || "Revision failed");
@@ -848,9 +568,7 @@ const WriterEngine = () => {
     }
   };
 
-  // ═══════════════════════════════════════════
-  // Review: Quality + coherence scan
-  // ═══════════════════════════════════════════
+  // ─── Review: Quality + coherence scan ───────────────────────────────────────
   const handleQualityCheck = async () => {
     const contentSections = sections.filter(s => s.content && s.content.trim().length > 50);
     if (contentSections.length === 0) {
@@ -887,9 +605,9 @@ const WriterEngine = () => {
             model: selectedModel,
             sections: sectionsForQuality,
             brief_text: parsedBrief.brief_text,
-            requirements: (parsedBrief as any).requirements,
-            marking_criteria: (parsedBrief as any).marking_criteria,
-            learning_outcomes: (parsedBrief as any).learning_outcomes,
+            requirements: parsedBrief.requirements,
+            marking_criteria: parsedBrief.marking_criteria,
+            learning_outcomes: parsedBrief.learning_outcomes,
           },
         }),
         contentSections.length >= 2
@@ -916,14 +634,15 @@ const WriterEngine = () => {
     }
   };
 
+  // ─── Review: Run scan (alias for quality check) ───
   const handleRunScan = async () => {
     const data = await handleQualityCheck();
     return data;
   };
 
-  // ═══════════════════════════════════════════
-  // STAGE 6: Export
-  // ═══════════════════════════════════════════
+  // ─── STAGE 8: Export ───
+
+  // ─── STAGE 8: Export ───
   const triggerDownload = (blobOrUrl: string | Blob, filename: string) => {
     const href = typeof blobOrUrl === "string" ? blobOrUrl : URL.createObjectURL(blobOrUrl);
     const a = document.createElement("a");
@@ -981,6 +700,53 @@ const WriterEngine = () => {
     setProgressMessage("");
   };
 
+  // ─── Image Generation ───
+  const handleGenerateImages = async () => {
+    if (!assessment?.id) return;
+    setProgressMessage("Generating images…");
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-images", {
+        body: { assessment_id: assessment.id, sections: sections.filter(s => s.content) },
+      });
+      if (error) throw error;
+      // Store as variants for user selection (not saved to DB yet)
+      setImageVariants(data?.images || []);
+      toast({ title: `${data?.count || 0} image variants generated!` });
+    } catch (e: any) {
+      toast({ title: "Image generation failed", description: e.message, variant: "destructive" });
+    }
+    setProgressMessage("");
+  };
+
+  const handleSelectImage = async (variant: any) => {
+    // Toggle selection
+    setImageVariants(prev => prev.map(v =>
+      v.section_id === variant.section_id
+        ? { ...v, selected: v.variant === variant.variant }
+        : v
+    ));
+    // Save selected image to assessment_images table
+    try {
+      const { data: imgRecord } = await supabase.from("assessment_images").insert({
+        section_id: variant.section_id,
+        figure_number: variant.figure_number,
+        caption: variant.caption,
+        prompt: variant.prompt,
+        url: variant.url,
+        image_type: variant.image_type,
+      }).select().single();
+      if (imgRecord) {
+        setAssessmentImages(prev => {
+          // Remove any previous image for this section
+          const filtered = prev.filter(i => i.section_id !== variant.section_id);
+          return [...filtered, imgRecord];
+        });
+      }
+    } catch (e: any) {
+      toast({ title: "Image save failed", description: e?.message, variant: "destructive" });
+    }
+  };
+
   const handleDownloadImagesZip = async () => {
     if (assessmentImages.length === 0) { toast({ title: "No images" }); return; }
     setIsProcessing(true);
@@ -1011,13 +777,11 @@ const WriterEngine = () => {
     setIsProcessing(false);
   };
 
-  // ═══════════════════════════════════════════
-  // Stage navigation
-  // ═══════════════════════════════════════════
+
   const canAdvance = (targetStage: number) => {
     if (targetStage <= stage) return true;
-    if (targetStage === 2 && !isPromptBuilt && !settings.masterPrompt) return false;
-    if (targetStage >= 3 && !fullDocContent && !editedContent) return false;
+    if (targetStage === 2 && sections.length === 0) return false;
+    if (targetStage >= 3 && !sections.some(s => s.content)) return false;
     return true;
   };
 
@@ -1058,6 +822,7 @@ const WriterEngine = () => {
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Topbar */}
         <div className="h-12 border-b border-border flex items-center justify-between px-3 md:px-4 gap-2 flex-shrink-0 bg-card">
+          {/* Left: hamburger + back arrow */}
           <div className="flex items-center gap-1 flex-shrink-0">
             <button onClick={() => setSidebarOpen(true)} className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-muted transition-colors md:hidden">
               <Menu size={16} />
@@ -1071,7 +836,7 @@ const WriterEngine = () => {
             </button>
           </div>
 
-          {/* Step indicator */}
+          {/* Centre: step indicator — always visible, compact */}
           <div className="flex items-center gap-1 flex-1 justify-center overflow-hidden">
             {stageLabels.map((label, i) => (
               <button
@@ -1112,45 +877,28 @@ const WriterEngine = () => {
                 />
               )}
 
-              {/* Stage 1: Prompt Builder (with plan review) */}
-              {stage === 1 && executionPlan && !isPromptBuilt && !settings.masterPrompt && (
+              {/* Stage 1: Plan (Execution Table) */}
+              {stage === 1 && executionPlan && (
                 <StageExecutionTable
                   plan={executionPlan} onPlanChange={setExecutionPlan}
                   settings={settings} onBack={() => { setExecutionPlan(null); setStage(0); }}
-                  onConfirm={async () => { await handleConfirmPlan(); await handleBuildPrompt(); }}
-                  isProcessing={isProcessing}
+                  onConfirm={handleConfirmPlan} isProcessing={isProcessing}
                 />
               )}
-              {stage === 1 && (isPromptBuilt || settings.masterPrompt) && (
-                <StagePromptBuilder
-                  settings={settings}
-                  onSettingsChange={setSettings}
-                  sectionSpecs={sectionSpecs || settings.sectionSpecs || ""}
-                  onSectionSpecsChange={(t) => { setSectionSpecs(t); setSettings(prev => ({ ...prev, sectionSpecs: t })); }}
-                  masterPrompt={masterPrompt || settings.masterPrompt || ""}
-                  onMasterPromptChange={(t) => { setMasterPrompt(t); setSettings(prev => ({ ...prev, masterPrompt: t })); }}
-                  onBuildPrompt={handleBuildPrompt}
-                  onRebuildPrompt={handleRebuildPrompt}
-                  isBuilding={isProcessing}
-                  isBuilt={isPromptBuilt || !!settings.masterPrompt}
-                  onBack={() => setStage(0)}
-                  onNext={() => setStage(2)}
-                />
-              )}
-              {stage === 1 && !executionPlan && !isPromptBuilt && !settings.masterPrompt && (
+              {stage === 1 && !executionPlan && (
                 <div className="text-center py-10">
                   <p className="text-muted-foreground text-sm">No plan generated yet.</p>
                   <button onClick={() => setStage(0)} className="mt-3 text-terracotta text-sm font-semibold hover:underline">← Back to Brief</button>
                 </div>
               )}
 
-              {/* Stage 2: Write (full document) */}
+              {/* Stage 2: Write */}
               {stage === 2 && (
                 <StageWrite
                   sections={sections}
                   generating={generating}
                   streamContent={streamContent}
-                  fullDocContent={fullDocContent}
+                  fullDocContent={sections.filter(s => s.content && s.content.trim().length > 50).map(s => `## ${s.title}\n\n${s.content}`).join("\n\n---\n\n")}
                   onWrite={() => handleWriteDocument(false)}
                   onRewrite={() => handleWriteDocument(true)}
                   onBack={() => setStage(1)}
@@ -1161,47 +909,27 @@ const WriterEngine = () => {
                 />
               )}
 
-              {/* Stage 3: Edit / Proofread / Humanise */}
+              {/* Stage 3: Review (Edit & Proofread) */}
               {stage === 3 && (
-                <StageEditProofHumanise
+                <StageReview
                   sections={sections}
-                  settings={settings}
-                  editedContent={editedContent}
+                  fullDocContent={sections.filter(s => s.content && s.content.trim().length > 50).map(s => `## ${s.title}\n\n${s.content}`).join("\n\n---\n\n")}
+                  qualityReport={qualityReport}
+                  coherenceReport={coherenceReport}
+                  isProcessing={isProcessing}
                   generating={generating}
                   streamContent={streamContent}
                   writeError={writeError}
-                  onRunPass={handleRunEditPass}
-                  onRunAllPasses={handleRunAllEditPasses}
-                  onContentChange={(c) => { setEditedContent(c); setFullDocContent(c); }}
+                  onRunScan={handleRunScan}
+                  onReviseDocument={handleReviseDocument}
                   onClearError={() => setWriteError(null)}
                   onBack={() => setStage(2)}
                   onNext={() => setStage(4)}
                 />
               )}
 
-              {/* Stage 4: Critique & Correct */}
+              {/* Stage 4: Revise (Revision Center) */}
               {stage === 4 && (
-                <StageCritiqueCorrect
-                  sections={sections}
-                  settings={settings}
-                  editedContent={editedContent}
-                  critiqueText={critiqueText}
-                  correctedContent={correctedContent}
-                  generating={generating}
-                  streamContent={streamContent}
-                  writeError={writeError}
-                  onRunCritiqueAndCorrect={handleCritiqueAndCorrect}
-                  onCritiqueChange={setCritiqueText}
-                  onCorrectedChange={(c) => { setCorrectedContent(c); setEditedContent(c); setFullDocContent(c); }}
-                  onClearError={() => setWriteError(null)}
-                  phase={critiquePhase}
-                  onBack={() => setStage(3)}
-                  onNext={() => setStage(5)}
-                />
-              )}
-
-              {/* Stage 5: Revision Centre */}
-              {stage === 5 && (
                 <StageRevisionCenter
                   sections={sections}
                   generating={generating}
@@ -1209,13 +937,13 @@ const WriterEngine = () => {
                   writeError={writeError}
                   onReviseDocument={handleReviseDocument}
                   onClearError={() => setWriteError(null)}
-                  onBack={() => setStage(4)}
-                  onNext={() => setStage(6)}
+                  onBack={() => setStage(3)}
+                  onNext={() => setStage(5)}
                 />
               )}
 
-              {/* Stage 6: Export */}
-              {stage === 6 && (
+              {/* Stage 5: Export */}
+              {stage === 5 && (
                 <StageSubmissionPrep
                   assessmentTitle={assessment?.title || "Assessment"}
                   totalWords={totalWords}

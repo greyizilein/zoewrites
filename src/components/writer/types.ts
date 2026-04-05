@@ -65,7 +65,7 @@ export interface WriterSettings {
   tableCount: number;
   statisticalSourceCount: number;
   preferredDataSources: string[];
-  // Pipeline settings
+  // New settings from uploaded pipeline
   burstiness: number;
   journalPct: number;
   bookPct: number;
@@ -78,19 +78,6 @@ export interface WriterSettings {
   aiPatternScore: boolean;
   unlimitedImages: boolean;
   versionHistory: boolean;
-  // New fields from Update Folder
-  moduleCode: string;
-  learningOutcomes: string;
-  rubric: string;
-  deadline: string;
-  sectionSpecs: string;
-  masterPrompt: string;
-  // New suggested settings
-  perplexityLevel: number;
-  activeVoiceTarget: number;
-  citationDensityOverride: number;
-  prohibitedPhrases: string;
-  referenceVerification: boolean;
 }
 
 export interface Recommendation {
@@ -123,13 +110,13 @@ export const assessmentTypes = [
 ];
 
 export const writingTones = [
+  "Academic Formal",
   "Analytical",
   "Critical",
   "Evaluative",
   "Discursive",
   "Argumentative",
   "Reflective",
-  "Academic Formal",
 ];
 
 export const citationStyles = [
@@ -159,8 +146,7 @@ export const aiModels = [
   { id: "openai/gpt-5.2",                name: "GPT-5.2",          desc: "Latest OpenAI · enhanced reasoning" },
 ];
 
-// 7-stage pipeline
-export const stageLabels = ["Brief", "Prompt", "Write", "Edit", "Critique", "Revise", "Export"];
+export const stageLabels = ["Brief", "Plan", "Write", "Review", "Revise", "Export"];
 
 export const DATA_SOURCES_BY_CATEGORY: Record<string, string[]> = {
   "International Bodies": [
@@ -260,7 +246,7 @@ export const defaultSettings: WriterSettings = {
   humanisation: "High",
   grammarPipeline: "Full 7-stage",
   autoImages: true,
-  writingTone: "Analytical",
+  writingTone: "Academic Formal",
   formalityLevel: 4,
   hedgingIntensity: "Medium",
   firstPerson: false,
@@ -279,8 +265,8 @@ export const defaultSettings: WriterSettings = {
   tableCount: 0,
   statisticalSourceCount: 0,
   preferredDataSources: [],
-  // Pipeline
-  burstiness: 4,
+  // New settings
+  burstiness: 3,
   journalPct: 55,
   bookPct: 25,
   reportPct: 12,
@@ -292,17 +278,4 @@ export const defaultSettings: WriterSettings = {
   aiPatternScore: false,
   unlimitedImages: false,
   versionHistory: false,
-  // New from Update Folder
-  moduleCode: "",
-  learningOutcomes: "",
-  rubric: "",
-  deadline: "",
-  sectionSpecs: "",
-  masterPrompt: "",
-  // New suggested
-  perplexityLevel: 3,
-  activeVoiceTarget: 70,
-  citationDensityOverride: 0,
-  prohibitedPhrases: "",
-  referenceVerification: true,
 };
