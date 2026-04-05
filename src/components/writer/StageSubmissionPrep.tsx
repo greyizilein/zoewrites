@@ -46,7 +46,7 @@ export default function StageSubmissionPrep({ assessmentTitle, totalWords, onExp
     <div className="max-w-[640px] mx-auto">
       {/* Header */}
       <div className="mb-5">
-        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 4 of 4</p>
+        <p className="font-mono text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Stage 7 of 7</p>
         <h1 className="text-[22px] font-bold tracking-tight mb-0.5">Export</h1>
         <p className="text-[13px] text-muted-foreground">Fill in your details, choose a font, and download.</p>
       </div>
