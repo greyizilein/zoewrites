@@ -616,6 +616,7 @@ const Dashboard = () => {
           </div>
         </nav>
       </div>
+      <ZoeFloatingChat refreshData={refreshData} />
     </div>
   );
 
