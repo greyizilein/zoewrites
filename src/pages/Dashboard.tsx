@@ -13,6 +13,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import ZoeFloatingChat from "@/components/chat/ZoeFloatingChat";
 
 interface Assessment {
   id: string;
@@ -615,6 +616,7 @@ const Dashboard = () => {
           </div>
         </nav>
       </div>
+      <ZoeFloatingChat refreshData={refreshData} />
     </div>
   );
 
