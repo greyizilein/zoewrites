@@ -1,96 +1,54 @@
 
 
-# Build ZOE Floating Chat Widget for Dashboard
+# Fix Build Errors and Missing Writer Engine
 
-## Overview
+## Problems Identified
 
-Create a polished, floating AI chat assistant widget on the dashboard — a circular FAB in the bottom-right that opens a clean, minimal chat panel. ZOE has full executive control over the app (assessments, subscriptions, exports, navigation, etc.) via the existing `zoe-chat` edge function. No separate dashboard needed.
+1. **404 on `/assessment/*` routes** — `App.tsx` has no route for `/assessment/:id` or `/assessment/new`. The `WriterEngine.tsx` page and entire `src/components/writer/` directory are missing (deleted or never saved from previous edits). ZoeChat and useZoeHome navigate to `/assessment/*` which hits the 404 catch-all.
 
-## Architecture
+2. **Build error: `useWriterChat.ts` imports missing module** — `@/components/writer/types` doesn't exist, causing `TS2307`.
 
-```text
-Dashboard.tsx
-  └── ZoeFloatingChat.tsx  (FAB + slide-up panel)
-        ├── Chat header (ZOE name + × close)
-        ├── Scrollable message area
-        │     ├── Welcome empty state
-        │     ├── User bubbles (right, solid terracotta)
-        │     └── ZOE bubbles (left, light grey)
-        ├── Inline tool result cards (charts, sources, etc.)
-        └── Input bar (auto-expand textarea + send arrow)
+3. **Build error: `zoe-chat/index.ts` TS7053** — `zip.files[sf]` has implicit `any` type. The `JSZip.files` property needs explicit typing when accessed by string key.
+
+4. **`ZoeFloatingChat.tsx` was never created** — The plan called for it but the file doesn't exist. Dashboard doesn't have the floating widget.
+
+## Fix Plan
+
+### Fix 1: Edge function type error (zoe-chat)
+**File**: `supabase/functions/zoe-chat/index.ts` (lines 639-645)
+
+Cast `zip.files` access to resolve the implicit `any`:
+```typescript
+const filesMap = zip.files as Record<string, any>;
+// then use filesMap[sf].async("string")
 ```
 
-## New Files
+### Fix 2: Create `src/components/writer/types.ts`
+Recreate the types file with the `Section`, `WriterSettings`, and related types that `useWriterChat.ts` imports. Include the 6-stage labels and all assessment types/tones/settings from the approved plan.
 
-| File | Purpose |
-|------|---------|
-| `src/components/chat/ZoeFloatingChat.tsx` | Self-contained floating chat widget — FAB button, animated panel, message rendering with markdown, input bar, tool execution, file uploads |
+### Fix 3: Create `src/pages/WriterEngine.tsx`
+Recreate the Writer Engine page with the 6-stage pipeline (Brief → Plan → Write → Review → Revise → Export). This is the largest piece — it needs to:
+- Accept an assessment ID from the URL (`/assessment/:id`)
+- Handle `/assessment/new` for creating new assessments
+- Load assessment data, sections, and settings from the database
+- Render stage components (simplified inline initially since the `src/components/writer/` subdirectory components are all missing)
+- Wire the `useWriterChat` hook for in-page chat
 
-## Modified Files
+### Fix 4: Add `/assessment` routes to `App.tsx`
+Add:
+```tsx
+<Route path="/assessment/new" element={<ProtectedRoute><WriterEngine /></ProtectedRoute>} />
+<Route path="/assessment/:id" element={<ProtectedRoute><WriterEngine /></ProtectedRoute>} />
+```
 
-| File | Change |
-|------|---------|
-| `src/pages/Dashboard.tsx` | Import and render `<ZoeFloatingChat />` at page bottom |
+### Fix 5: Create `src/components/chat/ZoeFloatingChat.tsx`
+Build the floating chat widget as planned (FAB + panel) and add it to `Dashboard.tsx`.
 
-## Component Details: `ZoeFloatingChat.tsx`
+## Execution Order
 
-### UI Structure
-- **FAB**: 56px circle, terracotta bg, bottom-right (bottom: 80px on mobile to clear nav bar, 24px on desktop), ZOE sparkle icon, pulse animation when idle
-- **Panel**: Opens upward from FAB position. Mobile: full-screen overlay. Desktop: 400px wide × 600px tall card with rounded corners and shadow
-- **Header**: Rounded top, terracotta gradient, "ZOE" name + "AI Assistant" subtitle, × close button
-- **Messages**: Scrollable area. User messages right-aligned with terracotta bg. ZOE messages left-aligned with `bg-muted/50`. Markdown rendered via `react-markdown`
-- **Empty state**: Centred sparkle icon + "Hey {name}, what do you have in mind?" with 3 suggestion chips (New Assessment, Check My Stats, Upgrade Plan)
-- **Input bar**: Auto-expanding textarea (1-4 rows), paperclip for file attach, arrow send button (terracotta, appears when text entered), Enter to send (Shift+Enter for newline)
-- **Animation**: `scale-in` + `fade-in` on open, reverse on close
-
-### Functional Capabilities (via `zoe-chat` edge function)
-All tool calls from the existing edge function are handled client-side:
-
-- **Assessment CRUD**: `create_assessment`, `create_full_assessment`, `open_assessment`, `delete_assessment`, `update_assessment_title`
-- **Pipeline**: `analyse_brief`, `write_all`, `write_section`, `run_critique`, `humanise_all`, `apply_revision`, `edit_proofread`, `generate_images`, `coherence_check`
-- **Navigation**: `navigate_to`, `sign_out`
-- **Payments**: `process_payment` (opens Paystack popup)
-- **Analytics**: `read_analytics` (fetches data from DB, returns to ZOE)
-- **Sources**: `find_sources` (Semantic Scholar), `web_search`
-- **Content**: `read_section`, `read_assessment`, `export_document`, `export_content`
-- **Settings**: `update_assessment_settings`, `adjust_word_target`, `confirm_execution_plan`
-- **Charts**: `render_chart` (inline recharts)
-
-### Tool Execution Logic
-The component includes a `executeToolCall` handler that:
-1. For navigation tools → calls `navigate(route)`
-2. For payment → opens Paystack popup via existing `initPaystack`
-3. For assessment creation → calls Supabase functions directly
-4. For analytics → queries `assessments` + `profiles` tables, injects data back as context
-5. For pipeline tools → calls the respective edge functions (brief-parse, section-generate, etc.)
-6. For read/export → fetches sections from DB, displays or triggers download
-
-### Message Persistence
-Uses existing `chat_messages` table with `chat_id = 'dashboard'`. Loads history on mount, saves new messages.
-
-### File Uploads
-Uses existing `chat-uploads` bucket. Uploads file, gets signed URL, passes as attachment to `zoe-chat` edge function.
-
-### Mobile Adaptations
-- Panel goes full-screen on viewports < 640px
-- FAB positioned above bottom nav (80px from bottom)
-- Textarea gets `enterKeyHint="send"`, `autoCapitalize="sentences"`
-- Close button is prominent in header
-
-### Dynamic Greeting
-Array of greetings rotated by time-of-day:
-- Morning: "Good morning {name}, ready to write?"
-- Afternoon: "Hey {name}, what do you have in mind?"
-- Evening: "Evening {name}, let's get some work done"
-- Generic: "What can I help you with today?"
-
-## Dependencies
-- `react-markdown` and `remark-gfm` (already in package.json from previous work)
-- `recharts` (already installed) for inline chart rendering
-
-## Technical Notes
-- Auth token passed via `supabase.auth.getSession()` for edge function calls
-- SSE streaming via existing `readContentAndToolStream` from `@/lib/sseStream`
-- No new edge functions needed — reuses `zoe-chat` which already has all 30+ tools
-- Dashboard `refreshData` passed to widget so tool actions that modify assessments can refresh the list
+1. Fix `zoe-chat/index.ts` type error (small, unblocks edge function deployment)
+2. Create `src/components/writer/types.ts` (unblocks `useWriterChat.ts` import)
+3. Create `src/pages/WriterEngine.tsx` (full 6-stage writer page)
+4. Add routes to `App.tsx`
+5. Create `ZoeFloatingChat.tsx` and wire into Dashboard
 
