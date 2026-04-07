@@ -62,8 +62,8 @@ serve(async (req) => {
     const emDashCount = (bodyContent.match(/[—–]/g) || []).length;
 
     // Pre-check: paragraphs lacking citations
-    const paragraphs = bodyContent.split(/\n\n+/).filter(p => p.trim().length > 80);
-    const uncitedParas = paragraphs.filter(p => !p.includes("(") || !/\(\s*[A-Z][^)]*\d{4}/.test(p)).length;
+    const paragraphs = bodyContent.split(/\n\n+/).filter((p: string) => p.trim().length > 80);
+    const uncitedParas = paragraphs.filter((p: string) => !p.includes("(") || !/\(\s*[A-Z][^)]*\d{4}/.test(p)).length;
     const uncitedPct = paragraphs.length > 0 ? Math.round((uncitedParas / paragraphs.length) * 100) : 0;
 
     // Build framework verification context

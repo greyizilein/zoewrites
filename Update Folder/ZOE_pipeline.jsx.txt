@@ -1,0 +1,1649 @@
+import { useState, useRef, useCallback, useEffect } from "react";
+
+/* ═══════════════════════════════════════════════════
+   CONSTANTS — Superior Prompt quality rules (verbatim)
+═══════════════════════════════════════════════════ */
+
+const WRITING_RULES = `WRITING QUALITY RULES
+
+Writing: Produce a rigorous academic response that adheres strictly to a prescribed word count and is written in formal UK English, maintaining a third-person voice throughout with no contractions. The work must demonstrate sophisticated critical evaluation, theoretical integration, and precise disciplinary terminology, synthesising complex ideas rather than offering descriptive narration. The argument should be coherent, analytically robust, and grounded in high-quality, contemporary research, incorporating empirical data and relevant statistics to support nuanced and balanced discussion. Well-developed scholarly examples should be included where appropriate, and key concepts must be clearly and precisely defined. Differences and similarities between theoretical perspectives should be examined to provide deeper analytical insight, and frameworks must be critically appraised in relation to their strengths, limitations, assumptions, practical applicability, and relevance to professional practice. Evidence must be interrogated rather than accepted uncritically, with explicit connections drawn between theory, research, and practice to demonstrate mature scholarly engagement. Focus on depth, specificity, and quality.
+
+Structure: The structure must consist of fully developed paragraphs organised under clear, academically appropriate headings, with no bullet points or lists anywhere in the body of the work. Figures and tables, where required, must be embedded within the relevant sections rather than placed at the end, following this sequence: preceding analytical paragraph, figure or table heading, interpretation or description, and continuation of analysis. Numbers must be written in numerals (1, 2, 3) not words, except when a number begins a sentence. Abbreviations such as "e.g.", "i.e.", and "etc." must be avoided. The final work must meet core academic standards of clarity, structural coherence, originality, relevance, rigorous engagement with evidence, accuracy of citation, ethical scholarly practice, and advanced critical insight.`;
+
+const HUMANISATION_RULES = `HUMANISATION RULES
+
+Humanise the content so it will not be flagged as written by AI. Apply every one of the following transformations without exception:
+
+Sentence structure and rhythm: Break the robotic uniformity of AI prose. Vary sentence length aggressively — place short, punchy sentences next to longer, more complex ones. Do not let three consecutive sentences share a similar length or structure. This variation in "burstiness" is the single most detectable difference between human and AI writing, so treat it as a priority.
+
+Remove AI fingerprints: Strip out all phrases that AI defaults to. This includes openers like "It is worth noting", "It is important to", "Furthermore", "Moreover", "In conclusion", "Delving into", "In the realm of", and any sentence that begins by restating what was just said. Remove hollow filler affirmations entirely.
+
+Transitions: Replace mechanical logical connectors with natural, conversational bridges. Humans do not write "Additionally, it can be observed that" — they write "That said," or "Which raises the question of" or simply start a new thought without flagging it.
+
+Vocabulary: Flatten the vocabulary slightly. AI overuses elevated synonyms to signal intelligence — choose the cleaner, more direct word unless the complex one is genuinely the right fit. Avoid nominalisation where a verb would do ("make a decision" becomes "decide").
+
+Imperfection and opinion: Introduce subtle authorial presence. Real writers hedge naturally, qualify claims informally, and occasionally let a perspective bleed through. Passive constructions everywhere signal AI — use active voice with a human behind it.
+
+Paragraph logic: AI tends to build paragraphs in rigid triads — claim, evidence, conclusion, repeat. Break this. Let some paragraphs be two sentences. Let an idea carry across a paragraph break. Let the structure follow the thought, not a template.
+
+Perplexity: Increase lexical unpredictability. AI writing is statistically very predictable — each word is the most likely next word. Introduce phrasing that is correct but slightly unexpected. This is what makes writing feel authored rather than generated.`;
+
+const QUALITY_CRITERIA = `QUALITY CRITERIA
+
+The completed work must satisfy every one of the following without exception: Clarity of Argument, Depth of Analysis, Critical Thinking, Proper Synthesis of Information, Coherence and Structure, Accurate Citations and Referencing, Originality, Relevance to Topic, Use of Scholarly Sources, Formal Academic Tone, No contractions, Proper Grammar and Spelling, Logical Flow of Ideas, Thorough Research, Adherence to Formatting Guidelines, Balanced Discussion of Different Perspectives, Use of Data and Statistics, and Ethical Writing Practices (no fabricated sources, no plagiarism).`;
+
+const ASSESSMENT_TYPES = [
+  "Business Report","Essay","Case Study","Literature Review",
+  "Reflective Account","Financial Analysis","Research Proposal",
+  "Lab Report","Systematic Review","Legal Problem (IRAC)",
+  "Discussion Post","Coding Assignment","EBP Assessment",
+  "MBA Assignment","Policy Report","Consultancy Report"
+];
+
+const CITATION_STYLES = [
+  "Harvard (UK)","APA 7","APA 6","MLA 9","Vancouver",
+  "IEEE","Chicago (Author-Date)","Chicago (Notes-Bibliography)",
+  "OSCOLA","AMA","Turabian","AGLC 4"
+];
+
+const ACADEMIC_LEVELS = ["Level 4","Level 5","Level 6","Masters","Doctoral","Professional"];
+
+const LEVEL_MAP = {
+  "Level 4":"Level 4 undergraduate",
+  "Level 5":"Level 5 undergraduate",
+  "Level 6":"Level 6 undergraduate / Honours",
+  "Masters":"Level 7 postgraduate",
+  "Doctoral":"Level 8 doctoral",
+  "Professional":"professional / CPD"
+};
+
+const TONES = ["Analytical","Critical","Evaluative","Discursive","Argumentative","Reflective"];
+
+/* ═══════════════════════════════════════════════════
+   API LAYER — Anthropic /v1/messages with streaming
+═══════════════════════════════════════════════════ */
+
+async function callZOE({ messages, onChunk, onDone, signal }) {
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        stream: true,
+        messages
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `API error ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let full = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const lines = decoder.decode(value).split("\n");
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]" || !data) continue;
+        try {
+          const parsed = JSON.parse(data);
+          const text = parsed.delta?.text || parsed.content?.[0]?.text || "";
+          if (text) { full += text; onChunk?.(full); }
+        } catch {}
+      }
+    }
+    onDone?.(full);
+    return full;
+  } catch (e) {
+    if (e.name === "AbortError") throw e;
+    throw e;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   PROMPT BUILDER — assembles the master execution prompt
+═══════════════════════════════════════════════════ */
+
+function buildMasterPrompt(s) {
+  const totalCitations = Math.max(20, Math.round(s.wordCount / 90));
+  const introWc = Math.round(s.wordCount * 0.07);
+  const concWc = Math.round(s.wordCount * 0.07);
+
+  return `ROLE
+
+You are a ${LEVEL_MAP[s.level] || "postgraduate"} academic writer completing a ${s.assessmentType.toLowerCase()} assignment${s.module ? ` for ${s.module}${s.moduleCode ? ` (${s.moduleCode})` : ""}` : ""}. You write exclusively in formal UK English, in third person, with no contractions at any point. You demonstrate sophisticated critical evaluation, theoretical integration, and precise disciplinary terminology throughout. Every claim is grounded in genuine, verifiable academic sources. You write as a human scholar — with natural variation in sentence rhythm, authentic scholarly transitions, and analytical depth that goes well beyond surface description.
+
+CONTEXT
+
+${s.title ? `Assessment title: ${s.title}\n` : ""}${s.module ? `Module: ${s.module}${s.moduleCode ? ` (${s.moduleCode})` : ""}\n` : ""}Academic level: ${LEVEL_MAP[s.level] || s.level}
+Total word count: ${s.wordCount.toLocaleString()} words — this is a hard ceiling. The complete work must not exceed ${Math.round(s.wordCount * 1.01).toLocaleString()} words under any circumstances.
+Citation style: ${s.citStyle}
+Tone: ${s.tone || "Analytical"}
+Humanisation: ${s.humanisation || "High"}
+
+${s.briefText ? `ASSIGNMENT BRIEF\n\n${s.briefText}\n` : ""}
+
+EXECUTION COMMAND
+
+Write the complete ${s.wordCount.toLocaleString()}-word ${s.assessmentType.toLowerCase()} in full, in one continuous uninterrupted output from the first word of the introduction to the final word of the conclusion, followed immediately and without any break by the complete reference list. Do not stop at any point. Do not announce sections before writing them. Do not ask for confirmation at any stage. Do not summarise what you are about to do. Begin writing immediately and produce the entire work now.
+
+COMPLETE WORK SPECIFICATION
+
+${s.sectionSpecs || buildDefaultSectionSpecs(s.assessmentType, s.wordCount, introWc, concWc, s.briefText)}
+
+CITATION RULES
+
+A minimum of ${totalCitations} new and distinct academic sources must be used across the complete work, with no repetition of previously cited works and no duplication of references. All sources must be genuine, verifiable, and searchable via Google Scholar — fabricated references are strictly prohibited. Publication dates must fall between ${s.dateFrom || 2015} and ${s.dateTo || 2025}${s.seminal ? ", with the exception of foundational seminal works published before this range where their historical significance is directly relevant to the argument" : ""}. Every sentence must be analytically supported by a named academic source. Citations must be woven into the prose using varied scholarly constructions: "(Author, Year)," "Author (Year) argued that...," "contended that...," "demonstrated that...," "according to," "as stated by," "maintained that," "revealed how," "emphasised that." Citations must not always appear bracketed at the end of a sentence — they must be substantively integrated. All in-text citations must follow ${s.citStyle} style${s.citStyle.includes("Harvard") ? " using 'and' not '&'" : ""}. The complete reference list appears at the end of the work, is excluded from the word count, and must be formatted to ${s.citStyle} standard without exception.
+
+${WRITING_RULES}
+
+${HUMANISATION_RULES}
+
+${QUALITY_CRITERIA}`;
+}
+
+function buildDefaultSectionSpecs(type, wc, introWc, concWc, brief) {
+  const bodyWc = wc - introWc - concWc;
+  const sectionWc = Math.round(bodyWc / 3);
+
+  const specs = {
+    "Business Report": `Introduction (${introWc} words): Open by identifying the precise strategic, operational, or analytical problem the report addresses. Do not open with a definition or a broad contextual sweep. Establish the scope explicitly — what is included and what is deliberately excluded. Present a clear analytical thesis that signals the report's central argument or finding. Signpost the major sections in the order they will appear. Integrate a minimum of 3 citations that establish the scholarly and industry context. Word count ceiling: ${Math.round(introWc * 1.01)} words absolute maximum.
+
+Main Analysis — Section 1 (${sectionWc} words): Conduct the first major dimension of analysis specified in the brief. Apply the relevant theoretical framework or model directly to the specific organisational context — do not describe the framework in general terms before applying it. Use data, statistics, and empirical evidence throughout. Evaluate the framework's strengths and limitations in this specific context. Every substantive claim must cite a genuine source. Integrate any required figures or tables within the section, preceded by an analytical paragraph and followed by interpretation. Word count ceiling: ${Math.round(sectionWc * 1.01)} words.
+
+Main Analysis — Section 2 (${sectionWc} words): Address the second major analytical dimension. Build directly on the argument established in the preceding section — do not restart the context. Deepen the critical analysis by examining competing perspectives or theoretical tensions. Include specific organisational examples and industry data. Continue the citation pattern established — varied constructions, substantively integrated. Word count ceiling: ${Math.round(sectionWc * 1.01)} words.
+
+Main Analysis — Section 3 (${sectionWc} words): Synthesise the preceding analysis into strategic recommendations or evaluative conclusions. These must flow logically from the evidence presented and be grounded in the theoretical frameworks applied. Recommendations must be specific, feasible, and supported by academic evidence — not generic best practice. Address implementation considerations and potential limitations. Word count ceiling: ${Math.round(sectionWc * 1.01)} words.
+
+Conclusion (${concWc} words): Synthesise the central argument of the report without introducing new evidence or analysis. Draw explicit connections between each section's findings and the original thesis. Evaluate the implications of the analysis for the organisation or industry. Close with a forward-looking statement grounded in the evidence. Do not use "In conclusion" as an opener. Word count ceiling: ${Math.round(concWc * 1.01)} words.`,
+
+    "Essay": `Introduction (${introWc} words): Open with a sentence that locates the specific intellectual tension or debate the essay will interrogate. Do not open with a definition, a broad historical sweep, or a restatement of the question. Establish the interpretive angle clearly. Present a clear thesis that signals the essay's central argument. Signpost the line of reasoning in the order it will unfold. Integrate a minimum of 3 citations establishing the scholarly context. Word count ceiling: ${Math.round(introWc * 1.01)} words.
+
+Main Body — First Argument (${sectionWc} words): Develop the first major strand of the argument in full. Apply relevant theory directly to evidence — do not summarise theory before applying it. Interrogate the evidence rather than accepting it at face value. Use a minimum of 6 distinct sources in this section. Vary citation constructions throughout. Acknowledge counterarguments and address them analytically. Word count ceiling: ${Math.round(sectionWc * 1.01)} words.
+
+Main Body — Second Argument (${sectionWc} words): Develop the second major strand, building directly on the first. Deepen the analytical complexity — introduce nuance, theoretical tension, or empirical contradiction. Synthesise multiple sources rather than discussing them sequentially. Every paragraph must advance the central thesis rather than simply adding supporting points. Word count ceiling: ${Math.round(sectionWc * 1.01)} words.
+
+Main Body — Critical Synthesis (${sectionWc} words): Bring the two preceding arguments into analytical dialogue with each other. Identify points of convergence, tension, and theoretical implication. This section should represent the most analytically ambitious part of the essay. Draw on the broadest range of sources while maintaining argumentative coherence. Word count ceiling: ${Math.round(sectionWc * 1.01)} words.
+
+Conclusion (${concWc} words): Return to the thesis and evaluate it in light of the evidence presented. Do not summarise each section — synthesise the argument's trajectory. Identify the key analytical insight the essay has produced. Address the broader significance or implications for the field. Do not introduce new evidence. Do not open with "In conclusion" or "To summarise." Word count ceiling: ${Math.round(concWc * 1.01)} words.`
+  };
+
+  return specs[type] || specs["Essay"].replace(/Essay/g, type);
+}
+
+/* ═══════════════════════════════════════════════════
+   SHARED UI PRIMITIVES
+═══════════════════════════════════════════════════ */
+
+const C = {
+  navy:"#0D1B2A", n2:"#071018", n3:"#111f2e",
+  sl:"#2E4057", sl2:"#1a2d40",
+  teal:"#048A81", td:"rgba(4,138,129,.14)", tg:"rgba(4,138,129,.3)",
+  gold:"#C9A84C", gd:"rgba(201,168,76,.12)", gg:"rgba(201,168,76,.25)",
+  green:"#1A7A4A", grd:"rgba(26,122,74,.14)",
+  red:"#C0392B", rdd:"rgba(192,57,43,.13)",
+  blue:"#2563EB", bld:"rgba(37,99,235,.14)",
+  amber:"#D97706", amd:"rgba(217,119,6,.14)",
+  b1:"#1e3349", b2:"#2d4a68", b3:"#3d6080",
+  t1:"#e2e8f0", t2:"#94a3b8", t3:"#4d6880", t4:"#2a3f55",
+  mono:"'JetBrains Mono', monospace"
+};
+
+const css = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Inter',sans-serif;background:#0A0A0A;color:#e2e8f0;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,textarea,select{font-family:inherit}
+button{cursor:pointer;border:none;background:none}
+textarea{resize:vertical}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:#2e4057;border-radius:2px}
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes ledP{0%,100%{box-shadow:0 0 0 0 rgba(4,138,129,.3)}70%{box-shadow:0 0 0 5px transparent}}
+@keyframes barAnim{from{width:0}to{width:var(--w,100%)}}
+@keyframes checkPop{0%{transform:scale(0)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+.spin{animation:spin .8s linear infinite}
+.blink{animation:blink 1s infinite}
+.fade-up{animation:fadeUp .2s ease both}
+.led-teal{width:7px;height:7px;border-radius:50%;background:#048A81;animation:ledP 2s infinite;display:inline-block;flex-shrink:0}
+.led-green{width:7px;height:7px;border-radius:50%;background:#1A7A4A;display:inline-block;flex-shrink:0}
+.led-gold{width:7px;height:7px;border-radius:50%;background:#C9A84C;display:inline-block;flex-shrink:0}
+.led-grey{width:7px;height:7px;border-radius:50%;background:#3d6080;display:inline-block;flex-shrink:0}
+.wc-ok{background:rgba(26,122,74,.14);color:#3bc97a;border:1px solid rgba(26,122,74,.3);font-family:${C.mono};font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
+.wc-warn{background:rgba(217,115,13,.12);color:#f9ae58;border:1px solid rgba(217,115,13,.3);font-family:${C.mono};font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
+.wc-over{background:rgba(192,57,43,.13);color:#e06050;border:1px solid rgba(192,57,43,.3);font-family:${C.mono};font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
+.rev-add{background:rgba(234,179,8,.2);color:#fde68a;border-bottom:1px solid rgba(234,179,8,.45);border-radius:2px;padding:0 2px;cursor:pointer}
+.rev-mod{background:rgba(37,99,235,.2);color:#93c5fd;border-bottom:1px solid rgba(37,99,235,.5);border-radius:2px;padding:0 2px;cursor:pointer}
+.rev-del{background:rgba(192,57,43,.18);color:#fca5a5;text-decoration:line-through;border-radius:2px;padding:0 2px;opacity:.7}
+.voice-pulse{animation:ledP .5s infinite}
+`;
+
+// Reusable components
+function Btn({ children, onClick, variant="gold", size="md", full=false, disabled=false, style={} }) {
+  const vars = {
+    gold:{bg:C.gold,color:C.navy,border:C.gold},
+    teal:{bg:C.teal,color:"#fff",border:C.teal},
+    sl:{bg:C.sl2,color:C.t1,border:C.b1},
+    ghost:{bg:"transparent",color:C.t1,border:C.b2},
+    danger:{bg:C.rdd,color:"#e06050",border:"rgba(192,57,43,.3)"},
+    green:{bg:C.grd,color:"#3bc97a",border:"rgba(26,122,74,.3)"},
+    blue:{bg:C.bld,color:"#93c5fd",border:"rgba(37,99,235,.3)"},
+    amber:{bg:C.amd,color:"#fbbf24",border:"rgba(217,119,6,.3)"},
+  };
+  const sz = {md:{p:"7px 14px",fs:"13px"},lg:{p:"10px 22px",fs:"14px"},sm:{p:"5px 10px",fs:"12px"},xs:{p:"3px 7px",fs:"11px"}};
+  const v = vars[variant]||vars.gold; const s = sz[size]||sz.md;
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      display:"inline-flex",alignItems:"center",gap:"5px",padding:s.p,
+      borderRadius:"8px",fontSize:s.fs,fontWeight:600,cursor:disabled?"not-allowed":"pointer",
+      whiteSpace:"nowrap",lineHeight:1,border:`1px solid ${v.border}`,
+      background:v.bg,color:v.color,opacity:disabled?.45:1,
+      width:full?"100%":"auto",justifyContent:full?"center":"flex-start",
+      transition:"all .14s",...style
+    }}>{children}</button>
+  );
+}
+
+function Chip({ label, active, onClick, gold=false }) {
+  return (
+    <span onClick={onClick} style={{
+      padding:"4px 10px",borderRadius:"20px",fontSize:"12px",fontWeight:600,
+      cursor:"pointer",userSelect:"none",transition:"all .13s",
+      border:`1px solid ${active?(gold?C.gold:C.teal):C.b1}`,
+      color:active?(gold?C.gold:C.teal):C.t3,
+      background:active?(gold?C.gd:C.td):C.sl2
+    }}>{label}</span>
+  );
+}
+
+function Toggle({ on, onToggle, label, sub }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid rgba(30,51,73,.3)`}}>
+      <div><div style={{fontSize:"12px",color:C.t1}}>{label}</div>{sub&&<div style={{fontSize:"10px",color:C.t3,fontFamily:C.mono}}>{sub}</div>}</div>
+      <div onClick={onToggle} style={{
+        width:"34px",height:"19px",borderRadius:"10px",cursor:"pointer",position:"relative",
+        transition:"background .2s",flexShrink:0,
+        background:on?C.teal:C.b1,border:`1px solid ${on?C.teal:C.b2}`
+      }}>
+        <div style={{
+          width:"13px",height:"13px",borderRadius:"50%",position:"absolute",
+          top:"2px",left:on?"17px":"2px",transition:"left .2s",
+          background:on?"#fff":C.t3
+        }}/>
+      </div>
+    </div>
+  );
+}
+
+function Label({ children }) {
+  return <div style={{fontSize:"10px",fontWeight:700,color:C.t3,marginBottom:"4px",fontFamily:C.mono,textTransform:"uppercase",letterSpacing:".05em"}}>{children}</div>;
+}
+
+function Input({ value, onChange, placeholder, type="text", style={} }) {
+  return (
+    <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      style={{width:"100%",background:C.n3,border:`1px solid ${C.b1}`,borderRadius:"8px",
+        padding:"8px 11px",fontSize:"13px",color:C.t1,outline:"none",...style}}
+      onFocus={e=>e.target.style.borderColor=C.teal}
+      onBlur={e=>e.target.style.borderColor=C.b1}
+    />
+  );
+}
+
+function Textarea({ value, onChange, placeholder, rows=5, style={} }) {
+  return (
+    <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={rows}
+      style={{width:"100%",background:C.n3,border:`1px solid ${C.b1}`,borderRadius:"8px",
+        padding:"9px 12px",fontSize:"13px",color:C.t1,lineHeight:1.65,outline:"none",
+        resize:"vertical",...style}}
+      onFocus={e=>e.target.style.borderColor=C.teal}
+      onBlur={e=>e.target.style.borderColor=C.b1}
+    />
+  );
+}
+
+function Card({ children, style={} }) {
+  return <div style={{background:C.n3,border:`1px solid ${C.b1}`,borderRadius:"12px",...style}}>{children}</div>;
+}
+
+function CardHeader({ title, right }) {
+  return (
+    <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.b1}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{fontSize:"13px",fontWeight:700,color:C.t1}}>{title}</div>
+      <div>{right}</div>
+    </div>
+  );
+}
+
+function RecBanner({ children, variant="teal" }) {
+  const bgs={teal:C.td,gold:C.gd,blue:C.bld,amber:C.amd};
+  const borders={teal:C.tg,gold:C.gg,blue:"rgba(37,99,235,.3)",amber:"rgba(217,119,6,.3)"};
+  return (
+    <div style={{background:bgs[variant]||bgs.teal,border:`1px solid ${borders[variant]||borders.teal}`,
+      borderRadius:"8px",padding:"9px 12px",display:"flex",alignItems:"flex-start",
+      gap:"8px",fontSize:"12px",color:C.t1,lineHeight:1.55,marginBottom:"9px"}}>
+      <span style={{fontSize:"12px",flexShrink:0,marginTop:"1px"}}>◈</span>
+      <div style={{flex:1}}>{children}</div>
+    </div>
+  );
+}
+
+function Tag({ children, color="teal" }) {
+  const map={
+    teal:{bg:C.td,color:C.teal,border:C.tg},
+    gold:{bg:C.gd,color:C.gold,border:C.gg},
+    green:{bg:C.grd,color:"#3bc97a",border:"rgba(26,122,74,.25)"},
+    grey:{bg:"rgba(45,74,104,.35)",color:C.t3,border:C.b1},
+    blue:{bg:C.bld,color:"#93c5fd",border:"rgba(37,99,235,.25)"},
+    red:{bg:C.rdd,color:"#e06050",border:"rgba(192,57,43,.25)"}
+  };
+  const s=map[color]||map.teal;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:"3px",padding:"2px 7px",borderRadius:"20px",fontSize:"10px",fontWeight:700,fontFamily:C.mono,background:s.bg,color:s.color,border:`1px solid ${s.border}`}}>{children}</span>;
+}
+
+function NavArrow({ onClick, direction, disabled=false, title="" }) {
+  return (
+    <div onClick={disabled?null:onClick} title={title} style={{
+      width:"24px",height:"24px",borderRadius:"50%",border:`1px solid ${C.b2}`,
+      display:"flex",alignItems:"center",justifyContent:"center",cursor:disabled?"not-allowed":"pointer",
+      color:C.t2,transition:"all .14s",background:C.sl2,flexShrink:0,userSelect:"none",
+      opacity:disabled?.3:1
+    }}>
+      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        {direction==="left"?<polyline points="6.5,2 3.5,5 6.5,8"/>:<polyline points="3.5,2 6.5,5 3.5,8"/>}
+      </svg>
+    </div>
+  );
+}
+
+function StageBadge({ n, color="gold" }) {
+  const cols={gold:{bg:C.gold,color:C.navy},blue:{bg:"#3b82f6",color:"#fff"},purple:{bg:"#7c3aed",color:"#fff"},teal:{bg:C.teal,color:"#fff"}};
+  const c=cols[color]||cols.gold;
+  return <div style={{fontFamily:C.mono,fontSize:"10px",fontWeight:700,color:c.color,background:c.bg,padding:"2px 6px",borderRadius:"3px",flexShrink:0}}>STAGE {n}</div>;
+}
+
+function StageBar({ n, title, sub, color="gold", left, right, onBack, onNext, noBack=false, noNext=false }) {
+  return (
+    <div style={{padding:"9px 16px",borderBottom:`1px solid ${C.b1}`,display:"flex",alignItems:"center",gap:"8px",flexShrink:0,background:C.n3}}>
+      <div style={{display:"flex",alignItems:"center",gap:"7px",flex:1,minWidth:0}}>
+        <StageBadge n={n} color={color}/>
+        <div>
+          <div style={{fontSize:"13px",fontWeight:700,color:C.t1}}>{title}</div>
+          {sub&&<div style={{fontSize:"11px",color:C.t3,fontFamily:C.mono}}>{sub}</div>}
+        </div>
+        {left}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:"5px",flexShrink:0}}>
+        {right}
+        <NavArrow direction="left" onClick={onBack} disabled={noBack}/>
+        <NavArrow direction="right" onClick={onNext} disabled={noNext}/>
+      </div>
+    </div>
+  );
+}
+
+function ScrollArea({ children, style={} }) {
+  return <div style={{flex:1,overflowY:"auto",padding:"14px 16px",...style}}>{children}</div>;
+}
+
+function Divider() {
+  return <div style={{height:"1px",background:C.b1,margin:"11px 0"}}/>;
+}
+
+function Spinner({ size=14 }) {
+  return <span className="spin" style={{display:"inline-block",width:`${size}px`,height:`${size}px`,border:"2px solid rgba(4,138,129,.3)",borderTopColor:C.teal,borderRadius:"50%"}}/>;
+}
+
+function WordCount({ count, target }) {
+  const pct = target ? count/target : 0;
+  const cls = pct > 1.01 ? "wc-over" : pct > 0.95 ? "wc-ok" : "wc-warn";
+  return <span className={cls}>{count?.toLocaleString()||0}w{target?` / ${target.toLocaleString()}`:""}</span>;
+}
+
+function countWords(text) {
+  if (!text) return 0;
+  return text.trim().split(/\s+/).filter(w=>w.length>0).length;
+}
+
+/* ═══════════════════════════════════════════════════
+   STAGE 1 — BRIEF INTAKE
+═══════════════════════════════════════════════════ */
+
+function Stage1({ s, set, onNext }) {
+  const [briefTab, setBriefTab] = useState("type");
+  const [fileNames, setFileNames] = useState([]);
+  const fileRef = useRef();
+
+  function handleFile(e) {
+    const files = Array.from(e.target.files);
+    setFileNames(files.map(f=>f.name));
+    const reader = new FileReader();
+    reader.onload = ev => set("briefText", s.briefText + "\n\n[Uploaded: " + files[0].name + "]\n" + ev.target.result.slice(0,3000));
+    if (files[0]) reader.readAsText(files[0]);
+  }
+
+  return (
+    <>
+      <StageBar n={1} title="Brief Intake" sub="All formats · all settings unlocked"
+        onBack={null} onNext={onNext} noBack />
+      <ScrollArea>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:"14px",maxWidth:"1200px"}}>
+          {/* LEFT */}
+          <div>
+            <div style={{marginBottom:"12px"}}>
+              <Label>Assessment Type</Label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+                {ASSESSMENT_TYPES.map(t=>(
+                  <Chip key={t} label={t} active={s.assessmentType===t} onClick={()=>set("assessmentType",t)}/>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px",marginBottom:"12px"}}>
+              <div>
+                <Label>Word Count</Label>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"4px",marginBottom:"6px"}}>
+                  {[500,1500,3000,5000,10000].map(n=>(
+                    <Chip key={n} label={n.toLocaleString()} active={s.wordCount===n} onClick={()=>set("wordCount",n)}/>
+                  ))}
+                </div>
+                <input type="number" value={s.wordCount} onChange={e=>set("wordCount",parseInt(e.target.value)||1000)}
+                  style={{width:"100%",background:C.n3,border:`1px solid ${C.b1}`,borderRadius:"8px",
+                    padding:"7px 10px",fontSize:"13px",fontFamily:C.mono,fontWeight:700,color:C.gold,outline:"none"}}/>
+              </div>
+              <div>
+                <Label>Citation Style</Label>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
+                  {CITATION_STYLES.slice(0,8).map(c=>(
+                    <Chip key={c} label={c} active={s.citStyle===c} onClick={()=>set("citStyle",c)}/>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label>Academic Level</Label>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
+                  {ACADEMIC_LEVELS.map(l=>(
+                    <Chip key={l} label={l} active={s.level===l} onClick={()=>set("level",l)}/>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Brief Input Tabs */}
+            <Card style={{marginBottom:"12px"}}>
+              <div style={{display:"flex",borderBottom:`1px solid ${C.b1}`,padding:"0 14px"}}>
+                {["type","upload","url","manual"].map((t,i)=>{
+                  const labels=["✎ Type/Paste","↑ Upload","⌁ URL","≡ Manual"];
+                  return <div key={t} onClick={()=>setBriefTab(t)} style={{
+                    padding:"7px 12px",fontSize:"12px",fontWeight:600,cursor:"pointer",
+                    color:briefTab===t?C.t1:C.t3,borderBottom:`2px solid ${briefTab===t?C.gold:"transparent"}`,
+                    transition:"all .14s"
+                  }}>{labels[i]}</div>;
+                })}
+              </div>
+              <div style={{padding:"12px 14px"}}>
+                {briefTab==="type"&&(
+                  <>
+                    <Textarea value={s.briefText} onChange={v=>set("briefText",v)} rows={9}
+                      placeholder={"Paste your full assignment brief here. Include everything:\n— The complete brief text\n— Learning outcomes (written in full)\n— Marking rubric and grade descriptors\n— Any specific requirements\n\nZOE reads everything — nothing is discarded."} style={{minHeight:"175px"}}/>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:"6px"}}>
+                      <span style={{fontFamily:C.mono,fontSize:"11px",color:C.t3}}>{s.briefText.length.toLocaleString()} characters</span>
+                      <Btn variant="sl" size="xs" onClick={()=>set("briefText",SAMPLE_BRIEF)}>Load sample</Btn>
+                    </div>
+                  </>
+                )}
+                {briefTab==="upload"&&(
+                  <>
+                    <div onClick={()=>fileRef.current?.click()} style={{
+                      border:`2px dashed ${C.b2}`,borderRadius:"12px",padding:"32px",textAlign:"center",cursor:"pointer",transition:"all .2s"
+                    }} onMouseOver={e=>e.currentTarget.style.borderColor=C.teal} onMouseOut={e=>e.currentTarget.style.borderColor=C.b2}>
+                      <div style={{fontSize:"22px",marginBottom:"7px",opacity:.5}}>⤒</div>
+                      <div style={{fontSize:"13px",fontWeight:700,color:C.t1,marginBottom:"4px"}}>Drop files or click to upload</div>
+                      <div style={{fontSize:"11px",color:C.t3,fontFamily:C.mono}}>PDF · DOCX · DOC · TXT · PNG · JPG · HEIC · XLSX · PPTX</div>
+                      <div style={{fontSize:"11px",color:C.t3,fontFamily:C.mono,marginTop:"3px"}}>Multiple files — all merged into one brief</div>
+                    </div>
+                    <input ref={fileRef} type="file" multiple accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg,.heic,.xlsx,.pptx" onChange={handleFile} style={{display:"none"}}/>
+                    {fileNames.map(f=>(
+                      <div key={f} style={{marginTop:"7px",display:"flex",alignItems:"center",gap:"7px",padding:"5px 9px",background:C.sl2,border:`1px solid ${C.b1}`,borderRadius:"5px",fontSize:"12px"}}>
+                        <span style={{color:C.teal,fontFamily:C.mono,fontSize:"10px"}}>{f.split(".").pop().toUpperCase()}</span>
+                        <span style={{flex:1,color:C.t1}}>{f}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {briefTab==="url"&&(
+                  <div>
+                    <Label>Brief URL</Label>
+                    <Input value={s.briefUrl||""} onChange={v=>set("briefUrl",v)} placeholder="https://moodle.ac.uk/assignment/brief-12345"/>
+                    <div style={{fontSize:"11px",color:C.t3,marginTop:"5px"}}>Supports Blackboard, Moodle, Canvas, Google Classroom, Notion, SharePoint, and standard web pages.</div>
+                  </div>
+                )}
+                {briefTab==="manual"&&(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"9px"}}>
+                    <div className="field"><Label>Assessment Title</Label><Input value={s.title||""} onChange={v=>set("title",v)} placeholder="e.g. Strategic Analysis of Tesla Inc."/></div>
+                    <div className="field"><Label>Module Name &amp; Code</Label><Input value={s.module||""} onChange={v=>set("module",v)} placeholder="e.g. Strategic Management — BMG814"/></div>
+                    <div style={{gridColumn:"1/-1"}}><Label>Learning Outcomes (write in full)</Label><Textarea value={s.learningOutcomes||""} onChange={v=>set("learningOutcomes",v)} rows={3} placeholder={"LO1: Critically evaluate the application of strategic management frameworks...\nLO2: Synthesise evidence from multiple sources to produce original analysis..."}/></div>
+                    <div style={{gridColumn:"1/-1"}}><Label>Marking Rubric / A+ Criteria</Label><Textarea value={s.rubric||""} onChange={v=>set("rubric",v)} rows={3} placeholder="Describe what constitutes A+ work in this module..."/></div>
+                    <div><Label>Institution</Label><Input value={s.institution||""} onChange={v=>set("institution",v)} placeholder="University of Birmingham"/></div>
+                    <div><Label>Submission Deadline</Label><input type="date" onChange={e=>set("deadline",e.target.value)} style={{width:"100%",background:C.n3,border:`1px solid ${C.b1}`,borderRadius:"8px",padding:"8px 11px",fontSize:"13px",color:C.t1,outline:"none"}}/></div>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            <RecBanner variant="teal">
+              <strong>ZOE detects:</strong> {s.assessmentType} · {s.level}. Recommended tone: {s.tone}. Estimated citations needed: <strong>~{Math.round(s.wordCount/90)}</strong> across {s.wordCount.toLocaleString()} words. Style: {s.citStyle}.
+              <div><span onClick={()=>{}} style={{fontSize:"10px",fontFamily:C.mono,color:C.teal,cursor:"pointer",padding:"2px 6px",border:`1px solid ${C.td}`,borderRadius:"3px",marginTop:"5px",display:"inline-block"}}>✓ Apply ZOE recommendations</span></div>
+            </RecBanner>
+
+            {/* Writing Settings */}
+            <Card style={{marginTop:"12px"}}>
+              <CardHeader title="Writing Settings"/>
+              <div style={{padding:"12px 14px"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+                  <div><Label>Tone</Label>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
+                      {TONES.map(t=><Chip key={t} label={t} active={s.tone===t} onClick={()=>set("tone",t)}/>)}
+                    </div>
+                  </div>
+                  <div><Label>Humanisation Level</Label>
+                    <div style={{display:"flex",gap:"4px"}}>
+                      {["Standard","High","Maximum"].map(h=><Chip key={h} label={h} active={s.humanisation===h} onClick={()=>set("humanisation",h)}/>)}
+                    </div>
+                  </div>
+                  <div style={{gridColumn:"1/-1"}}>
+                    <Label>Sentence Burstiness</Label>
+                    <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                      <span style={{fontSize:"11px",color:C.t3}}>Low</span>
+                      <input type="range" min="1" max="5" value={s.burstiness} onChange={e=>set("burstiness",+e.target.value)}
+                        style={{flex:1,accentColor:C.gold,cursor:"pointer"}}/>
+                      <span style={{fontSize:"11px",color:C.t3}}>Max</span>
+                      <span style={{fontFamily:C.mono,fontSize:"12px",fontWeight:700,color:C.gold,minWidth:"60px"}}>
+                        {["Very Low","Low","Medium","High","Maximum"][s.burstiness-1]}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div style={{marginTop:"14px"}}>
+              <Btn variant="gold" full size="lg" onClick={onNext}>Build Execution Prompt →</Btn>
+              <div style={{textAlign:"center",marginTop:"8px",fontFamily:C.mono,fontSize:"11px",color:C.t3}}>ZOE will analyse your brief and assemble a complete execution prompt</div>
+            </div>
+          </div>
+
+          {/* RIGHT — Citation Settings */}
+          <div>
+            <Card style={{position:"sticky",top:0}}>
+              <CardHeader title="Citation Settings" right={<Tag color="teal">Per-section</Tag>}/>
+              <div style={{padding:"12px 14px"}}>
+                <RecBanner variant="gold">ZOE recommends <strong>~{Math.round(s.wordCount/90)}</strong> citations for a {s.wordCount.toLocaleString()}-word {s.level} {s.assessmentType.toLowerCase()}.</RecBanner>
+                <Label>Estimated Total Citations</Label>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}}>
+                  <input type="number" value={s.totalCitations} onChange={e=>set("totalCitations",+e.target.value)}
+                    style={{width:"70px",background:C.navy,border:`1px solid ${C.b1}`,borderRadius:"5px",
+                      padding:"4px 8px",fontFamily:C.mono,fontSize:"16px",fontWeight:700,color:C.gold,textAlign:"center",outline:"none"}}/>
+                  <span style={{fontSize:"11px",color:C.t3}}>minimum distinct sources</span>
+                </div>
+                <Divider/>
+                <Label>Source Date Range</Label>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"7px"}}>
+                  <span style={{fontSize:"11px",color:C.t3,fontFamily:C.mono}}>From</span>
+                  <input type="range" min="2000" max="2024" value={s.dateFrom} onChange={e=>set("dateFrom",+e.target.value)} style={{flex:1,accentColor:C.gold,cursor:"pointer"}}/>
+                  <span style={{fontFamily:C.mono,fontSize:"12px",fontWeight:700,color:C.gold,minWidth:"34px"}}>{s.dateFrom}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}}>
+                  <span style={{fontSize:"11px",color:C.t3,fontFamily:C.mono}}>To</span>
+                  <input type="range" min="2020" max="2025" value={s.dateTo} onChange={e=>set("dateTo",+e.target.value)} style={{flex:1,accentColor:C.gold,cursor:"pointer"}}/>
+                  <span style={{fontFamily:C.mono,fontSize:"12px",fontWeight:700,color:C.gold,minWidth:"34px"}}>{s.dateTo}</span>
+                </div>
+                <Label>Source Type Mix</Label>
+                {[
+                  ["Journal Articles",s.journalPct,"journalPct"],
+                  ["Books & Chapters",s.bookPct,"bookPct"],
+                  ["Reports / Grey Lit.",s.reportPct,"reportPct"],
+                  ["Conference Papers",s.confPct,"confPct"]
+                ].map(([lbl,val,key])=>(
+                  <div key={key} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
+                    <span style={{fontSize:"11px",color:C.t2,width:"118px",flexShrink:0}}>{lbl}</span>
+                    <input type="range" min="0" max="100" value={val} onChange={e=>set(key,+e.target.value)} style={{flex:1,accentColor:C.gold,cursor:"pointer"}}/>
+                    <span style={{fontFamily:C.mono,fontSize:"12px",fontWeight:700,color:C.gold,width:"32px",textAlign:"right"}}>{val}%</span>
+                  </div>
+                ))}
+                <Divider/>
+                <Toggle on={s.seminal} onToggle={()=>set("seminal",!s.seminal)} label="Seminal Sources" sub="Include foundational pre-2000 works"/>
+                <Toggle on={s.autoBalance} onToggle={()=>set("autoBalance",!s.autoBalance)} label="Auto Citation Balancing" sub="ZOE adjusts density across sections"/>
+                <Toggle on={s.disclaimer} onToggle={()=>set("disclaimer",!s.disclaimer)} label="Citation Disclaimer" sub="Navy-border box on page 2 of .docx"/>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </ScrollArea>
+    </>
+  );
+}
+
+const SAMPLE_BRIEF = `MODULE: Strategic Management (BMG814) — Level 7
+WORD COUNT: 5,000 words (excluding references, tables, and figures)
+CITATION STYLE: Harvard (UK)
+
+ASSIGNMENT BRIEF:
+You are required to produce a comprehensive strategic analysis of Tesla, Inc. with specific focus on the UK electric vehicle market.
+
+Your analysis must:
+1. Apply Porter's Five Forces Framework to assess the competitive dynamics of the UK EV market, with specific reference to Tesla's position
+2. Conduct a SWOT analysis of Tesla's current strategic position, followed by a TOWS matrix identifying four strategic options
+3. Develop three evidence-based strategic recommendations with justification
+
+LEARNING OUTCOMES:
+LO1: Critically evaluate the application of strategic management frameworks to real-world organisational contexts, demonstrating an ability to move beyond description toward evaluative and synthetic analysis
+LO2: Synthesise evidence from primary and secondary sources to construct and defend original analytical arguments grounded in contemporary research
+LO3: Develop strategic recommendations that are specific, feasible, and evidenced, demonstrating an understanding of the relationship between theory and professional practice
+
+MARKING RUBRIC (A+ = 85-100%):
+Critical evaluation of frameworks (not description): 30%
+Quality and integration of evidence: 25%
+Strategic recommendations (originality, feasibility, evidence): 25%
+Academic writing quality and referencing: 20%`;
+
+/* ═══════════════════════════════════════════════════
+   STAGE 2 — PROMPT BUILDER
+═══════════════════════════════════════════════════ */
+
+function Stage2({ s, set, onBack, onNext }) {
+  const [building, setBuilding] = useState(false);
+  const [built, setBuilt] = useState(false);
+  const abortRef = useRef(null);
+
+  async function buildPrompt() {
+    setBuilding(true);
+    const analysePrompt = `You are helping to build a detailed academic writing execution prompt.
+
+Brief: ${s.briefText || "A "+s.assessmentType+" of "+s.wordCount+" words at "+s.level+" level."}
+Assessment type: ${s.assessmentType}
+Total word count: ${s.wordCount}
+Level: ${s.level}
+Module: ${s.module || "Not specified"}
+Citation style: ${s.citStyle}
+
+Write ONLY the COMPLETE WORK SPECIFICATION section of the execution prompt. This means: for each section of the ${s.assessmentType}, write one dense, detailed prose paragraph specifying exactly:
+- The section heading (academically appropriate, no generic headings like "Body")  
+- The exact word count target (distribute the ${s.wordCount} words proportionally: introduction ~${Math.round(s.wordCount*0.07)}w, body sections distributed proportionally, conclusion ~${Math.round(s.wordCount*0.07)}w)
+- The precise analytical content required in that section — be specific to the topic, not generic
+- Which specific theories, frameworks, models, or data to apply or analyse
+- The A+ criteria this section must satisfy
+- The minimum citation count for this section
+- The word count ceiling (target × 1.01, rounded down)
+
+Write each section specification as a complete, detailed prose paragraph. No tables. No bullet points. No markdown headers. Just flowing prose paragraphs, one per section, separated by a blank line. Cover every section from introduction to conclusion. Do not include the reference list specification — just write [REFERENCE LIST: follows immediately after the conclusion, formatted to ${s.citStyle} standard, excluded from word count.] at the end.`;
+
+    abortRef.current = new AbortController();
+    await callZOE({
+      messages: [{role:"user",content:analysePrompt}],
+      signal: abortRef.current.signal,
+      onChunk: (text) => set("sectionSpecs", text),
+      onDone: (text) => {
+        set("sectionSpecs", text);
+        const fullPrompt = buildMasterPrompt({...s, sectionSpecs: text});
+        set("masterPrompt", fullPrompt);
+        setBuilding(false);
+        setBuilt(true);
+      }
+    }).catch(e => { if(e.name!=="AbortError") console.error(e); setBuilding(false); });
+  }
+
+  function stopBuild() {
+    abortRef.current?.abort();
+    setBuilding(false);
+  }
+
+  function rebuildFromEdits() {
+    const fullPrompt = buildMasterPrompt({...s});
+    set("masterPrompt", fullPrompt);
+    setBuilt(true);
+  }
+
+  return (
+    <>
+      <StageBar n={2} title="Prompt Builder" sub="ZOE analyses your brief and assembles the execution prompt"
+        onBack={onBack} onNext={onNext} noNext={!built}/>
+      <ScrollArea>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",maxWidth:"1400px"}}>
+          {/* LEFT — Section Specifications */}
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px"}}>
+              <div style={{fontSize:"13px",fontWeight:700,color:C.t1}}>Section Specifications</div>
+              <div style={{display:"flex",gap:"6px"}}>
+                {!building&&<Btn variant="gold" size="sm" onClick={buildPrompt}>◈ Build with AI</Btn>}
+                {building&&<Btn variant="danger" size="sm" onClick={stopBuild}>✕ Stop</Btn>}
+                {built&&<Btn variant="sl" size="sm" onClick={rebuildFromEdits}>↺ Rebuild prompt</Btn>}
+              </div>
+            </div>
+            {building&&(
+              <RecBanner variant="teal">
+                <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                  <Spinner/> ZOE is analysing your brief and writing detailed section specifications...
+                </div>
+              </RecBanner>
+            )}
+            <RecBanner variant="gold">
+              ZOE writes each section specification as a detailed prose paragraph — no tables, no rows. Edit anything below before building the final prompt. This is what tells the AI <em>exactly</em> what to write in each section.
+            </RecBanner>
+            <Textarea value={s.sectionSpecs||""} onChange={v=>set("sectionSpecs",v)}
+              rows={22} style={{fontFamily:C.mono,fontSize:"12px",lineHeight:1.75,minHeight:"400px"}}
+              placeholder={"ZOE will write your section specifications here once you click 'Build with AI'.\n\nYou can also write them manually:\n\nIntroduction (350 words): Open by identifying the precise strategic tension...\n\nPorter's Five Forces Analysis (1,200 words): Apply the framework specifically to the UK EV market...\n\netc."}/>
+            <div style={{marginTop:"8px",display:"flex",gap:"6px",flexWrap:"wrap"}}>
+              <Btn variant="sl" size="xs" onClick={()=>set("sectionSpecs","")}>Clear</Btn>
+              <Btn variant="sl" size="xs" onClick={()=>set("sectionSpecs",s.sectionSpecs+"\n\n[Add section here: Heading (Xw): Detailed specification...]")}>+ Add section</Btn>
+            </div>
+          </div>
+
+          {/* RIGHT — Full Assembled Prompt */}
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px"}}>
+              <div style={{fontSize:"13px",fontWeight:700,color:C.t1}}>Assembled Execution Prompt</div>
+              <div style={{display:"flex",gap:"6px"}}>
+                <Btn variant="sl" size="xs" onClick={rebuildFromEdits}>↺ Rebuild</Btn>
+                <Btn variant="sl" size="xs" onClick={()=>navigator.clipboard?.writeText(s.masterPrompt||"")}>Copy</Btn>
+              </div>
+            </div>
+            {!s.masterPrompt&&(
+              <div style={{background:C.sl2,border:`1px solid ${C.b1}`,borderRadius:"8px",padding:"24px",textAlign:"center",color:C.t3,fontSize:"13px"}}>
+                The complete execution prompt will appear here once you build it. It includes the role, context, execution command, your section specifications, and all Superior Prompt quality rules.
+              </div>
+            )}
+            {s.masterPrompt&&(
+              <Textarea value={s.masterPrompt} onChange={v=>set("masterPrompt",v)}
+                rows={28} style={{fontFamily:C.mono,fontSize:"11px",lineHeight:1.8,minHeight:"520px",color:"#9fabb8"}}/>
+            )}
+            {s.masterPrompt&&(
+              <div style={{marginTop:"8px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{fontFamily:C.mono,fontSize:"11px",color:C.t3}}>{s.masterPrompt.length.toLocaleString()} characters · {countWords(s.masterPrompt).toLocaleString()} words</div>
+                <Tag color="teal">Ready for generation</Tag>
+              </div>
+            )}
+            {built&&(
+              <div style={{marginTop:"12px"}}>
+                <Btn variant="gold" full size="lg" onClick={onNext}>Generate Complete Work →</Btn>
+                <div style={{textAlign:"center",marginTop:"7px",fontFamily:C.mono,fontSize:"11px",color:C.t3}}>The AI will write the full {s.wordCount.toLocaleString()}-word work in one continuous flow</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   STAGE 3 — FULL DRAFT GENERATION
+═══════════════════════════════════════════════════ */
+
+function Stage3({ s, set, onBack, onNext }) {
+  const [generating, setGenerating] = useState(false);
+  const [done, setDone] = useState(false);
+  const abortRef = useRef(null);
+  const wc = countWords(s.draft||"");
+
+  async function generate() {
+    if (!s.masterPrompt) return;
+    setGenerating(true); setDone(false); set("draft","");
+    abortRef.current = new AbortController();
+    await callZOE({
+      messages: [{role:"user",content:s.masterPrompt}],
+      signal: abortRef.current.signal,
+      onChunk: (text) => set("draft", text),
+      onDone: (text) => { set("draft",text); setGenerating(false); setDone(true); }
+    }).catch(e => { if(e.name!=="AbortError") console.error(e); setGenerating(false); });
+  }
+
+  function stopGen() { abortRef.current?.abort(); setGenerating(false); }
+
+  const pct = s.wordCount ? wc/s.wordCount : 0;
+
+  return (
+    <>
+      <StageBar n={3} title="Write" sub={generating?"Generating complete work in one continuous flow...":done?`${wc.toLocaleString()} words generated`:"Ready to generate"}
+        onBack={onBack} onNext={onNext} noNext={!done}/>
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        {/* Toolbar */}
+        <div style={{padding:"8px 16px",borderBottom:`1px solid ${C.b1}`,display:"flex",alignItems:"center",gap:"8px",flexShrink:0,background:C.navy}}>
+          <div style={{display:"flex",gap:"5px"}}>
+            {!generating&&<Btn variant="gold" size="sm" onClick={generate}>
+              {done?"⟳ Regenerate":"◈ Generate Complete Work"}
+            </Btn>}
+            {generating&&<Btn variant="danger" size="sm" onClick={stopGen}>✕ Stop</Btn>}
+          </div>
+          {(generating||done)&&(
+            <>
+              <WordCount count={wc} target={s.wordCount}/>
+              {generating&&<div style={{display:"flex",alignItems:"center",gap:"5px",fontFamily:C.mono,fontSize:"11px",color:C.teal}}><div className="led-teal"/><span className="blink">Writing...</span></div>}
+              {done&&<Tag color="green">Complete</Tag>}
+            </>
+          )}
+          <div style={{flex:1}}/>
+          {done&&<Btn variant="sl" size="xs" onClick={()=>set("editedDraft",s.draft)}>→ Send to Editor</Btn>}
+        </div>
+
+        {/* Progress bar */}
+        {(generating||done)&&(
+          <div style={{height:"2px",background:C.sl2,flexShrink:0}}>
+            <div style={{height:"100%",background:done?C.green:C.teal,width:`${Math.min(100,pct*100)}%`,transition:"width .4s"}}/>
+          </div>
+        )}
+
+        {/* Output area */}
+        {!s.draft&&!generating&&(
+          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"12px",color:C.t3}}>
+            <div style={{fontSize:"32px",opacity:.3}}>◎</div>
+            <div style={{fontSize:"15px",fontWeight:700,color:C.t1}}>Ready to generate</div>
+            <div style={{fontSize:"13px",textAlign:"center",maxWidth:"400px"}}>ZOE will write the complete {s.wordCount?.toLocaleString()}-word {s.assessmentType?.toLowerCase()} in one continuous flow using your execution prompt.</div>
+            {!s.masterPrompt&&<RecBanner variant="amber">No execution prompt found. Go back to Stage 2 and build your prompt first.</RecBanner>}
+          </div>
+        )}
+        {(s.draft||generating)&&(
+          <div style={{flex:1,overflow:"hidden",position:"relative"}}>
+            <textarea
+              value={s.draft||""}
+              onChange={e=>set("draft",e.target.value)}
+              style={{position:"absolute",inset:0,width:"100%",height:"100%",
+                background:"#0A0A0A",border:"none",outline:"none",resize:"none",
+                padding:"20px 24px",fontFamily:"'Georgia',serif",fontSize:"14px",
+                lineHeight:"1.9",color:C.t1}}
+              placeholder="Writing..."/>
+          </div>
+        )}
+
+        {done&&(
+          <div style={{padding:"10px 16px",borderTop:`1px solid ${C.b1}`,display:"flex",alignItems:"center",gap:"10px",flexShrink:0,background:C.n3}}>
+            <WordCount count={wc} target={s.wordCount}/>
+            <span style={{fontFamily:C.mono,fontSize:"11px",color:C.t3}}>·</span>
+            <span style={{fontFamily:C.mono,fontSize:"11px",color:C.t3}}>Draft complete — proceed to edit, proofread, and humanise</span>
+            <div style={{flex:1}}/>
+            <Btn variant="gold" size="sm" onClick={onNext}>Edit &amp; Proofread →</Btn>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   STAGE 4 — EDIT / PROOFREAD / HUMANISE
+═══════════════════════════════════════════════════ */
+
+function Stage4({ s, set, onBack, onNext }) {
+  const [running, setRunning] = useState(null); // 'proofread'|'citation'|'humanise'|'all'
+  const [passLog, setPassLog] = useState([]);
+  const [done, setDone] = useState(false);
+  const abortRef = useRef(null);
+
+  const text = s.editedDraft || s.draft || "";
+  const wc = countWords(text);
+
+  function addLog(msg) { setPassLog(p=>[...p,{ts:new Date().toLocaleTimeString(),msg}]); }
+
+  async function runPass(pass) {
+    if (!text) return;
+    setRunning(pass);
+    addLog(`Starting ${pass} pass...`);
+
+    const prompts = {
+      proofread: `Proofread and correct the following academic text. Fix ALL of: grammar errors, spelling mistakes, punctuation issues, inconsistent tense, sentence fragments, run-on sentences, UK English violations (colour not color, organisation not organization, etc.), and any contractions. Do not change the content, structure, or citations. Do not add or remove paragraphs. Return ONLY the corrected text with no commentary.
+
+TEXT:
+${text}`,
+
+      citation: `Review the following academic text for citation compliance. Apply these corrections:
+1. Ensure every sentence has an analytical citation — add [CITATION NEEDED] where missing
+2. Vary citation constructions — convert any that always appear as "(Author, Year)" at sentence end to integrated narrative forms: "Author (Year) argued that...", "as demonstrated by Author (Year)...", etc.
+3. Check all in-text citations follow ${s.citStyle} style with "and" not "&"
+4. Ensure citations are substantively woven into sentences, not just appended
+Return ONLY the corrected text. Do not add a reference list.
+
+TEXT:
+${text}`,
+
+      humanise: `Apply the following humanisation transformations to the academic text below. Apply every instruction without exception:
+
+1. SENTENCE BURSTINESS (${["Very Low","Low","Medium","High","Maximum"][s.burstiness-1]} setting): Vary sentence length ${s.burstiness>=4?"aggressively":"moderately"} — short punchy sentences next to longer complex ones. No three consecutive sentences of similar length or structure.
+
+2. REMOVE AI FINGERPRINTS: Strip every instance of: "It is worth noting", "It is important to", "Furthermore", "Moreover", "In conclusion", "Delving into", "In the realm of", "In today's", "This essay will", "This report will", "It can be argued", "It should be noted". Remove all hollow filler affirmations.
+
+3. NATURAL TRANSITIONS: Replace mechanical connectors with natural bridges. "Additionally, it can be observed that" → "That said," or just start the next thought directly.
+
+4. VOCABULARY: Choose cleaner, more direct words. Reduce nominalisation ("conduct an analysis of" → "analyse"). Flatten elevated synonyms to their natural equivalents unless the complex word is genuinely the right fit.
+
+5. PARAGRAPH LOGIC: Break rigid triads. Allow two-sentence paragraphs. Let ideas carry across paragraph breaks. Let structure follow thought, not template.
+
+6. AUTHORIAL PRESENCE: Use active voice. Let a perspective bleed through occasionally — real writers hedge and qualify naturally.
+
+7. PERPLEXITY: Introduce phrasing that is correct but slightly unexpected. The most likely next word is usually the AI choice — deviate deliberately.
+
+Preserve: all citations, all facts, all academic content, all section headings, all word counts (within 2%). Do not add or remove sections. Return ONLY the transformed text.
+
+TEXT:
+${text}`
+    };
+
+    abortRef.current = new AbortController();
+    await callZOE({
+      messages:[{role:"user",content:prompts[pass]}],
+      signal: abortRef.current.signal,
+      onChunk: text => set("editedDraft", text),
+      onDone: text => {
+        set("editedDraft", text);
+        addLog(`✓ ${pass} pass complete — ${countWords(text).toLocaleString()} words`);
+        setRunning(null);
+      }
+    }).catch(e=>{ if(e.name!=="AbortError") addLog(`Error: ${e.message}`); setRunning(null); });
+  }
+
+  async function runAll() {
+    setRunning("all"); addLog("Starting all three passes...");
+    for (const pass of ["proofread","citation","humanise"]) {
+      await runPass(pass);
+    }
+    setRunning(null); setDone(true); addLog("All passes complete.");
+  }
+
+  return (
+    <>
+      <StageBar n={4} title="Edit / Proofread / Humanise" sub="Three targeted passes — run individually or all at once"
+        onBack={onBack} onNext={onNext} noNext={!text}/>
+      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+        {/* MAIN EDITOR */}
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          {/* Toolbar */}
+          <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.b1}`,display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap",flexShrink:0,background:C.navy}}>
+            <PassBtn label="✦ Proofread" pass="proofread" running={running} onClick={()=>runPass("proofread")}/>
+            <PassBtn label="⊕ Citations" pass="citation" running={running} onClick={()=>runPass("citation")}/>
+            <PassBtn label="◈ Humanise" pass="humanise" running={running} onClick={()=>runPass("humanise")}/>
+            <div style={{width:"1px",height:"18px",background:C.b1,margin:"0 2px"}}/>
+            <Btn variant="gold" size="sm" onClick={runAll} disabled={!!running}>▶ Run All Three Passes</Btn>
+            {running&&<Btn variant="danger" size="xs" onClick={()=>abortRef.current?.abort()}>✕ Stop</Btn>}
+            <div style={{flex:1}}/>
+            <WordCount count={wc} target={s.wordCount}/>
+            {done&&<Tag color="green">All passes complete</Tag>}
+          </div>
+
+          {/* Editor */}
+          <div style={{flex:1,overflow:"hidden",position:"relative"}}>
+            <textarea
+              value={text}
+              onChange={e=>set("editedDraft",e.target.value)}
+              style={{position:"absolute",inset:0,width:"100%",height:"100%",
+                background:"#0A0A0A",border:"none",outline:"none",resize:"none",
+                padding:"20px 24px",fontFamily:"'Georgia',serif",fontSize:"14px",lineHeight:"1.9",color:C.t1}}
+              placeholder="Your draft will appear here. It flows from Stage 3 automatically."/>
+          </div>
+
+          {/* Footer */}
+          <div style={{padding:"8px 14px",borderTop:`1px solid ${C.b1}`,display:"flex",alignItems:"center",gap:"8px",flexShrink:0,background:C.n3}}>
+            <WordCount count={wc} target={s.wordCount}/>
+            <div style={{flex:1}}/>
+            <Btn variant="gold" size="sm" onClick={onNext}>Critique &amp; Correct →</Btn>
+          </div>
+        </div>
+
+        {/* RIGHT — Pass Log */}
+        <div style={{width:"240px",borderLeft:`1px solid ${C.b1}`,display:"flex",flexDirection:"column",overflow:"hidden",background:C.navy,flexShrink:0}}>
+          <div style={{padding:"10px 12px",borderBottom:`1px solid ${C.b1}`,fontSize:"11px",fontWeight:700,color:C.t1}}>Pass Log</div>
+          <div style={{flex:1,overflowY:"auto",padding:"8px"}}>
+            {passLog.length===0&&<div style={{fontSize:"11px",color:C.t3,fontFamily:C.mono,padding:"4px"}}>Run a pass to see log</div>}
+            {passLog.map((l,i)=>(
+              <div key={i} style={{fontSize:"11px",color:l.msg.startsWith("✓")?C.green:l.msg.startsWith("Error")?C.red:C.t3,padding:"3px 0",borderBottom:`1px solid rgba(30,51,73,.25)`,fontFamily:C.mono,lineHeight:1.45}}>
+                <span style={{opacity:.5,marginRight:"5px"}}>{l.ts}</span>{l.msg}
+              </div>
+            ))}
+          </div>
+          <div style={{padding:"10px 8px",borderTop:`1px solid ${C.b1}`}}>
+            <div style={{fontSize:"11px",fontWeight:700,color:C.t3,marginBottom:"6px",fontFamily:C.mono}}>EXTRA TOOLS</div>
+            {["Expand section","Condense section","Simplify language","Strengthen argument","Check consistency"].map(t=>(
+              <div key={t} style={{padding:"5px 7px",fontSize:"11px",color:C.t3,cursor:"pointer",borderRadius:"4px",transition:"all .13s"}}
+                onMouseOver={e=>e.currentTarget.style.background=C.sl2}
+                onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                {t}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function PassBtn({ label, pass, running, onClick }) {
+  const isThis = running===pass;
+  return (
+    <button onClick={onClick} disabled={!!running} style={{
+      display:"inline-flex",alignItems:"center",gap:"5px",padding:"5px 10px",
+      borderRadius:"5px",fontSize:"11px",fontWeight:600,cursor:running?"not-allowed":"pointer",
+      border:`1px solid ${isThis?C.teal:C.b1}`,
+      color:isThis?C.teal:C.t3,background:isThis?C.td:C.sl2,
+      transition:"all .13s",fontFamily:C.mono,opacity:running&&!isThis?.45:1
+    }}>
+      {isThis&&<Spinner size={10}/>}{label}
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   STAGE 5 — CRITIQUE + CORRECTIONS
+═══════════════════════════════════════════════════ */
+
+function Stage5({ s, set, onBack, onNext }) {
+  const [phase, setPhase] = useState("idle"); // idle|critiquing|correcting|done
+  const abortRef = useRef(null);
+  const text = s.editedDraft || s.draft || "";
+
+  async function runCritiqueAndCorrect() {
+    if (!text) return;
+    setPhase("critiquing"); set("critique",""); set("corrected","");
+
+    const critiquePrompt = `You are a senior academic at a UK university with expertise in ${s.assessmentType} assessment. Your role is to provide a rigorous critique of the following ${s.level} ${s.assessmentType.toLowerCase()}.
+
+Evaluate it against A+ criteria (85-100%) and identify every specific gap, weakness, or improvement needed. Be precise — reference exact locations (paragraph 2, section on X, the sentence beginning with Y). Do not give generic feedback.
+
+Evaluate:
+1. Argument quality — is there a clear analytical thesis? Does evidence support or merely illustrate?
+2. Critical evaluation — does the work evaluate frameworks/evidence or just describe them?
+3. Theoretical integration — are theories synthesised or discussed in sequence?
+4. Evidence quality — are sources interrogated or accepted uncritically?
+5. Citation density — are all claims supported? Are any sentences unsupported?
+6. Humanisation — are there any remaining AI fingerprint phrases? Any three consecutive sentences of similar length?
+7. Word count — which sections are over or under their targets?
+8. Structural coherence — does the argument flow? Does each section build on the last?
+9. Academic register — any contractions, first person, or informal language?
+
+Output a numbered critique list. Each item: the issue, where it occurs, and the specific correction needed. Be ruthless — the goal is A+.
+
+WORK TO CRITIQUE:
+${text}`;
+
+    abortRef.current = new AbortController();
+    await callZOE({
+      messages:[{role:"user",content:critiquePrompt}],
+      signal: abortRef.current.signal,
+      onChunk: text => set("critique",text),
+      onDone: async (critiqueText) => {
+        set("critique",critiqueText);
+        setPhase("correcting");
+
+        const correctPrompt = `You are correcting an academic ${s.assessmentType.toLowerCase()} based on a detailed critique. Apply EVERY correction listed in the critique immediately and completely. Do not skip any item.
+
+CRITIQUE TO APPLY:
+${critiqueText}
+
+RULES FOR APPLYING CORRECTIONS:
+— Fix every issue identified, in the exact location specified
+— Do not change anything that was not identified as a problem
+— Maintain all existing citations and add new ones where "[CITATION NEEDED]" appears
+— Maintain word count within ±1% of target (${s.wordCount} words)
+— Apply all humanisation improvements specified
+— Do not add commentary or explanations — return ONLY the corrected work
+
+ORIGINAL WORK:
+${text}`;
+
+        await callZOE({
+          messages:[{role:"user",content:correctPrompt}],
+          signal: abortRef.current.signal,
+          onChunk: text => set("corrected",text),
+          onDone: text => { set("corrected",text); setPhase("done"); }
+        }).catch(e=>{ if(e.name!=="AbortError") console.error(e); setPhase("idle"); });
+      }
+    }).catch(e=>{ if(e.name!=="AbortError") console.error(e); setPhase("idle"); });
+  }
+
+  const correctedWc = countWords(s.corrected||"");
+
+  return (
+    <>
+      <StageBar n={5} title="Critique &amp; Correct"
+        sub={phase==="critiquing"?"Evaluating against A+ criteria...":phase==="correcting"?"Applying all corrections...":phase==="done"?"Critique complete — corrections applied":"Ready to critique"}
+        onBack={onBack} onNext={onNext} noNext={phase!=="done"}/>
+      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+        {/* LEFT — Critique Report */}
+        <div style={{width:"340px",borderRight:`1px solid ${C.b1}`,display:"flex",flexDirection:"column",overflow:"hidden",flexShrink:0}}>
+          <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.b1}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{fontSize:"12px",fontWeight:700,color:C.t1}}>Critique Report</div>
+            {phase==="idle"&&<Btn variant="gold" size="sm" onClick={runCritiqueAndCorrect}>▶ Critique &amp; Correct</Btn>}
+            {(phase==="critiquing"||phase==="correcting")&&(
+              <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                <Spinner size={11}/>
+                <span style={{fontSize:"11px",color:C.teal,fontFamily:C.mono}}>{phase==="critiquing"?"Critiquing...":"Correcting..."}</span>
+              </div>
+            )}
+            {phase==="done"&&<Tag color="green">Done</Tag>}
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:"12px 14px"}}>
+            {phase==="idle"&&!s.critique&&(
+              <div style={{color:C.t3,fontSize:"12px",textAlign:"center",padding:"20px 0"}}>
+                The critique report will appear here. ZOE evaluates against A+ criteria and immediately applies every correction found.
+              </div>
+            )}
+            {s.critique&&(
+              <div style={{fontFamily:C.mono,fontSize:"11px",lineHeight:1.7,color:C.t2,whiteSpace:"pre-wrap"}}>{s.critique}</div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT — Corrected Work */}
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.b1}`,display:"flex",alignItems:"center",gap:"8px",flexShrink:0,background:C.navy}}>
+            <div style={{fontSize:"12px",fontWeight:700,color:C.t1}}>Corrected Draft</div>
+            {phase==="correcting"&&<div style={{display:"flex",alignItems:"center",gap:"5px",fontFamily:C.mono,fontSize:"11px",color:C.teal}}><div className="led-teal"/><span className="blink">Applying corrections...</span></div>}
+            {phase==="done"&&<><WordCount count={correctedWc} target={s.wordCount}/><Tag color="green">All corrections applied</Tag></>}
+            <div style={{flex:1}}/>
+            {phase==="done"&&<Btn variant="gold" size="sm" onClick={onNext}>Export →</Btn>}
+          </div>
+          <div style={{flex:1,overflow:"hidden",position:"relative"}}>
+            <textarea
+              value={s.corrected||""}
+              onChange={e=>set("corrected",e.target.value)}
+              style={{position:"absolute",inset:0,width:"100%",height:"100%",
+                background:"#0A0A0A",border:"none",outline:"none",resize:"none",
+                padding:"20px 24px",fontFamily:"'Georgia',serif",fontSize:"14px",lineHeight:"1.9",color:C.t1}}
+              placeholder={phase==="idle"?"Corrections will appear here after critique runs...":""}/>
+          </div>
+          {phase==="done"&&(
+            <div style={{padding:"10px 14px",borderTop:`1px solid ${C.b1}`,display:"flex",alignItems:"center",gap:"8px",flexShrink:0,background:C.n3}}>
+              <WordCount count={correctedWc} target={s.wordCount}/>
+              <div style={{flex:1}}/>
+              <Btn variant="sl" size="sm" onClick={()=>{set("editedDraft",s.corrected);setPhase("idle")}}>← Re-edit this version</Btn>
+              <Btn variant="gold" size="sm" onClick={onNext}>Export &amp; Download →</Btn>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   STAGE 6 — EXPORT
+═══════════════════════════════════════════════════ */
+
+function Stage6({ s, set, onBack, onNext }) {
+  const finalText = s.corrected || s.editedDraft || s.draft || "";
+  const wc = countWords(finalText);
+
+  function download() {
+    const blob = new Blob([finalText], {type:"text/plain"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (s.title||s.assessmentType||"ZOE_Work").replace(/[^a-z0-9]/gi,"_")+".txt";
+    a.click();
+  }
+
+  return (
+    <>
+      <StageBar n={6} title="Export" sub="Download your completed work · proceed to revision center if needed"
+        onBack={onBack} onNext={onNext} noNext={!finalText} color="teal"/>
+      <ScrollArea>
+        <div style={{maxWidth:"600px",margin:"0 auto"}}>
+          <div style={{textAlign:"center",marginBottom:"28px"}}>
+            <div style={{fontSize:"26px",marginBottom:"10px"}}>◎</div>
+            <div style={{fontSize:"20px",fontWeight:800,letterSpacing:"-.5px",color:C.t1,marginBottom:"5px"}}>{s.title||s.assessmentType||"Your Assessment"}</div>
+            <div style={{fontSize:"13px",color:C.t3}}>{s.wordCount?.toLocaleString()} words · {s.citStyle} · {s.level}</div>
+          </div>
+          <Card style={{marginBottom:"12px"}}>
+            <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:"8px"}}>
+              {[["Total words",`${wc.toLocaleString()} / ${s.wordCount?.toLocaleString()}`],["Level",s.level],["Citation style",s.citStyle],["Assessment type",s.assessmentType]].map(([k,v])=>(
+                <div key={k}>
+                  <div style={{fontSize:"10px",color:C.t3,fontFamily:C.mono,textTransform:"uppercase",letterSpacing:".05em",marginBottom:"3px"}}>{k}</div>
+                  <div style={{fontSize:"13px",fontWeight:700,color:C.t1,fontFamily:C.mono}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Btn variant="gold" full size="lg" onClick={download} style={{marginBottom:"10px"}}>↓ Download Work (.txt)</Btn>
+          <div style={{textAlign:"center",marginBottom:"20px",fontSize:"12px",color:C.t3,fontFamily:C.mono}}>Also available as .docx with full formatting via Final Submission (Stage 7)</div>
+          <div style={{display:"flex",gap:"10px"}}>
+            <Btn variant="blue" full onClick={onNext} style={{justifyContent:"center"}}>→ Revision Center (Stage 7)</Btn>
+          </div>
+        </div>
+      </ScrollArea>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   STAGE 7 — REVISION CENTER
+═══════════════════════════════════════════════════ */
+
+function Stage7({ s, set, onBack, onNext }) {
+  const [revTab, setRevTab] = useState("paste");
+  const [revInput, setRevInput] = useState(s.revisionInput||"");
+  const [running, setRunning] = useState(false);
+  const [phase, setPhase] = useState("idle"); // idle|parsing|implementing|done
+  const [changeList, setChangeList] = useState([]);
+  const [revResult, setRevResult] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const recogRef = useRef(null);
+  const abortRef = useRef(null);
+  const fileRef = useRef();
+  const originalText = s.corrected || s.editedDraft || s.draft || "";
+
+  // Voice recording
+  function startVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("Voice input not supported in this browser. Please use Chrome or Edge."); return; }
+    const r = new SR();
+    r.continuous = true; r.interimResults = true; r.lang = "en-GB";
+    let final = "";
+    r.onresult = (e) => {
+      let interim = "";
+      for (let i=e.resultIndex;i<e.results.length;i++) {
+        if (e.results[i].isFinal) final += e.results[i][0].transcript+" ";
+        else interim += e.results[i][0].transcript;
+      }
+      setVoiceTranscript(final+interim);
+    };
+    r.onend = () => { setIsRecording(false); setRevInput(v=>v+"\n"+final); };
+    r.onerror = (e) => { console.error(e); setIsRecording(false); };
+    r.start();
+    recogRef.current = r;
+    setIsRecording(true); setVoiceTranscript("");
+  }
+
+  function stopVoice() {
+    recogRef.current?.stop();
+    setIsRecording(false);
+    setRevInput(v => v ? v+"\n"+voiceTranscript : voiceTranscript);
+    setVoiceTranscript("");
+  }
+
+  function handleRevFile(e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = ev => setRevInput(v=>v+"\n\n[Uploaded: "+f.name+"]\n"+ev.target.result.slice(0,4000));
+    reader.readAsText(f);
+  }
+
+  async function implementRevisions() {
+    if (!revInput.trim()) return;
+    setPhase("parsing"); setRunning(true); setChangeList([]); setRevResult("");
+
+    const parsePrompt = `Parse the following supervisor/examiner feedback into a structured change list. For each distinct correction required, output one item in this exact format:
+TYPE: [ADDITION|MODIFICATION|DELETION|REFERENCE_FIX|GRAMMAR|STYLE]
+LOCATION: [paragraph or section where this applies]
+INSTRUCTION: [the specific change to make]
+---
+Extract every distinct correction. Be exhaustive.
+
+FEEDBACK:
+${revInput}`;
+
+    abortRef.current = new AbortController();
+    let parsedChanges = "";
+    await callZOE({
+      messages:[{role:"user",content:parsePrompt}],
+      signal: abortRef.current.signal,
+      onChunk: t => parsedChanges=t,
+      onDone: async (parsed) => {
+        const items = parsed.split("---").filter(i=>i.trim()).map((i,idx)=>({
+          id:idx, raw:i.trim(),
+          type:i.match(/TYPE:\s*(.+)/)?.[1]?.trim()||"MODIFICATION",
+          location:i.match(/LOCATION:\s*(.+)/)?.[1]?.trim()||"Document",
+          instruction:i.match(/INSTRUCTION:\s*(.+)/s)?.[1]?.trim()||i.trim(),
+          accepted:null
+        }));
+        setChangeList(items); setPhase("implementing");
+
+        const implementPrompt = `You are implementing supervisor corrections on an academic ${s.assessmentType?.toLowerCase()||"work"}. Apply every instruction in the change list to the original work. Be precise — make only the specified changes. Do not alter anything not listed. Maintain word count within ±2% of ${s.wordCount?.toLocaleString()||"target"} words.
+
+CHANGE LIST:
+${items.map((item,i)=>`${i+1}. [${item.type}] Location: ${item.location}\n   Instruction: ${item.instruction}`).join("\n\n")}
+
+ORIGINAL WORK:
+${originalText}
+
+Return ONLY the revised work with all corrections applied. Do not add commentary.`;
+
+        await callZOE({
+          messages:[{role:"user",content:implementPrompt}],
+          signal: abortRef.current.signal,
+          onChunk: t => setRevResult(t),
+          onDone: t => { setRevResult(t); setPhase("done"); setRunning(false); }
+        }).catch(e=>{ if(e.name!=="AbortError") console.error(e); setRunning(false); setPhase("idle"); });
+      }
+    }).catch(e=>{ if(e.name!=="AbortError") console.error(e); setRunning(false); setPhase("idle"); });
+  }
+
+  function acceptAll() { setChangeList(c=>c.map(i=>({...i,accepted:true}))); }
+  function rejectAll() { setChangeList(c=>c.map(i=>({...i,accepted:false}))); }
+
+  function downloadRevised() {
+    const blob = new Blob([revResult],{type:"text/plain"});
+    const a = document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=(s.title||"ZOE_Revised").replace(/[^a-z0-9]/gi,"_")+"_revised.txt";
+    a.click();
+  }
+
+  const changeColors = {ADDITION:"#fbbf24",MODIFICATION:"#93c5fd",DELETION:"#fca5a5",REFERENCE_FIX:C.teal,GRAMMAR:"#a3d5c6",STYLE:"#b48eff"};
+
+  return (
+    <>
+      <StageBar n={7} title="Revision Center" sub="Upload returned work · add corrections · voice input · ZOE implements everything"
+        onBack={onBack} onNext={onNext} noNext={false} color="blue"/>
+      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+        {/* LEFT PANEL */}
+        <div style={{width:"360px",borderRight:`1px solid ${C.b1}`,display:"flex",flexDirection:"column",overflow:"hidden",flexShrink:0}}>
+          {/* Input tabs */}
+          <div style={{display:"flex",borderBottom:`1px solid ${C.b1}`,padding:"0 12px",flexShrink:0}}>
+            {[["paste","✎ Paste"],["upload","↑ Upload"],["voice","🎙 Voice"],["manual","≡ Manual"]].map(([t,l])=>(
+              <div key={t} onClick={()=>setRevTab(t)} style={{padding:"7px 10px",fontSize:"11px",fontWeight:600,cursor:"pointer",
+                color:revTab===t?C.t1:C.t3,borderBottom:`2px solid ${revTab===t?C.blue:"transparent"}`,transition:"all .14s"}}>
+                {l}
+              </div>
+            ))}
+          </div>
+
+          <div style={{flex:1,overflowY:"auto",padding:"12px"}}>
+            {/* PASTE TAB */}
+            {revTab==="paste"&&(
+              <>
+                <Label>Supervisor / Examiner Feedback</Label>
+                <Textarea value={revInput} onChange={setRevInput} rows={10} style={{minHeight:"180px",fontFamily:C.mono,fontSize:"12px"}}
+                  placeholder={"Paste the complete feedback text here:\n\n'Page 3: The Porter's section describes each force but lacks overall synthesis. Add a concluding paragraph...'\n\n'Reference 7 is missing the publisher...'\n\nZOE extracts every instruction and maps each to the relevant location."}/>
+                <div style={{marginTop:"7px",display:"flex",gap:"5px"}}>
+                  <Btn variant="sl" size="xs" onClick={()=>setRevInput("")}>Clear</Btn>
+                  <span style={{fontSize:"11px",color:C.t3,fontFamily:C.mono,alignSelf:"center"}}>{revInput.length} chars</span>
+                </div>
+              </>
+            )}
+
+            {/* UPLOAD TAB */}
+            {revTab==="upload"&&(
+              <>
+                <Label>Upload Returned / Annotated Document</Label>
+                <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.b2}`,borderRadius:"10px",padding:"24px",textAlign:"center",cursor:"pointer",marginBottom:"10px"}}>
+                  <div style={{fontSize:"20px",opacity:.5,marginBottom:"6px"}}>⤒</div>
+                  <div style={{fontSize:"13px",fontWeight:700,color:C.t1,marginBottom:"3px"}}>Drop marked-up document here</div>
+                  <div style={{fontSize:"11px",color:C.t3,fontFamily:C.mono}}>.docx · .doc · .pdf · .txt · annotated printout photo</div>
+                </div>
+                <input ref={fileRef} type="file" accept=".docx,.doc,.pdf,.txt,.png,.jpg" onChange={handleRevFile} style={{display:"none"}}/>
+                <Label style={{marginTop:"10px"}}>Or paste text extracted from the document</Label>
+                <Textarea value={revInput} onChange={setRevInput} rows={6} placeholder="Paste text from the marked-up document..."/>
+              </>
+            )}
+
+            {/* VOICE TAB */}
+            {revTab==="voice"&&(
+              <>
+                <div style={{textAlign:"center",padding:"16px 0 12px"}}>
+                  <div style={{
+                    width:"72px",height:"72px",borderRadius:"50%",
+                    background:isRecording?"rgba(192,57,43,.18)":"rgba(37,99,235,.14)",
+                    border:`2px solid ${isRecording?C.red:C.blue}`,
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    margin:"0 auto 12px",cursor:"pointer",transition:"all .2s",
+                    fontSize:"26px"
+                  }} onClick={isRecording?stopVoice:startVoice}
+                    className={isRecording?"voice-pulse":""}>
+                    {isRecording?"■":"🎙"}
+                  </div>
+                  <div style={{fontSize:"13px",fontWeight:700,color:C.t1,marginBottom:"4px"}}>
+                    {isRecording?"Recording... Click to stop":"Click to record revision notes"}
+                  </div>
+                  <div style={{fontSize:"11px",color:C.t3}}>Speak your corrections naturally — ZOE transcribes and extracts each instruction</div>
+                </div>
+                {voiceTranscript&&(
+                  <div style={{background:C.sl2,border:`1px solid ${C.b1}`,borderRadius:"7px",padding:"10px",fontFamily:C.mono,fontSize:"12px",color:C.t2,lineHeight:1.6,marginBottom:"8px"}}>
+                    <div style={{fontSize:"10px",color:C.teal,marginBottom:"4px",fontWeight:700}}>TRANSCRIBING...</div>
+                    {voiceTranscript}
+                  </div>
+                )}
+                {revInput&&(
+                  <><Label>Transcript</Label>
+                  <Textarea value={revInput} onChange={setRevInput} rows={5}/></>
+                )}
+              </>
+            )}
+
+            {/* MANUAL TAB */}
+            {revTab==="manual"&&(
+              <>
+                <Label>Add Changes Manually</Label>
+                <div style={{display:"flex",flexDirection:"column",gap:"5px",marginBottom:"8px"}}>
+                  {[["MODIFICATION","Porter's section — add competitive intensity synthesis paragraph"],["ADDITION","TOWS section — expand all four options with evidence and 2 citations each"],["REFERENCE_FIX","Reference 7: Johnson et al. (2017) — add publisher: Pearson"]].map((item,i)=>(
+                    <div key={i} style={{background:C.sl2,border:`1px solid ${C.b1}`,borderRadius:"7px",padding:"8px 10px"}}>
+                      <div style={{fontSize:"9px",fontWeight:700,fontFamily:C.mono,color:changeColors[item[0]]||C.t3,marginBottom:"3px"}}>{item[0]}</div>
+                      <div style={{fontSize:"12px",color:C.t2}}>{item[1]}</div>
+                    </div>
+                  ))}
+                </div>
+                <Btn variant="blue" size="sm" onClick={()=>setRevInput(v=>v+"\nTYPE: MODIFICATION\nLOCATION: \nINSTRUCTION: \n---\n")}>+ Add change</Btn>
+              </>
+            )}
+          </div>
+
+          {/* Implement button */}
+          <div style={{padding:"10px 12px",borderTop:`1px solid ${C.b1}`,flexShrink:0}}>
+            {phase==="idle"&&<Btn variant="gold" full size="lg" onClick={implementRevisions} disabled={!revInput.trim()}>◈ Implement Revisions →</Btn>}
+            {(phase==="parsing"||phase==="implementing")&&(
+              <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"9px 14px",background:C.td,border:`1px solid ${C.tg}`,borderRadius:"8px"}}>
+                <Spinner/><span style={{fontFamily:C.mono,fontSize:"12px",color:C.teal}}>{phase==="parsing"?"Parsing feedback...":"Implementing corrections..."}</span>
+              </div>
+            )}
+            {phase==="done"&&<Btn variant="green" full onClick={downloadRevised}>↓ Download Revised Version</Btn>}
+          </div>
+        </div>
+
+        {/* CENTRE — Change List */}
+        <div style={{width:"280px",borderRight:`1px solid ${C.b1}`,display:"flex",flexDirection:"column",overflow:"hidden",flexShrink:0}}>
+          <div style={{padding:"10px 12px",borderBottom:`1px solid ${C.b1}`,display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+            <div style={{fontSize:"12px",fontWeight:700,color:C.t1}}>Changes ({changeList.length})</div>
+            {changeList.length>0&&(
+              <div style={{display:"flex",gap:"5px"}}>
+                <Btn variant="green" size="xs" onClick={acceptAll}>✓ All</Btn>
+                <Btn variant="danger" size="xs" onClick={rejectAll}>✕ All</Btn>
+              </div>
+            )}
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:"8px"}}>
+            {changeList.length===0&&(
+              <div style={{color:C.t3,fontSize:"11px",fontFamily:C.mono,padding:"10px 4px",textAlign:"center"}}>
+                Changes extracted from feedback will appear here
+              </div>
+            )}
+            {changeList.map(item=>(
+              <div key={item.id} style={{background:item.accepted===true?"rgba(26,122,74,.1)":item.accepted===false?"rgba(192,57,43,.08)":C.sl2,
+                border:`1px solid ${item.accepted===true?"rgba(26,122,74,.3)":item.accepted===false?"rgba(192,57,43,.25)":C.b1}`,
+                borderRadius:"7px",padding:"8px 10px",marginBottom:"5px",cursor:"pointer",transition:"all .13s"}}>
+                <div style={{fontSize:"9px",fontWeight:700,fontFamily:C.mono,color:changeColors[item.type]||C.t3,marginBottom:"3px"}}>{item.type}</div>
+                <div style={{fontSize:"11px",color:C.t2,lineHeight:1.45,marginBottom:"5px"}}>{item.location&&<span style={{color:C.t3,marginRight:"4px"}}>{item.location} ·</span>}{item.instruction?.slice(0,100)}{item.instruction?.length>100?"...":""}</div>
+                {item.accepted===null&&(
+                  <div style={{display:"flex",gap:"4px"}}>
+                    <Btn variant="green" size="xs" onClick={()=>setChangeList(c=>c.map(i=>i.id===item.id?{...i,accepted:true}:i))}>✓</Btn>
+                    <Btn variant="danger" size="xs" onClick={()=>setChangeList(c=>c.map(i=>i.id===item.id?{...i,accepted:false}:i))}>✕</Btn>
+                  </div>
+                )}
+                {item.accepted===true&&<span style={{fontSize:"10px",color:"#3bc97a",fontFamily:C.mono}}>✓ Accepted</span>}
+                {item.accepted===false&&<span style={{fontSize:"10px",color:"#e06050",fontFamily:C.mono}}>✕ Rejected</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* RIGHT — Revised Output with highlighting */}
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.b1}`,display:"flex",alignItems:"center",gap:"8px",flexShrink:0,background:C.navy}}>
+            <div style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"11px",color:C.t2,fontFamily:C.mono}}>
+              <span style={{width:"10px",height:"10px",borderRadius:"2px",background:"rgba(234,179,8,.35)",border:"1px solid rgba(234,179,8,.5)",display:"inline-block"}}/>Added
+              <span style={{width:"10px",height:"10px",borderRadius:"2px",background:"rgba(37,99,235,.25)",border:"1px solid rgba(37,99,235,.5)",display:"inline-block",marginLeft:"6px"}}/>Modified
+            </div>
+            {phase==="implementing"&&<div style={{display:"flex",alignItems:"center",gap:"5px",fontFamily:C.mono,fontSize:"11px",color:C.teal}}><div className="led-teal"/><span className="blink">Implementing...</span></div>}
+            {phase==="done"&&<Tag color="teal">{changeList.length} changes applied</Tag>}
+            <div style={{flex:1}}/>
+            {phase==="done"&&<Btn variant="green" size="sm" onClick={downloadRevised}>↓ Download</Btn>}
+          </div>
+          <div style={{flex:1,overflow:"hidden",position:"relative"}}>
+            {!revResult&&(
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"10px",color:C.t3}}>
+                <div style={{fontSize:"24px",opacity:.3}}>◎</div>
+                <div style={{fontSize:"13px"}}>Revised document will appear here with highlighted changes</div>
+              </div>
+            )}
+            <textarea
+              value={revResult}
+              onChange={e=>setRevResult(e.target.value)}
+              style={{position:"absolute",inset:0,width:"100%",height:"100%",
+                background:"#0A0A0A",border:"none",outline:"none",resize:"none",
+                padding:"20px 24px",fontFamily:"'Georgia',serif",fontSize:"14px",lineHeight:"1.9",color:C.t1,
+                display:revResult?"block":"none"}}/>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   MAIN APP — ZOE PIPELINE
+═══════════════════════════════════════════════════ */
+
+const STAGE_META = [
+  {n:1,label:"Brief",color:"gold"},
+  {n:2,label:"Prompt",color:"gold"},
+  {n:3,label:"Write",color:"gold"},
+  {n:4,label:"Edit",color:"gold"},
+  {n:5,label:"Critique",color:"gold"},
+  {n:6,label:"Export",color:"teal"},
+  {n:7,label:"Revisions",color:"blue"},
+];
+
+export default function ZOEPipeline() {
+  const [stage, setStage] = useState(1);
+
+  // All settings in one object for easy passing
+  const [s, setS] = useState({
+    // Brief settings
+    assessmentType: "Business Report",
+    wordCount: 5000,
+    citStyle: "Harvard (UK)",
+    level: "Masters",
+    tone: "Analytical",
+    humanisation: "High",
+    burstiness: 4,
+    briefText: "",
+    briefUrl: "",
+    title: "",
+    module: "",
+    moduleCode: "",
+    learningOutcomes: "",
+    rubric: "",
+    institution: "",
+    deadline: "",
+    // Citation settings
+    totalCitations: 55,
+    dateFrom: 2015,
+    dateTo: 2025,
+    journalPct: 60,
+    bookPct: 20,
+    reportPct: 15,
+    confPct: 5,
+    seminal: false,
+    autoBalance: true,
+    disclaimer: true,
+    // Prompt & generated content
+    sectionSpecs: "",
+    masterPrompt: "",
+    draft: "",
+    editedDraft: "",
+    critique: "",
+    corrected: "",
+    // Revision
+    revisionInput: "",
+  });
+
+  function set(key, val) { setS(prev=>({...prev,[key]:val})); }
+
+  const stageComponents = [
+    <Stage1 key={1} s={s} set={set} onNext={()=>setStage(2)}/>,
+    <Stage2 key={2} s={s} set={set} onBack={()=>setStage(1)} onNext={()=>setStage(3)}/>,
+    <Stage3 key={3} s={s} set={set} onBack={()=>setStage(2)} onNext={()=>setStage(4)}/>,
+    <Stage4 key={4} s={s} set={set} onBack={()=>setStage(3)} onNext={()=>setStage(5)}/>,
+    <Stage5 key={5} s={s} set={set} onBack={()=>setStage(4)} onNext={()=>setStage(6)}/>,
+    <Stage6 key={6} s={s} set={set} onBack={()=>setStage(5)} onNext={()=>setStage(7)}/>,
+    <Stage7 key={7} s={s} set={set} onBack={()=>setStage(6)} onNext={()=>setStage(1)}/>,
+  ];
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="app">
+        {/* HEADER */}
+        <header style={{
+          height:"48px",background:C.navy,borderBottom:`1px solid ${C.b1}`,
+          display:"flex",alignItems:"center",padding:"0 14px",gap:0,flexShrink:0,zIndex:50
+        }}>
+          <div onClick={()=>setStage(1)} style={{
+            fontSize:"18px",fontWeight:900,letterSpacing:"-.8px",color:C.t1,
+            marginRight:"10px",cursor:"pointer",userSelect:"none"
+          }}>
+            <span style={{color:C.gold}}>Z</span>OE
+          </div>
+          {/* Stage track */}
+          <div style={{display:"flex",alignItems:"center",gap:0,flex:1,overflowX:"auto"}}>
+            {STAGE_META.map((sm,idx)=>{
+              const isDone = stage>sm.n;
+              const isAct = stage===sm.n;
+              const colDone = C.green;
+              const colAct = C.gold;
+              const colIdle = C.t3;
+              return (
+                <React.Fragment key={sm.n}>
+                  {idx>0&&<div style={{width:"12px",height:"1px",background:C.b1,flexShrink:0}}/>}
+                  <div onClick={()=>setStage(sm.n)} style={{
+                    display:"flex",alignItems:"center",gap:"5px",padding:"3px 9px",
+                    borderRadius:"4px",fontSize:"11px",fontWeight:600,cursor:"pointer",
+                    whiteSpace:"nowrap",fontFamily:C.mono,flexShrink:0,transition:"all .14s",
+                    color:isDone?colDone:isAct?C.t1:colIdle,
+                    background:isAct?"rgba(255,255,255,.07)":"transparent"
+                  }}>
+                    <div style={{
+                      width:"17px",height:"17px",borderRadius:"3px",display:"flex",
+                      alignItems:"center",justifyContent:"center",fontSize:"10px",fontWeight:700,
+                      background:isDone?C.green:isAct?C.gold:"rgba(255,255,255,.06)",
+                      color:isDone?"#fff":isAct?C.navy:C.t3,flexShrink:0
+                    }}>{sm.n}</div>
+                    {sm.label}
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+          {/* Global nav + tier */}
+          <div style={{display:"flex",alignItems:"center",gap:"7px",marginLeft:"10px"}}>
+            <div style={{fontFamily:C.mono,fontSize:"10px",fontWeight:700,color:C.gold,
+              background:C.gd,border:`1px solid rgba(201,168,76,.25)`,padding:"2px 7px",borderRadius:"20px"}}>
+              REGULAR
+            </div>
+            <NavArrow direction="left" onClick={()=>setStage(s=>Math.max(1,s-1))} disabled={stage===1}/>
+            <NavArrow direction="right" onClick={()=>setStage(s=>Math.min(7,s+1))} disabled={stage===7}/>
+          </div>
+        </header>
+
+        {/* STAGE CONTENT */}
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          {stageComponents[stage-1]}
+        </div>
+      </div>
+    </>
+  );
+}

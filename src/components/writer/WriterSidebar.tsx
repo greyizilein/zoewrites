@@ -14,7 +14,7 @@ interface Props {
   recentAssessments: { id: string; title: string; status: string }[];
 }
 
-const stageIcons = ["📋", "✍️", "🔍", "📥"];
+const stageIcons = ["📋", "🧩", "✍️", "🔧", "🔍", "🔄", "📥"];
 
 export default function WriterSidebar({ currentStage, onStageChange, onClose, userName, userTier, initials, recentAssessments }: Props) {
   const [profileOpen, setProfileOpen] = useState(false);
@@ -70,7 +70,7 @@ export default function WriterSidebar({ currentStage, onStageChange, onClose, us
               <button
                 key={i}
                 onClick={() => { onStageChange(i); onClose(); }}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-[13px] transition-all text-left ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all text-left ${
                   isCurrent
                     ? "bg-muted font-semibold text-foreground"
                     : isDone
@@ -78,11 +78,11 @@ export default function WriterSidebar({ currentStage, onStageChange, onClose, us
                       : "text-muted-foreground hover:bg-muted/40"
                 }`}
               >
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[12px] transition-all ${
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] transition-all ${
                   isCurrent ? "bg-terracotta text-white shadow-sm" :
                   isDone ? "bg-sage/15 text-sage" : "bg-muted text-muted-foreground"
                 }`}>
-                  {isDone ? <Check size={12} /> : stageIcons[i]}
+                  {isDone ? <Check size={12} /> : stageIcons[i] || (i + 1)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="block truncate">{i + 1}. {label}</span>
