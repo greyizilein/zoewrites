@@ -6,7 +6,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2 } from "lucide-react";
+import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2, ChevronDown, Lock, ArrowUpRight, Settings, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -57,6 +57,46 @@ interface ChatSession {
 const PAYSTACK_PUBLIC_KEY = "pk_live_e1d5c33f8f38484c592eaad87382adab502a8c1e";
 const GBP_TO_NGN = 2083;
 const TIER_PRICES_GBP: Record<string, number> = { hello: 15, regular: 45, professional: 110 };
+
+// ─────────────────────────── Model options ───────────────────────────────────
+
+interface ModelOption {
+  id: string;
+  label: string;
+  badge: string;
+  minTier: string[];
+}
+
+const MODEL_OPTIONS: ModelOption[] = [
+  { id: "google/gemini-3-flash-preview",  label: "Gemini 3 Flash",    badge: "Flash",    minTier: ["hello","regular","professional","unlimited","custom"] },
+  { id: "google/gemini-2.5-flash",        label: "Gemini 2.5 Flash",  badge: "Flash 2.5",minTier: ["regular","professional","unlimited","custom"] },
+  { id: "google/gemini-2.5-pro",          label: "Gemini 2.5 Pro",    badge: "2.5 Pro",  minTier: ["regular","professional","unlimited","custom"] },
+  { id: "google/gemini-2.5-flash-lite",   label: "Flash Lite",        badge: "Lite",     minTier: ["professional","unlimited","custom"] },
+  { id: "openai/gpt-5",                   label: "GPT-5",             badge: "GPT-5",    minTier: ["professional","unlimited","custom"] },
+  { id: "openai/gpt-5.2",                label: "GPT-5.2",           badge: "GPT-5.2",  minTier: ["professional","unlimited","custom"] },
+];
+
+// ─────────────────────────── Writing settings ────────────────────────────────
+
+interface WritingSettings {
+  citationStyle: string;
+  academicLevel: string;
+  assessmentType: string;
+  writingTone: string;
+  humanisationLevel: string;
+  sourceDateFrom: number;
+  sourceDateTo: number;
+}
+
+const DEFAULT_WRITING_SETTINGS: WritingSettings = {
+  citationStyle: "Harvard",
+  academicLevel: "L7",
+  assessmentType: "Essay",
+  writingTone: "Analytical",
+  humanisationLevel: "High",
+  sourceDateFrom: 2015,
+  sourceDateTo: 2025,
+};
 const CHART_COLORS = ["#c87a55", "#5c8671", "#7e68a8", "#436fa3", "#c49a30", "#c8556f"];
 
 const QUICK_ACTIONS = [
@@ -177,7 +217,7 @@ function InlineChart({ chart }: { chart: ChartData }) {
 
 // ─────────────────────────── Main component ──────────────────────────────────
 
-export default function ZoeChat() {
+export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" }) {
   const { user, session, signOut } = useAuth();
   const navigate = useNavigate();
   useLocation(); // keep router context fresh
@@ -195,6 +235,12 @@ export default function ZoeChat() {
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [profile, setProfile] = useState<{ full_name: string | null; tier: string } | null>(null);
+
+  // Model + writing settings state
+  const [selectedModel, setSelectedModel] = useState("google/gemini-3-flash-preview");
+  const [writingSettings, setWritingSettings] = useState<WritingSettings>(DEFAULT_WRITING_SETTINGS);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [settingsGroupOpen, setSettingsGroupOpen] = useState({ writing: true, style: false, sources: false });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -236,6 +282,17 @@ export default function ZoeChat() {
         launcherX.set(x);
         launcherY.set(y);
       }
+    } catch {}
+  }, [user?.id]);
+
+  // Load persisted model + writing settings
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      const m = localStorage.getItem(`zoe_model_${user.id}`);
+      if (m) setSelectedModel(m);
+      const s = localStorage.getItem(`zoe_settings_${user.id}`);
+      if (s) setWritingSettings(prev => ({ ...prev, ...JSON.parse(s) }));
     } catch {}
   }, [user?.id]);
 
@@ -474,6 +531,19 @@ export default function ZoeChat() {
       case "confirm_execution_plan":
         // Acknowledged inline by ZOE's text response; no additional action needed
         break;
+
+      case "generate_images": {
+        const { data: imgData } = await supabase.functions.invoke("generate-images", {
+          body: { assessment_id: args.assessment_id, section_id: args.section_id },
+        });
+        if (imgData?.images?.length) {
+          const imgMarkdown = (imgData.images as any[]).map((img: any) =>
+            `![${img.caption || "Figure"}](${img.url})\n*${img.caption || ""}*`
+          ).join("\n\n");
+          addMessage({ id: crypto.randomUUID(), role: "assistant", content: imgMarkdown, timestamp: Date.now() });
+        }
+        break;
+      }
     }
   }
 
@@ -503,7 +573,7 @@ export default function ZoeChat() {
           "Content-Type": "application/json",
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ messages: history, attachments: uploadedAttachments }),
+        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, model: selectedModel, writingSettings }),
         signal: abortRef.current.signal,
       });
       if (!resp.ok || !resp.body) throw new Error(`API error ${resp.status}`);
@@ -559,6 +629,23 @@ export default function ZoeChat() {
     }
   }
 
+  function changeModel(id: string) {
+    setSelectedModel(id);
+    setShowModelPicker(false);
+    if (user?.id) localStorage.setItem(`zoe_model_${user.id}`, id);
+  }
+
+  function changeWritingSetting<K extends keyof WritingSettings>(key: K, value: WritingSettings[K]) {
+    setWritingSettings(prev => {
+      const next = { ...prev, [key]: value };
+      if (user?.id) localStorage.setItem(`zoe_settings_${user.id}`, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  const currentModelBadge = MODEL_OPTIONS.find(m => m.id === selectedModel)?.badge ?? "Flash";
+  const tierAllowed = (minTier: string[]) => profile ? minTier.includes(profile.tier) : false;
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -577,8 +664,8 @@ export default function ZoeChat() {
         }}
       />
 
-      {/* Launcher */}
-      {(!open || minimized) && (
+      {/* Launcher — widget mode only */}
+      {mode === "widget" && (!open || minimized) && (
         <motion.button
           drag
           dragMomentum={false}
@@ -596,18 +683,23 @@ export default function ZoeChat() {
         </motion.button>
       )}
 
-      {/* Mobile backdrop */}
-      {open && !minimized && (
+      {/* Mobile backdrop — widget mode only */}
+      {mode === "widget" && open && !minimized && (
         <div className="fixed inset-0 bg-black/40 z-[55] md:hidden" onClick={() => setOpen(false)} />
       )}
 
       {/* Chat panel */}
       <div className={cn(
-        "fixed z-[60] flex flex-col bg-[#F5F0EB] shadow-2xl transition-all duration-300 ease-in-out",
-        "inset-0 md:inset-auto md:top-0 md:right-0 md:h-screen md:w-[420px] md:border-l md:border-black/10",
-        open && !minimized
-          ? "translate-y-0 md:translate-x-0 opacity-100"
-          : "translate-y-full md:translate-y-0 md:translate-x-full opacity-0 pointer-events-none",
+        "flex flex-col bg-[#F5F0EB]",
+        mode === "page"
+          ? "w-full h-screen"
+          : cn(
+              "fixed z-[60] shadow-2xl transition-all duration-300 ease-in-out",
+              "inset-0 md:inset-auto md:top-0 md:right-0 md:h-screen md:w-[420px] md:border-l md:border-black/10",
+              open && !minimized
+                ? "translate-y-0 md:translate-x-0 opacity-100"
+                : "translate-y-full md:translate-y-0 md:translate-x-full opacity-0 pointer-events-none",
+            ),
       )}>
 
         {/* Header */}
@@ -637,12 +729,26 @@ export default function ZoeChat() {
             <button onClick={handleDeleteMessages} title="Clear chat" className="w-8 h-8 rounded-lg flex items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
               <Trash2 size={14} />
             </button>
-            <button onClick={() => setMinimized(true)} title="Minimize" className="hidden md:flex w-8 h-8 rounded-lg items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
-              <Minus size={15} />
-            </button>
-            <button onClick={() => { setOpen(false); setMinimized(false); }} title="Close" className="w-8 h-8 rounded-lg flex items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
-              <X size={16} />
-            </button>
+            {mode === "widget" && (
+              <button onClick={() => { navigate("/chat"); setOpen(false); }} title="Open full chat" className="w-8 h-8 rounded-lg flex items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
+                <ArrowUpRight size={15} />
+              </button>
+            )}
+            {mode === "page" && (
+              <button onClick={() => navigate("/dashboard")} title="Dashboard" className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
+                Dashboard
+              </button>
+            )}
+            {mode === "widget" && (
+              <button onClick={() => setMinimized(true)} title="Minimize" className="hidden md:flex w-8 h-8 rounded-lg items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
+                <Minus size={15} />
+              </button>
+            )}
+            {mode === "widget" && (
+              <button onClick={() => { setOpen(false); setMinimized(false); }} title="Close" className="w-8 h-8 rounded-lg flex items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
+                <X size={16} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -677,6 +783,85 @@ export default function ZoeChat() {
                 </button>
               ))}
             </div>
+            {/* ── Settings panel ── */}
+            <div className="border-t border-black/8 flex-shrink-0 overflow-y-auto max-h-[40%]">
+              <div className="px-3 pt-2.5 pb-1 flex items-center gap-1.5 text-[10px] font-semibold text-foreground/40 uppercase tracking-wider">
+                <Settings size={10} /> Settings
+              </div>
+
+              {/* Writing group */}
+              <div className="px-3 pb-1">
+                <button onClick={() => setSettingsGroupOpen(p => ({ ...p, writing: !p.writing }))}
+                  className="w-full flex items-center justify-between py-1.5 text-[11px] font-semibold text-foreground/70 hover:text-foreground transition-colors">
+                  Writing
+                  <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.writing ? "rotate-90" : "")} />
+                </button>
+                {settingsGroupOpen.writing && (
+                  <div className="space-y-1.5 pb-2">
+                    {[
+                      { label: "Citation", key: "citationStyle" as const, opts: ["Harvard","APA 7th","MLA 9th","Chicago","Vancouver","IEEE","OSCOLA"] },
+                      { label: "Level", key: "academicLevel" as const, opts: ["L4","L5","L6","L7","Doctoral"] },
+                      { label: "Type", key: "assessmentType" as const, opts: ["Essay","Report","Case Study","Dissertation","Literature Review","Research Paper","Reflection"] },
+                    ].map(({ label, key, opts }) => (
+                      <div key={key}>
+                        <p className="text-[9px] text-foreground/40 mb-0.5">{label}</p>
+                        <select value={writingSettings[key]} onChange={e => changeWritingSetting(key, e.target.value)}
+                          className="w-full text-[11px] bg-black/5 rounded-lg px-2 py-1 outline-none border border-black/8 text-foreground/80 cursor-pointer">
+                          {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Style group */}
+              <div className="px-3 pb-1 border-t border-black/6">
+                <button onClick={() => setSettingsGroupOpen(p => ({ ...p, style: !p.style }))}
+                  className="w-full flex items-center justify-between py-1.5 text-[11px] font-semibold text-foreground/70 hover:text-foreground transition-colors">
+                  Style
+                  <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.style ? "rotate-90" : "")} />
+                </button>
+                {settingsGroupOpen.style && (
+                  <div className="space-y-1.5 pb-2">
+                    {[
+                      { label: "Tone", key: "writingTone" as const, opts: ["Analytical","Critical","Evaluative","Reflective","Argumentative"] },
+                      { label: "Humanisation", key: "humanisationLevel" as const, opts: ["Low","Medium","High"] },
+                    ].map(({ label, key, opts }) => (
+                      <div key={key}>
+                        <p className="text-[9px] text-foreground/40 mb-0.5">{label}</p>
+                        <select value={writingSettings[key]} onChange={e => changeWritingSetting(key, e.target.value)}
+                          className="w-full text-[11px] bg-black/5 rounded-lg px-2 py-1 outline-none border border-black/8 text-foreground/80 cursor-pointer">
+                          {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Sources group */}
+              <div className="px-3 pb-1 border-t border-black/6">
+                <button onClick={() => setSettingsGroupOpen(p => ({ ...p, sources: !p.sources }))}
+                  className="w-full flex items-center justify-between py-1.5 text-[11px] font-semibold text-foreground/70 hover:text-foreground transition-colors">
+                  Sources
+                  <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.sources ? "rotate-90" : "")} />
+                </button>
+                {settingsGroupOpen.sources && (
+                  <div className="pb-2">
+                    <p className="text-[9px] text-foreground/40 mb-1">Date Range</p>
+                    <div className="flex items-center gap-1.5">
+                      <input type="number" value={writingSettings.sourceDateFrom} onChange={e => changeWritingSetting("sourceDateFrom", Number(e.target.value))}
+                        className="w-full text-[11px] bg-black/5 rounded-lg px-2 py-1 outline-none border border-black/8 text-foreground/80" />
+                      <span className="text-[10px] text-foreground/40">–</span>
+                      <input type="number" value={writingSettings.sourceDateTo} onChange={e => changeWritingSetting("sourceDateTo", Number(e.target.value))}
+                        className="w-full text-[11px] bg-black/5 rounded-lg px-2 py-1 outline-none border border-black/8 text-foreground/80" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="border-t border-black/8 p-3 flex-shrink-0 space-y-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-full bg-terracotta/20 flex items-center justify-center flex-shrink-0">
@@ -774,6 +959,30 @@ export default function ZoeChat() {
                       >
                         <Paperclip size={15} />
                       </button>
+                      {/* Model picker */}
+                      <div className="relative">
+                        <button type="button" onClick={() => setShowModelPicker(v => !v)}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-foreground/45 hover:bg-black/6 hover:text-foreground/70 transition-colors">
+                          {currentModelBadge} <ChevronDown size={10} />
+                        </button>
+                        {showModelPicker && (
+                          <div className="absolute bottom-full mb-1 right-0 z-50 w-48 bg-white rounded-xl shadow-xl border border-black/10 py-1 overflow-hidden">
+                            {MODEL_OPTIONS.map(m => {
+                              const allowed = tierAllowed(m.minTier);
+                              return (
+                                <button key={m.id} type="button"
+                                  onClick={() => allowed && changeModel(m.id)}
+                                  className={cn("w-full flex items-center justify-between px-3 py-2 text-[12px] transition-colors text-left",
+                                    selectedModel === m.id ? "bg-terracotta/10 text-terracotta font-semibold" : allowed ? "text-foreground/80 hover:bg-black/5" : "text-foreground/30 cursor-not-allowed")}>
+                                  <span>{m.label}</span>
+                                  {!allowed && <Lock size={10} className="text-foreground/25" />}
+                                  {allowed && selectedModel === m.id && <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                       <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
                         className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
@@ -927,6 +1136,30 @@ export default function ZoeChat() {
                       >
                         <Paperclip size={15} />
                       </button>
+                      {/* Model picker */}
+                      <div className="relative">
+                        <button type="button" onClick={() => setShowModelPicker(v => !v)}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-foreground/45 hover:bg-black/6 hover:text-foreground/70 transition-colors">
+                          {currentModelBadge} <ChevronDown size={10} />
+                        </button>
+                        {showModelPicker && (
+                          <div className="absolute bottom-full mb-1 right-0 z-50 w-48 bg-white rounded-xl shadow-xl border border-black/10 py-1 overflow-hidden">
+                            {MODEL_OPTIONS.map(m => {
+                              const allowed = tierAllowed(m.minTier);
+                              return (
+                                <button key={m.id} type="button"
+                                  onClick={() => allowed && changeModel(m.id)}
+                                  className={cn("w-full flex items-center justify-between px-3 py-2 text-[12px] transition-colors text-left",
+                                    selectedModel === m.id ? "bg-terracotta/10 text-terracotta font-semibold" : allowed ? "text-foreground/80 hover:bg-black/5" : "text-foreground/30 cursor-not-allowed")}>
+                                  <span>{m.label}</span>
+                                  {!allowed && <Lock size={10} className="text-foreground/25" />}
+                                  {allowed && selectedModel === m.id && <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                       <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
                         className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}

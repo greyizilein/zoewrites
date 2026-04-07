@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Plus, LogOut, Home, Loader2, Trash2, FileText,
-  BarChart3, MoreHorizontal, PenSquare, RefreshCw, ChevronDown,
+  BarChart3, MoreHorizontal, MessageSquare, RefreshCw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -174,8 +174,8 @@ const Dashboard = () => {
           <Link to="/dashboard" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold bg-terracotta/10 text-terracotta">
             <Home size={15} /> Dashboard
           </Link>
-          <Link to="/assessment/new" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
-            <Plus size={15} /> New Assessment
+          <Link to="/chat" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
+            <MessageSquare size={15} /> Open ZOE
           </Link>
           <Link to="/analytics" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
             <BarChart3 size={15} /> Analytics
@@ -214,9 +214,9 @@ const Dashboard = () => {
             <button onClick={refreshData} className="w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground shadow-sm active:scale-95 transition-transform">
               <RefreshCw size={13} />
             </button>
-            <Link to="/assessment/new">
+            <Link to="/chat">
               <button className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-xl text-[12px] font-bold hover:bg-terracotta/90 active:scale-[0.97] transition-all shadow-sm">
-                <Plus size={13} /> New Assessment
+                <MessageSquare size={13} /> Open ZOE
               </button>
             </Link>
           </div>
@@ -296,9 +296,9 @@ const Dashboard = () => {
                 </div>
               </div>
               <div className="md:hidden grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-border/50">
-                <Link to="/assessment/new" className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all">
-                  <div className="w-8 h-8 rounded-lg bg-terracotta/10 flex items-center justify-center"><Plus size={15} className="text-terracotta" /></div>
-                  <span className="text-[9px] font-medium text-foreground text-center leading-tight">New Assessment</span>
+                <Link to="/chat" className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all">
+                  <div className="w-8 h-8 rounded-lg bg-terracotta/10 flex items-center justify-center"><MessageSquare size={15} className="text-terracotta" /></div>
+                  <span className="text-[9px] font-medium text-foreground text-center leading-tight">Open ZOE</span>
                 </Link>
                 <Link to="/analytics" className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border/50 hover:border-foreground/10 hover:shadow-sm active:scale-[0.96] transition-all">
                   <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center"><BarChart3 size={15} className="text-blue-500" /></div>
@@ -385,9 +385,9 @@ const Dashboard = () => {
               <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay: 0.24, ease }} className="bg-card rounded-2xl shadow-sm border border-border/50 p-4 md:p-6">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-[13px] font-bold text-foreground">Recent Assessments</p>
-                  <Link to="/assessment/new">
-                    <button className="w-6 h-6 rounded-full bg-terracotta/10 flex items-center justify-center active:scale-95 transition-transform">
-                      <Plus size={12} className="text-terracotta" />
+                  <Link to="/chat">
+                    <button className="w-6 h-6 rounded-full bg-terracotta/10 flex items-center justify-center active:scale-95 transition-transform" title="Open ZOE">
+                      <MessageSquare size={11} className="text-terracotta" />
                     </button>
                   </Link>
                 </div>
@@ -397,7 +397,7 @@ const Dashboard = () => {
                     const done = a.status === "complete";
                     return (
                       <div key={a.id} className="flex items-center gap-2 group">
-                        <Link to={`/assessment/${a.id}`} className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2 rounded-xl hover:bg-muted/50 transition-colors">
+                        <Link to="/chat" className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2 rounded-xl hover:bg-muted/50 transition-colors">
                           <div className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white ${done ? "bg-sage" : "bg-terracotta"}`}>{pct}%</div>
                           <div className="min-w-0 flex-1">
                             <p className="text-[12px] font-semibold text-foreground truncate">{a.title}</p>
@@ -430,10 +430,10 @@ const Dashboard = () => {
               <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease }} className="bg-card rounded-2xl border border-border/50 shadow-sm text-center py-16 px-6">
                 <FileText size={40} className="mx-auto text-muted-foreground/20 mb-3" />
                 <h2 className="text-base font-bold text-foreground mb-1">No assessments yet</h2>
-                <p className="text-xs text-muted-foreground mb-5">Create your first to get started.</p>
-                <Link to="/assessment/new">
+                <p className="text-xs text-muted-foreground mb-5">Chat with ZOE to get started.</p>
+                <Link to="/chat">
                   <Button className="bg-terracotta hover:bg-terracotta/90 text-white font-semibold active:scale-[0.97] transition-transform rounded-xl">
-                    <Plus size={16} className="mr-1.5" /> Create Assessment
+                    <MessageSquare size={16} className="mr-1.5" /> Open ZOE
                   </Button>
                 </Link>
               </motion.div>
@@ -446,7 +446,7 @@ const Dashboard = () => {
           <div className="flex items-center justify-around h-[58px] max-w-md mx-auto px-2">
             {([
               { icon: Home, label: "Home", to: "/dashboard" },
-              { icon: PenSquare, label: "New", to: "/assessment/new" },
+              { icon: MessageSquare, label: "ZOE", to: "/chat" },
               { icon: BarChart3, label: "Analytics", to: "/analytics" },
             ] as const).map(item => {
               const active = location.pathname === item.to;

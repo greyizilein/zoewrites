@@ -522,7 +522,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, section_content, assessment_title, sections_summary, attachments, model } = await req.json();
+    const { messages, section_content, assessment_title, sections_summary, attachments, model, writingSettings } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY") || "";
@@ -531,6 +531,16 @@ serve(async (req) => {
     if (assessment_title) contextNote += `\n\nCurrent assessment: "${assessment_title}"`;
     if (section_content) contextNote += `\n\nCurrent section content (first 2000 chars):\n${section_content.slice(0, 2000)}`;
     if (sections_summary) contextNote += `\n\nSections overview:\n${sections_summary}`;
+    if (writingSettings) {
+      contextNote += `\n\n## User Writing Preferences\n` +
+        `- Citation Style: ${writingSettings.citationStyle}\n` +
+        `- Academic Level: ${writingSettings.academicLevel}\n` +
+        `- Assessment Type: ${writingSettings.assessmentType}\n` +
+        `- Writing Tone: ${writingSettings.writingTone}\n` +
+        `- Humanisation: ${writingSettings.humanisationLevel}\n` +
+        `- Source Date Range: ${writingSettings.sourceDateFrom}–${writingSettings.sourceDateTo}\n` +
+        `Apply these preferences automatically to all writing, editing, and generation tasks.`;
+    }
 
     // Pre-fetch Semantic Scholar results if the last user message mentions sources/references
     const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
