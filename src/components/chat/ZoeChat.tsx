@@ -453,77 +453,6 @@ export default function ZoeChat() {
 
   const initials = (profile?.full_name || user.email || "U").slice(0, 2).toUpperCase();
 
-  // ── Shared input area ─────────────────────────────────────────────────────
-
-  const InputArea = ({ compact = false }: { compact?: boolean }) => (
-    <div className={cn(!compact && "w-full max-w-[360px] mx-auto")}>
-      {attachedFiles.length > 0 && (
-        <div className={cn("flex flex-wrap gap-1.5", compact ? "mb-2" : "mb-3")}>
-          {attachedFiles.map((f, i) => (
-            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
-              <Paperclip size={9} />
-              {f.name.length > 22 ? f.name.slice(0, 20) + "…" : f.name}
-              <button type="button" onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:opacity-70">
-                <X size={9} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
-      <div className={cn(
-        "bg-white border border-black/12 focus-within:border-terracotta/50 transition-colors overflow-hidden",
-        compact ? "rounded-2xl" : "rounded-2xl shadow-lg shadow-black/5",
-      )}>
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-          placeholder={compact ? "Message ZOE…" : "What are we writing today?"}
-          rows={1}
-          autoCapitalize="sentences" autoCorrect="on" enterKeyHint="send" spellCheck
-          className="w-full bg-transparent outline-none resize-none text-foreground placeholder:text-foreground/35 leading-relaxed"
-          style={{
-            fontSize: "18px",
-            minHeight: compact ? "52px" : "96px",
-            maxHeight: compact ? "160px" : "220px",
-            padding: compact ? "14px 16px 10px" : "18px 18px 10px",
-            overflowY: "auto",
-            scrollbarWidth: "none",
-            WebkitUserSelect: "text",
-            touchAction: "manipulation",
-          }}
-        />
-        <div className="flex items-center justify-between px-3 pb-3 pt-1">
-          <label className={cn(
-            "relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors overflow-hidden cursor-pointer",
-            loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65",
-          )}>
-            <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles}
-              onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }}
-              style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
-            {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
-          </label>
-
-          <button
-            type="button"
-            onClick={() => handleSend()}
-            disabled={(!input.trim() && attachedFiles.length === 0) || loading}
-            className={cn(
-              "w-9 h-9 rounded-xl flex items-center justify-center transition-all",
-              (input.trim() || attachedFiles.length > 0) && !loading
-                ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm"
-                : "bg-black/8 text-foreground/25 cursor-not-allowed",
-            )}
-          >
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -647,7 +576,7 @@ export default function ZoeChat() {
 
             {!hasMessages ? (
               /* ── Empty state: centered large input ── */
-              <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-5 py-10 gap-6">
+              <div className="flex-1 overflow-y-auto flex flex-col items-center px-5 gap-6" style={{ paddingTop: "18%", paddingBottom: "8%" }}>
                 <div className="text-center space-y-1.5">
                   <div className="w-11 h-11 rounded-full bg-terracotta mx-auto mb-3 flex items-center justify-center shadow-md">
                     <span className="text-white text-[8px] font-extrabold tracking-widest">ZOE</span>
@@ -656,7 +585,43 @@ export default function ZoeChat() {
                   <p className="text-[14px] text-foreground/50 italic">Your academic writing assistant.</p>
                 </div>
 
-                <InputArea compact={false} />
+                {/* Large input card — inlined to avoid unmount/remount on every keystroke */}
+                <div className="w-full max-w-[360px]">
+                  {attachedFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {attachedFiles.map((f, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
+                          <Paperclip size={9} />
+                          {f.name.length > 22 ? f.name.slice(0, 20) + "…" : f.name}
+                          <button type="button" onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:opacity-70"><X size={9} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="bg-white border border-black/12 focus-within:border-terracotta/50 transition-colors overflow-hidden rounded-2xl shadow-lg shadow-black/5">
+                    <textarea
+                      ref={textareaRef}
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                      placeholder="What are we writing today?"
+                      rows={1}
+                      autoCapitalize="sentences" autoCorrect="on" enterKeyHint="send" spellCheck
+                      className="w-full bg-transparent outline-none resize-none text-foreground placeholder:text-foreground/35 leading-relaxed"
+                      style={{ fontSize: "18px", minHeight: "96px", maxHeight: "220px", padding: "18px 18px 10px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
+                    />
+                    <div className="flex items-center justify-between px-3 pb-3 pt-1">
+                      <label className={cn("relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors overflow-hidden cursor-pointer", loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65")}>
+                        <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles} onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+                        {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
+                      </label>
+                      <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && attachedFiles.length === 0) || loading}
+                        className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || attachedFiles.length > 0) && !loading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
+                        {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
                 <div className="flex flex-wrap gap-2 justify-center">
                   {QUICK_ACTIONS.map(a => (
@@ -739,12 +704,42 @@ export default function ZoeChat() {
                   </div>
                 </div>
 
-                {/* ── Bottom input bar (active chat) ── */}
-                <div
-                  className="flex-shrink-0 border-t border-black/8 px-4 py-3 bg-[#F5F0EB]"
-                  style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
-                >
-                  <InputArea compact={true} />
+                {/* ── Bottom input bar (active chat) — inlined to avoid unmount/remount ── */}
+                <div className="flex-shrink-0 border-t border-black/8 px-4 py-3 bg-[#F5F0EB]" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+                  {attachedFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {attachedFiles.map((f, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
+                          <Paperclip size={9} />
+                          {f.name.length > 22 ? f.name.slice(0, 20) + "…" : f.name}
+                          <button type="button" onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:opacity-70"><X size={9} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="bg-white border border-black/12 focus-within:border-terracotta/50 transition-colors overflow-hidden rounded-2xl">
+                    <textarea
+                      ref={textareaRef}
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                      placeholder="Message ZOE…"
+                      rows={1}
+                      autoCapitalize="sentences" autoCorrect="on" enterKeyHint="send" spellCheck
+                      className="w-full bg-transparent outline-none resize-none text-foreground placeholder:text-foreground/35 leading-relaxed"
+                      style={{ fontSize: "18px", minHeight: "52px", maxHeight: "160px", padding: "14px 16px 10px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
+                    />
+                    <div className="flex items-center justify-between px-3 pb-3 pt-1">
+                      <label className={cn("relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors overflow-hidden cursor-pointer", loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65")}>
+                        <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles} onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+                        {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
+                      </label>
+                      <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && attachedFiles.length === 0) || loading}
+                        className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || attachedFiles.length > 0) && !loading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
+                        {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
