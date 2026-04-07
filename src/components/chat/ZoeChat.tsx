@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { motion, useMotionValue } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -159,6 +160,9 @@ function InlineChart({ chart }: { chart: ChartData }) {
 export default function ZoeChat() {
   const { user, session, signOut } = useAuth();
   const navigate = useNavigate();
+  useLocation(); // keep router context fresh
+  const launcherX = useMotionValue(0);
+  const launcherY = useMotionValue(0);
 
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
@@ -200,6 +204,18 @@ export default function ZoeChat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentSession?.messages, streaming]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      const saved = localStorage.getItem(`zoe_launcher_pos_${user.id}`);
+      if (saved) {
+        const { x, y } = JSON.parse(saved);
+        launcherX.set(x);
+        launcherY.set(y);
+      }
+    } catch {}
+  }, [user?.id]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -453,22 +469,36 @@ export default function ZoeChat() {
 
   const initials = (profile?.full_name || user.email || "U").slice(0, 2).toUpperCase();
 
+  function saveLauncherPos() {
+    if (user?.id) {
+      localStorage.setItem(
+        `zoe_launcher_pos_${user.id}`,
+        JSON.stringify({ x: launcherX.get(), y: launcherY.get() })
+      );
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
       {/* Launcher */}
       {(!open || minimized) && (
-        <button
+        <motion.button
+          drag
+          dragMomentum={false}
+          dragElastic={0}
+          style={{ x: launcherX, y: launcherY }}
+          onDragEnd={saveLauncherPos}
           onClick={() => { setOpen(true); setMinimized(false); }}
           aria-label="Open ZOE"
-          className="fixed bottom-6 right-6 z-50 flex items-center justify-center"
+          className="fixed bottom-20 right-6 md:bottom-6 z-50 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
         >
           <span className="absolute inset-0 rounded-full bg-terracotta/40 animate-ping" />
           <span className="relative w-14 h-14 rounded-full bg-terracotta shadow-lg flex items-center justify-center text-white text-[13px] font-extrabold tracking-widest z-10 hover:brightness-110 active:scale-95 transition-all select-none">
             ZOE
           </span>
-        </button>
+        </motion.button>
       )}
 
       {/* Mobile backdrop */}
