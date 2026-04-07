@@ -17,6 +17,16 @@ import { loadPaystackScript, openPaystackPopup } from "@/lib/paystack";
 
 interface Attachment { name: string; url: string; type: string; }
 
+type UploadStatus = "uploading" | "done" | "error";
+interface PendingUpload {
+  id: string;
+  name: string;
+  type: string;
+  progress: number; // 0–100
+  status: UploadStatus;
+  attachment?: Attachment;
+}
+
 interface ChartData {
   type: "bar" | "line" | "pie" | "area";
   title?: string;
@@ -78,6 +88,16 @@ function mkSession(): ChatSession {
 function getAssessmentIdFromUrl(): string | null {
   const m = window.location.pathname.match(/\/assessment\/([^/]+)/);
   return m ? m[1] : null;
+}
+
+// ─────────────────────────── File type helper ────────────────────────────────
+
+function fileTypeLabel(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return (({ pdf:"PDF",docx:"DOCX",doc:"DOC",xlsx:"XLSX",xls:"XLS",
+    pptx:"PPTX",ppt:"PPT",txt:"TXT",csv:"CSV",json:"JSON",md:"MD",
+    png:"PNG",jpg:"JPG",jpeg:"JPG",gif:"GIF",webp:"WEBP" } as Record<string,string>)[ext]
+    ?? ext.toUpperCase() || "FILE");
 }
 
 // ─────────────────────────── Chart component ─────────────────────────────────
@@ -172,8 +192,7 @@ export default function ZoeChat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState("");
-  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
-  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [profile, setProfile] = useState<{ full_name: string | null; tier: string } | null>(null);
 
@@ -181,6 +200,8 @@ export default function ZoeChat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Callback ref so the stable native event listener can always call the latest version
+  const startFileUploadRef = useRef<(file: File) => void>(() => {});
 
   const currentSession = useMemo(() => sessions.find(s => s.id === currentId) ?? null, [sessions, currentId]);
 
@@ -233,13 +254,13 @@ export default function ZoeChat() {
     const handleNativeChange = (e: Event) => {
       const files = (e.target as HTMLInputElement).files;
       if (files && files.length > 0) {
-        setAttachedFiles(prev => [...prev, ...Array.from(files)]);
+        Array.from(files).forEach(f => startFileUploadRef.current(f));
         (e.target as HTMLInputElement).value = "";
       }
     };
     input.addEventListener("change", handleNativeChange);
     return () => input.removeEventListener("change", handleNativeChange);
-  }, []); // fileInputRef.current and setAttachedFiles are both stable
+  }, []); // startFileUploadRef is a stable ref; callback is updated every render
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -260,6 +281,50 @@ export default function ZoeChat() {
       };
     }));
   }
+
+  // ── Upload on file-select ─────────────────────────────────────────────────
+
+  async function startFileUpload(file: File) {
+    if (!user?.id) return;
+    const id = crypto.randomUUID();
+    setPendingUploads(prev => [...prev, { id, name: file.name, type: file.type, progress: 0, status: "uploading" }]);
+    try {
+      const path = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const { data: signedUpload, error: signErr } = await supabase.storage
+        .from("chat-uploads").createSignedUploadUrl(path);
+      if (signErr || !signedUpload) throw signErr || new Error("No upload URL");
+
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable)
+            setPendingUploads(prev => prev.map(p => p.id === id
+              ? { ...p, progress: Math.round((e.loaded / e.total) * 100) } : p));
+        };
+        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`));
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.open("PUT", signedUpload.signedUrl);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.send(file);
+      });
+
+      const { data: readUrl } = await supabase.storage.from("chat-uploads").createSignedUrl(path, 3600);
+      if (!readUrl?.signedUrl) throw new Error("No read URL");
+      setPendingUploads(prev => prev.map(p => p.id === id
+        ? { ...p, progress: 100, status: "done", attachment: { name: file.name, url: readUrl.signedUrl, type: file.type } }
+        : p));
+    } catch (err: any) {
+      console.error("[ZoeChat upload]", file.name, err?.message ?? err);
+      setPendingUploads(prev => prev.map(p => p.id === id ? { ...p, status: "error" } : p));
+    }
+  }
+
+  // Keep the ref current so the stable native event listener always calls the latest closure
+  startFileUploadRef.current = startFileUpload;
+
+  // Derived upload state
+  const anyUploading = pendingUploads.some(p => p.status === "uploading");
+  const readyAttachments = pendingUploads.filter(p => p.status === "done").map(p => p.attachment!);
 
   // ── Tool handlers ─────────────────────────────────────────────────────────
 
@@ -416,45 +481,11 @@ export default function ZoeChat() {
 
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
-    if ((!text && attachedFiles.length === 0) || loading) return;
+    if ((!text && readyAttachments.length === 0) || loading || anyUploading) return;
     setInput(""); setLoading(true); setStreaming("");
 
-    let uploadedAttachments: Attachment[] = [];
-    if (attachedFiles.length > 0 && user?.id) {
-      setUploadingFiles(true);
-      const failedNames: string[] = [];
-      for (const file of attachedFiles) {
-        try {
-          const path = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-          const { error: upErr } = await supabase.storage.from("chat-uploads").upload(path, file);
-          if (upErr) throw upErr;
-          const { data: signed } = await supabase.storage.from("chat-uploads").createSignedUrl(path, 3600);
-          if (signed?.signedUrl) uploadedAttachments.push({ name: file.name, url: signed.signedUrl, type: file.type });
-          else throw new Error("No signed URL returned");
-        } catch (err: any) {
-          console.error("[ZoeChat upload]", file.name, err?.message ?? err);
-          failedNames.push(file.name);
-        }
-      }
-      setAttachedFiles([]); setUploadingFiles(false);
-      if (failedNames.length > 0 && uploadedAttachments.length === 0) {
-        // All files failed — show error and abort
-        setLoading(false);
-        addMessage({
-          id: crypto.randomUUID(), role: "assistant",
-          content: `⚠️ Could not upload ${failedNames.length === 1 ? `**${failedNames[0]}**` : `${failedNames.length} files`}. Please check your connection and try again.`,
-          timestamp: Date.now(),
-        });
-        return;
-      } else if (failedNames.length > 0) {
-        // Some failed — warn but continue with the ones that succeeded
-        addMessage({
-          id: crypto.randomUUID(), role: "assistant",
-          content: `⚠️ Could not upload: ${failedNames.map(n => `**${n}**`).join(", ")}. Continuing with the successfully uploaded files.`,
-          timestamp: Date.now(),
-        });
-      }
-    }
+    const uploadedAttachments = readyAttachments;
+    setPendingUploads([]);
 
     const userMsg: Message = {
       id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now(),
@@ -491,7 +522,7 @@ export default function ZoeChat() {
         addMessage({ id: crypto.randomUUID(), role: "assistant", content: "Something went wrong — please try again.", timestamp: Date.now() });
       }
     } finally { setLoading(false); setStreaming(""); }
-  }, [input, attachedFiles, loading, currentSession, session, user?.id]);
+  }, [input, pendingUploads, loading, currentSession, session, user?.id]);
 
   // ── Session management ────────────────────────────────────────────────────
 
@@ -541,7 +572,7 @@ export default function ZoeChat() {
         accept="*/*"
         style={{ position: "fixed", top: "0", left: "0", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }}
         onChange={e => {
-          setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+          Array.from(e.target.files || []).forEach(f => startFileUploadRef.current(f));
           e.target.value = "";
         }}
       />
@@ -681,15 +712,45 @@ export default function ZoeChat() {
 
                 {/* Large input card — inlined to avoid unmount/remount on every keystroke */}
                 <div className="w-full max-w-[360px]">
-                  {attachedFiles.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      {attachedFiles.map((f, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
-                          <Paperclip size={9} />
-                          {f.name.length > 22 ? f.name.slice(0, 20) + "…" : f.name}
-                          <button type="button" onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:opacity-70"><X size={9} /></button>
-                        </span>
-                      ))}
+                  {pendingUploads.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {pendingUploads.map(p => {
+                        const label = fileTypeLabel(p.name);
+                        const r = 10, circ = 2 * Math.PI * r;
+                        return (
+                          <div key={p.id} className="relative flex items-center gap-2 px-2.5 py-2 bg-white border border-black/10 rounded-xl shadow-sm max-w-[190px]">
+                            <span className="flex-shrink-0 w-9 h-9 rounded-lg bg-terracotta/10 flex items-center justify-center text-[9px] font-extrabold text-terracotta tracking-wide">
+                              {label}
+                            </span>
+                            <span className="text-[11px] text-foreground/70 font-medium truncate flex-1 min-w-0">
+                              {p.name.length > 18 ? p.name.slice(0, 16) + "…" : p.name}
+                            </span>
+                            {p.status === "uploading" && (
+                              <svg width="22" height="22" viewBox="0 0 24 24" className="flex-shrink-0 text-terracotta">
+                                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.5"/>
+                                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5"
+                                  strokeDasharray={circ} strokeDashoffset={circ - (p.progress / 100) * circ}
+                                  strokeLinecap="round" transform="rotate(-90 12 12)"
+                                  style={{ transition: "stroke-dashoffset 0.15s ease" }}/>
+                              </svg>
+                            )}
+                            {p.status === "done" && (
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="flex-shrink-0 text-green-500">
+                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                                <path d="M8 12l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                            {p.status === "error" && (
+                              <span className="text-[9px] text-red-500 font-semibold flex-shrink-0">Failed</span>
+                            )}
+                            <button type="button"
+                              onClick={() => setPendingUploads(prev => prev.filter(x => x.id !== p.id))}
+                              className="flex-shrink-0 text-foreground/30 hover:text-foreground/60 ml-0.5 leading-none">
+                              <X size={11}/>
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   <div className="bg-white border border-black/12 focus-within:border-terracotta/50 transition-colors overflow-hidden rounded-2xl shadow-lg shadow-black/5">
@@ -707,14 +768,14 @@ export default function ZoeChat() {
                     <div className="flex items-center justify-between px-3 pb-3 pt-1">
                       <button
                         type="button"
-                        disabled={loading || uploadingFiles}
+                        disabled={loading}
                         onClick={() => fileInputRef.current?.click()}
-                        className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", loading || uploadingFiles ? "text-foreground/25 cursor-not-allowed" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65 cursor-pointer")}
+                        className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", loading ? "text-foreground/25 cursor-not-allowed" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65 cursor-pointer")}
                       >
-                        {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
+                        <Paperclip size={15} />
                       </button>
-                      <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && attachedFiles.length === 0) || loading}
-                        className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || attachedFiles.length > 0) && !loading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
+                      <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
+                        className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                       </button>
                     </div>
@@ -804,15 +865,45 @@ export default function ZoeChat() {
 
                 {/* ── Bottom input bar (active chat) — inlined to avoid unmount/remount ── */}
                 <div className="flex-shrink-0 border-t border-black/8 px-4 py-3 bg-[#F5F0EB]" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-                  {attachedFiles.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {attachedFiles.map((f, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
-                          <Paperclip size={9} />
-                          {f.name.length > 22 ? f.name.slice(0, 20) + "…" : f.name}
-                          <button type="button" onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:opacity-70"><X size={9} /></button>
-                        </span>
-                      ))}
+                  {pendingUploads.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {pendingUploads.map(p => {
+                        const label = fileTypeLabel(p.name);
+                        const r = 10, circ = 2 * Math.PI * r;
+                        return (
+                          <div key={p.id} className="relative flex items-center gap-2 px-2.5 py-2 bg-white border border-black/10 rounded-xl shadow-sm max-w-[190px]">
+                            <span className="flex-shrink-0 w-9 h-9 rounded-lg bg-terracotta/10 flex items-center justify-center text-[9px] font-extrabold text-terracotta tracking-wide">
+                              {label}
+                            </span>
+                            <span className="text-[11px] text-foreground/70 font-medium truncate flex-1 min-w-0">
+                              {p.name.length > 18 ? p.name.slice(0, 16) + "…" : p.name}
+                            </span>
+                            {p.status === "uploading" && (
+                              <svg width="22" height="22" viewBox="0 0 24 24" className="flex-shrink-0 text-terracotta">
+                                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.5"/>
+                                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5"
+                                  strokeDasharray={circ} strokeDashoffset={circ - (p.progress / 100) * circ}
+                                  strokeLinecap="round" transform="rotate(-90 12 12)"
+                                  style={{ transition: "stroke-dashoffset 0.15s ease" }}/>
+                              </svg>
+                            )}
+                            {p.status === "done" && (
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="flex-shrink-0 text-green-500">
+                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                                <path d="M8 12l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                            {p.status === "error" && (
+                              <span className="text-[9px] text-red-500 font-semibold flex-shrink-0">Failed</span>
+                            )}
+                            <button type="button"
+                              onClick={() => setPendingUploads(prev => prev.filter(x => x.id !== p.id))}
+                              className="flex-shrink-0 text-foreground/30 hover:text-foreground/60 ml-0.5 leading-none">
+                              <X size={11}/>
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   <div className="bg-white border border-black/12 focus-within:border-terracotta/50 transition-colors overflow-hidden rounded-2xl">
@@ -830,14 +921,14 @@ export default function ZoeChat() {
                     <div className="flex items-center justify-between px-3 pb-3 pt-1">
                       <button
                         type="button"
-                        disabled={loading || uploadingFiles}
+                        disabled={loading}
                         onClick={() => fileInputRef.current?.click()}
-                        className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", loading || uploadingFiles ? "text-foreground/25 cursor-not-allowed" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65 cursor-pointer")}
+                        className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", loading ? "text-foreground/25 cursor-not-allowed" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65 cursor-pointer")}
                       >
-                        {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
+                        <Paperclip size={15} />
                       </button>
-                      <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && attachedFiles.length === 0) || loading}
-                        className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || attachedFiles.length > 0) && !loading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
+                      <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
+                        className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                       </button>
                     </div>
