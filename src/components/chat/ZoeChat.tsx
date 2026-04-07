@@ -516,13 +516,13 @@ export default function ZoeChat() {
 
   return (
     <>
-      {/* Hidden file input — triggered imperatively; reliable on iOS Safari */}
+      {/* Hidden file input — off-screen (NOT display:none) so iOS Safari fires onChange */}
       <input
         ref={fileInputRef}
         type="file"
         multiple
         accept="*/*"
-        className="hidden"
+        style={{ position: "fixed", top: "-9999px", left: "-9999px", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }}
         onChange={e => {
           setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
           e.target.value = "";
