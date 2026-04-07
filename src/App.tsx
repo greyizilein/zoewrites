@@ -14,6 +14,7 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
 import ZoeChat from "./components/chat/ZoeChat";
 import ZoeChatPage from "./pages/ZoeChatPage";
+import WriterEngine from "./pages/WriterEngine";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,8 @@ const App = () => (
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><ZoeChatPage /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+            <Route path="/assessment/new" element={<ProtectedRoute><WriterEngine /></ProtectedRoute>} />
+            <Route path="/assessment/:id" element={<ProtectedRoute><WriterEngine /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
