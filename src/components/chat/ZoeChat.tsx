@@ -97,7 +97,7 @@ function fileTypeLabel(name: string): string {
   return (({ pdf:"PDF",docx:"DOCX",doc:"DOC",xlsx:"XLSX",xls:"XLS",
     pptx:"PPTX",ppt:"PPT",txt:"TXT",csv:"CSV",json:"JSON",md:"MD",
     png:"PNG",jpg:"JPG",jpeg:"JPG",gif:"GIF",webp:"WEBP" } as Record<string,string>)[ext]
-    ?? ext.toUpperCase() || "FILE");
+    ?? (ext.toUpperCase() || "FILE"));
 }
 
 // ─────────────────────────── Chart component ─────────────────────────────────
