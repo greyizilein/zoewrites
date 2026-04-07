@@ -87,8 +87,6 @@ export default function ZoeChat() {
     ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
   }, [input]);
 
-  if (!user) return null;
-
   function updateSession(id: string, updater: (s: ChatSession) => ChatSession) {
     setSessions(prev => prev.map(s => s.id === id ? updater(s) : s));
   }
@@ -180,6 +178,9 @@ export default function ZoeChat() {
 
   const messages = currentSession?.messages ?? [];
   const hasMessages = messages.length > 0 || !!streaming;
+
+  if (!user) return null;
+
   const initials = (profile?.full_name || user.email || "U").slice(0, 2).toUpperCase();
 
   return (
