@@ -225,6 +225,22 @@ export default function ZoeChat() {
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [input]);
 
+  // Native change listener — Android Chrome sometimes doesn't fire React's
+  // synthetic onChange on programmatically triggered file inputs; this catches it.
+  useEffect(() => {
+    const input = fileInputRef.current;
+    if (!input) return;
+    const handleNativeChange = (e: Event) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (files && files.length > 0) {
+        setAttachedFiles(prev => [...prev, ...Array.from(files)]);
+        (e.target as HTMLInputElement).value = "";
+      }
+    };
+    input.addEventListener("change", handleNativeChange);
+    return () => input.removeEventListener("change", handleNativeChange);
+  }, []); // fileInputRef.current and setAttachedFiles are both stable
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   function updateSession(id: string, updater: (s: ChatSession) => ChatSession) {
@@ -516,13 +532,14 @@ export default function ZoeChat() {
 
   return (
     <>
-      {/* Hidden file input — off-screen (NOT display:none) so iOS Safari fires onChange */}
+      {/* Hidden file input — 1×1px at top-left corner (NOT off-viewport, NOT display:none)
+          so both iOS Safari and Android Chrome open the native file picker on .click() */}
       <input
         ref={fileInputRef}
         type="file"
         multiple
         accept="*/*"
-        style={{ position: "fixed", top: "-9999px", left: "-9999px", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }}
+        style={{ position: "fixed", top: "0", left: "0", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }}
         onChange={e => {
           setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
           e.target.value = "";
