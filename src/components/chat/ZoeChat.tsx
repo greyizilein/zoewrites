@@ -268,9 +268,17 @@ export default function ZoeChat() {
 
       case "process_payment": {
         const tier = (args.tier as string) || "";
-        const priceGBP = TIER_PRICES_GBP[tier];
-        if (!priceGBP || !user?.email) break;
-        const amountNGN = Math.round(priceGBP * GBP_TO_NGN);
+        if (!user?.email) break;
+        let amountNGN: number;
+        if (tier === "custom") {
+          const customWords = Math.round((args.custom_words as number) || 0);
+          if (!customWords) break;
+          amountNGN = customWords * 23; // ₦23/word
+        } else {
+          const priceGBP = TIER_PRICES_GBP[tier];
+          if (!priceGBP) break;
+          amountNGN = Math.round(priceGBP * GBP_TO_NGN);
+        }
         await loadPaystackScript();
         openPaystackPopup({
           email: user.email,
@@ -282,9 +290,12 @@ export default function ZoeChat() {
             await supabase.functions.invoke("paystack-verify", {
               body: { reference, tier, custom_words: args.custom_words ?? 0 },
             });
+            const customWords = args.custom_words as number | undefined;
             addMessage({
               id: crypto.randomUUID(), role: "assistant",
-              content: `Payment verified! Your plan has been upgraded to **${tier}**. Refresh the page to see your new allowance.`,
+              content: tier === "custom" && customWords
+                ? `Payment verified! Your custom word pack of **${customWords.toLocaleString()} words** has been added. Refresh to see your updated allowance.`
+                : `Payment verified! Your plan has been upgraded to **${tier}**. Refresh the page to see your new allowance.`,
               timestamp: Date.now(),
             });
           },
@@ -394,6 +405,7 @@ export default function ZoeChat() {
     let uploadedAttachments: Attachment[] = [];
     if (attachedFiles.length > 0 && user?.id) {
       setUploadingFiles(true);
+      const failedNames: string[] = [];
       for (const file of attachedFiles) {
         try {
           const path = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
@@ -401,9 +413,30 @@ export default function ZoeChat() {
           if (upErr) throw upErr;
           const { data: signed } = await supabase.storage.from("chat-uploads").createSignedUrl(path, 3600);
           if (signed?.signedUrl) uploadedAttachments.push({ name: file.name, url: signed.signedUrl, type: file.type });
-        } catch (err: any) { console.error("[ZoeChat upload]", file.name, err?.message ?? err); }
+          else throw new Error("No signed URL returned");
+        } catch (err: any) {
+          console.error("[ZoeChat upload]", file.name, err?.message ?? err);
+          failedNames.push(file.name);
+        }
       }
       setAttachedFiles([]); setUploadingFiles(false);
+      if (failedNames.length > 0 && uploadedAttachments.length === 0) {
+        // All files failed — show error and abort
+        setLoading(false);
+        addMessage({
+          id: crypto.randomUUID(), role: "assistant",
+          content: `⚠️ Could not upload ${failedNames.length === 1 ? `**${failedNames[0]}**` : `${failedNames.length} files`}. Please check your connection and try again.`,
+          timestamp: Date.now(),
+        });
+        return;
+      } else if (failedNames.length > 0) {
+        // Some failed — warn but continue with the ones that succeeded
+        addMessage({
+          id: crypto.randomUUID(), role: "assistant",
+          content: `⚠️ Could not upload: ${failedNames.map(n => `**${n}**`).join(", ")}. Continuing with the successfully uploaded files.`,
+          timestamp: Date.now(),
+        });
+      }
     }
 
     const userMsg: Message = {
@@ -641,7 +674,7 @@ export default function ZoeChat() {
                       style={{ fontSize: "18px", minHeight: "96px", maxHeight: "220px", padding: "18px 18px 10px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
                     />
                     <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                      <label className={cn("relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors overflow-hidden cursor-pointer", loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65")}>
+                      <label className={cn("relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer", loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65")}>
                         <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles} onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
                         {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
                       </label>
@@ -760,7 +793,7 @@ export default function ZoeChat() {
                       style={{ fontSize: "18px", minHeight: "52px", maxHeight: "160px", padding: "14px 16px 10px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
                     />
                     <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                      <label className={cn("relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors overflow-hidden cursor-pointer", loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65")}>
+                      <label className={cn("relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer", loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65")}>
                         <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles} onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
                         {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
                       </label>
