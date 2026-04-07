@@ -1,15 +1,52 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from "recharts";
 import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { readContentAndToolStream } from "@/lib/sseStream";
+import { loadPaystackScript, openPaystackPopup } from "@/lib/paystack";
+
+// ─────────────────────────── Types ───────────────────────────────────────────
 
 interface Attachment { name: string; url: string; type: string; }
-interface Message { id: string; role: "user" | "assistant"; content: string; timestamp: number; attachments?: Attachment[]; }
-interface ChatSession { id: string; title: string; messages: Message[]; createdAt: number; updatedAt: number; }
+
+interface ChartData {
+  type: "bar" | "line" | "pie" | "area";
+  title?: string;
+  data: { label: string; value: number }[];
+  x_label?: string;
+  y_label?: string;
+}
+
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+  attachments?: Attachment[];
+  chart?: ChartData;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─────────────────────────── Constants ───────────────────────────────────────
+
+const PAYSTACK_PUBLIC_KEY = "pk_live_e1d5c33f8f38484c592eaad87382adab502a8c1e";
+const GBP_TO_NGN = 2083;
+const TIER_PRICES_GBP: Record<string, number> = { hello: 15, regular: 45, professional: 110 };
+const CHART_COLORS = ["#c87a55", "#5c8671", "#7e68a8", "#436fa3", "#c49a30", "#c8556f"];
 
 const QUICK_ACTIONS = [
   { icon: "✍️", label: "Write", prompt: "I need help writing an academic assignment." },
@@ -20,6 +57,8 @@ const QUICK_ACTIONS = [
 ];
 
 const SK = (uid: string) => `zoe_sessions_${uid}`;
+
+// ─────────────────────────── Storage helpers ─────────────────────────────────
 
 function loadSessions(uid: string): ChatSession[] {
   try { return JSON.parse(localStorage.getItem(SK(uid)) || "[]"); }
@@ -34,6 +73,88 @@ function saveSessions(uid: string, sessions: ChatSession[]) {
 function mkSession(): ChatSession {
   return { id: crypto.randomUUID(), title: "New Chat", messages: [], createdAt: Date.now(), updatedAt: Date.now() };
 }
+
+function getAssessmentIdFromUrl(): string | null {
+  const m = window.location.pathname.match(/\/assessment\/([^/]+)/);
+  return m ? m[1] : null;
+}
+
+// ─────────────────────────── Chart component ─────────────────────────────────
+
+function InlineChart({ chart }: { chart: ChartData }) {
+  const rechartData = chart.data.map(d => ({ name: d.label, value: d.value }));
+  const h = 180;
+
+  if (chart.type === "pie") {
+    return (
+      <div className="w-full mt-3 rounded-xl overflow-hidden bg-white/60 border border-black/8 p-3">
+        {chart.title && <p className="text-[12px] font-semibold text-foreground/65 mb-2">{chart.title}</p>}
+        <ResponsiveContainer width="100%" height={h}>
+          <PieChart>
+            <Pie data={rechartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={68} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+              {rechartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+            </Pie>
+            <Tooltip formatter={(v: number) => v.toLocaleString()} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (chart.type === "line") {
+    return (
+      <div className="w-full mt-3 rounded-xl overflow-hidden bg-white/60 border border-black/8 p-3">
+        {chart.title && <p className="text-[12px] font-semibold text-foreground/65 mb-2">{chart.title}</p>}
+        <ResponsiveContainer width="100%" height={h}>
+          <LineChart data={rechartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(v: number) => v.toLocaleString()} />
+            <Line type="monotone" dataKey="value" stroke={CHART_COLORS[0]} strokeWidth={2} dot={{ r: 3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+        {chart.x_label && <p className="text-[10px] text-foreground/40 text-center mt-1">{chart.x_label}</p>}
+      </div>
+    );
+  }
+
+  if (chart.type === "area") {
+    return (
+      <div className="w-full mt-3 rounded-xl overflow-hidden bg-white/60 border border-black/8 p-3">
+        {chart.title && <p className="text-[12px] font-semibold text-foreground/65 mb-2">{chart.title}</p>}
+        <ResponsiveContainer width="100%" height={h}>
+          <AreaChart data={rechartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(v: number) => v.toLocaleString()} />
+            <Area type="monotone" dataKey="value" stroke={CHART_COLORS[0]} fill={`${CHART_COLORS[0]}30`} strokeWidth={2} />
+          </AreaChart>
+        </ResponsiveContainer>
+        {chart.x_label && <p className="text-[10px] text-foreground/40 text-center mt-1">{chart.x_label}</p>}
+      </div>
+    );
+  }
+
+  // Default: bar
+  return (
+    <div className="w-full mt-3 rounded-xl overflow-hidden bg-white/60 border border-black/8 p-3">
+      {chart.title && <p className="text-[12px] font-semibold text-foreground/65 mb-2">{chart.title}</p>}
+      <ResponsiveContainer width="100%" height={h}>
+        <BarChart data={rechartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+          <YAxis tick={{ fontSize: 10 }} />
+          <Tooltip formatter={(v: number) => v.toLocaleString()} />
+          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+            {rechartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      {chart.x_label && <p className="text-[10px] text-foreground/40 text-center mt-1">{chart.x_label}</p>}
+    </div>
+  );
+}
+
+// ─────────────────────────── Main component ──────────────────────────────────
 
 export default function ZoeChat() {
   const { user, session, signOut } = useAuth();
@@ -84,8 +205,10 @@ export default function ZoeChat() {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [input]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
   function updateSession(id: string, updater: (s: ChatSession) => ChatSession) {
     setSessions(prev => prev.map(s => s.id === id ? updater(s) : s));
@@ -105,14 +228,147 @@ export default function ZoeChat() {
     }));
   }
 
+  // ── Tool handlers ─────────────────────────────────────────────────────────
+
   async function handleToolCall(name: string, args: Record<string, any>) {
     switch (name) {
-      case "navigate_to": if (args.route) { navigate(args.route); setOpen(false); } break;
-      case "create_assessment": navigate("/assessment/new"); setOpen(false); break;
-      case "open_assessment": if (args.assessment_id) { navigate(`/assessment/${args.assessment_id}`); setOpen(false); } break;
-      case "sign_out": await signOut(); navigate("/"); break;
+
+      case "navigate_to":
+        if (args.route) { navigate(args.route); setOpen(false); }
+        break;
+
+      case "create_assessment":
+      case "create_full_assessment":
+        navigate("/assessment/new"); setOpen(false);
+        break;
+
+      case "open_assessment":
+        if (args.assessment_id) { navigate(`/assessment/${args.assessment_id}`); setOpen(false); }
+        break;
+
+      case "sign_out":
+        await signOut(); navigate("/");
+        break;
+
+      case "process_payment": {
+        const tier = (args.tier as string) || "";
+        const priceGBP = TIER_PRICES_GBP[tier];
+        if (!priceGBP || !user?.email) break;
+        const amountNGN = Math.round(priceGBP * GBP_TO_NGN);
+        await loadPaystackScript();
+        openPaystackPopup({
+          email: user.email,
+          amountInKobo: amountNGN * 100,
+          tier,
+          customWords: args.custom_words,
+          publicKey: PAYSTACK_PUBLIC_KEY,
+          onSuccess: async (reference) => {
+            await supabase.functions.invoke("paystack-verify", {
+              body: { reference, tier, custom_words: args.custom_words ?? 0 },
+            });
+            addMessage({
+              id: crypto.randomUUID(), role: "assistant",
+              content: `Payment verified! Your plan has been upgraded to **${tier}**. Refresh the page to see your new allowance.`,
+              timestamp: Date.now(),
+            });
+          },
+          onClose: () => {},
+        });
+        break;
+      }
+
+      case "export_content": {
+        if (!args.content) break;
+        const blob = new Blob([args.content as string], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = (args.filename as string) || "zoe-export.txt";
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        break;
+      }
+
+      case "delete_assessment": {
+        if (!args.confirmed) break;
+        const aId = (args.assessment_id as string) || getAssessmentIdFromUrl();
+        if (!aId) break;
+        const { error } = await supabase.from("assessments").delete().eq("id", aId);
+        if (!error) {
+          if (window.location.pathname.includes(aId)) navigate("/dashboard");
+        }
+        break;
+      }
+
+      case "update_assessment_title": {
+        const aId = getAssessmentIdFromUrl();
+        if (!aId || !args.new_title) break;
+        await supabase.from("assessments").update({ title: args.new_title }).eq("id", aId);
+        break;
+      }
+
+      case "adjust_word_target": {
+        if (!args.section_id || !args.new_target) break;
+        await supabase.from("sections").update({ word_target: args.new_target }).eq("id", args.section_id);
+        break;
+      }
+
+      case "update_assessment_settings": {
+        const aId = getAssessmentIdFromUrl();
+        if (!aId) break;
+        const { data } = await supabase.from("assessments").select("settings").eq("id", aId).single();
+        const current = (data?.settings as Record<string, any>) || {};
+        const updated = { ...current };
+        if (args.citation_style) updated.citationStyle = args.citation_style;
+        if (args.level) updated.level = args.level;
+        if (args.model) updated.model = args.model;
+        await supabase.from("assessments").update({ settings: updated }).eq("id", aId);
+        break;
+      }
+
+      case "render_chart": {
+        if (!args.data?.length) break;
+        addMessage({
+          id: crypto.randomUUID(), role: "assistant", content: "", timestamp: Date.now(),
+          chart: {
+            type: args.type || "bar",
+            title: args.title,
+            data: args.data,
+            x_label: args.x_label,
+            y_label: args.y_label,
+          },
+        });
+        break;
+      }
+
+      case "coherence_check": {
+        const aId = getAssessmentIdFromUrl();
+        if (!aId) break;
+        const { data } = await supabase.functions.invoke("coherence-pass", { body: { assessment_id: aId } });
+        if (data?.result) {
+          addMessage({ id: crypto.randomUUID(), role: "assistant", content: data.result, timestamp: Date.now() });
+        }
+        break;
+      }
+
+      case "predict_grade": {
+        const aId = getAssessmentIdFromUrl();
+        if (!aId) break;
+        const { data } = await supabase.functions.invoke("predict-grade", {
+          body: { assessment_id: aId, focus_areas: args.focus_areas },
+        });
+        if (data?.result) {
+          addMessage({ id: crypto.randomUUID(), role: "assistant", content: data.result, timestamp: Date.now() });
+        }
+        break;
+      }
+
+      case "confirm_execution_plan":
+        // Acknowledged inline by ZOE's text response; no additional action needed
+        break;
     }
   }
+
+  // ── Send message ──────────────────────────────────────────────────────────
 
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
@@ -134,7 +390,10 @@ export default function ZoeChat() {
       setAttachedFiles([]); setUploadingFiles(false);
     }
 
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now(), attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined };
+    const userMsg: Message = {
+      id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now(),
+      attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+    };
     addMessage(userMsg);
 
     const history = [...(currentSession?.messages ?? []), userMsg].map(m => ({ role: m.role, content: m.content }));
@@ -143,7 +402,10 @@ export default function ZoeChat() {
       abortRef.current = new AbortController();
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zoe-chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ messages: history, attachments: uploadedAttachments }),
         signal: abortRef.current.signal,
       });
@@ -151,15 +413,21 @@ export default function ZoeChat() {
       let fullContent = "";
       const { content, toolCalls } = await readContentAndToolStream(resp.body, chunk => { setStreaming(chunk); fullContent = chunk; });
       setStreaming("");
-      addMessage({ id: crypto.randomUUID(), role: "assistant", content: content || fullContent, timestamp: Date.now() });
+      if (content || fullContent) {
+        addMessage({ id: crypto.randomUUID(), role: "assistant", content: content || fullContent, timestamp: Date.now() });
+      }
       for (const tc of toolCalls) {
         try { await handleToolCall(tc.name, JSON.parse(tc.arguments || "{}")); }
         catch (e) { console.warn("[ZoeChat tool]", tc.name, e); }
       }
     } catch (e: any) {
-      if (e?.name !== "AbortError") addMessage({ id: crypto.randomUUID(), role: "assistant", content: "Something went wrong — please try again.", timestamp: Date.now() });
+      if (e?.name !== "AbortError") {
+        addMessage({ id: crypto.randomUUID(), role: "assistant", content: "Something went wrong — please try again.", timestamp: Date.now() });
+      }
     } finally { setLoading(false); setStreaming(""); }
   }, [input, attachedFiles, loading, currentSession, session, user?.id]);
+
+  // ── Session management ────────────────────────────────────────────────────
 
   function handleNewChat() {
     const s = mkSession();
@@ -182,6 +450,79 @@ export default function ZoeChat() {
   if (!user) return null;
 
   const initials = (profile?.full_name || user.email || "U").slice(0, 2).toUpperCase();
+
+  // ── Shared input area ─────────────────────────────────────────────────────
+
+  const InputArea = ({ compact = false }: { compact?: boolean }) => (
+    <div className={cn(!compact && "w-full max-w-[360px] mx-auto")}>
+      {attachedFiles.length > 0 && (
+        <div className={cn("flex flex-wrap gap-1.5", compact ? "mb-2" : "mb-3")}>
+          {attachedFiles.map((f, i) => (
+            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
+              <Paperclip size={9} />
+              {f.name.length > 22 ? f.name.slice(0, 20) + "…" : f.name}
+              <button type="button" onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:opacity-70">
+                <X size={9} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className={cn(
+        "bg-white border border-black/12 focus-within:border-terracotta/50 transition-colors overflow-hidden",
+        compact ? "rounded-2xl" : "rounded-2xl shadow-lg shadow-black/5",
+      )}>
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          placeholder={compact ? "Message ZOE…" : "What are we writing today?"}
+          rows={1}
+          autoCapitalize="sentences" autoCorrect="on" enterKeyHint="send" spellCheck
+          className="w-full bg-transparent outline-none resize-none text-foreground placeholder:text-foreground/35 leading-relaxed"
+          style={{
+            fontSize: "18px",
+            minHeight: compact ? "52px" : "96px",
+            maxHeight: compact ? "160px" : "220px",
+            padding: compact ? "14px 16px 10px" : "18px 18px 10px",
+            overflowY: "auto",
+            scrollbarWidth: "none",
+            WebkitUserSelect: "text",
+            touchAction: "manipulation",
+          }}
+        />
+        <div className="flex items-center justify-between px-3 pb-3 pt-1">
+          <label className={cn(
+            "relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors overflow-hidden cursor-pointer",
+            loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65",
+          )}>
+            <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles}
+              onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }}
+              style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+            {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
+          </label>
+
+          <button
+            type="button"
+            onClick={() => handleSend()}
+            disabled={(!input.trim() && attachedFiles.length === 0) || loading}
+            className={cn(
+              "w-9 h-9 rounded-xl flex items-center justify-center transition-all",
+              (input.trim() || attachedFiles.length > 0) && !loading
+                ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm"
+                : "bg-black/8 text-foreground/25 cursor-not-allowed",
+            )}
+          >
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -220,7 +561,7 @@ export default function ZoeChat() {
               onClick={() => setSidebarOpen(v => !v)}
               className={cn(
                 "flex w-8 h-8 rounded-lg items-center justify-center transition-colors",
-                sidebarOpen ? "bg-terracotta/15 text-terracotta" : "text-foreground/50 hover:bg-black/8"
+                sidebarOpen ? "bg-terracotta/15 text-terracotta" : "text-foreground/50 hover:bg-black/8",
               )}
               title="Chat history"
               aria-label="Toggle chat history"
@@ -252,13 +593,9 @@ export default function ZoeChat() {
         {/* Body */}
         <div className="flex flex-1 overflow-hidden relative">
 
-          {/* Sidebar backdrop — mobile only, tap to close */}
+          {/* Sidebar backdrop (mobile only) */}
           {sidebarOpen && (
-            <div
-              className="absolute inset-0 z-10 bg-black/40 md:hidden"
-              onClick={() => setSidebarOpen(false)}
-              aria-hidden="true"
-            />
+            <div className="absolute inset-0 z-10 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
           )}
 
           {/* Sidebar */}
@@ -303,44 +640,72 @@ export default function ZoeChat() {
             </div>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 min-w-0" style={{ scrollbarWidth: "thin" }}>
+          {/* Main content */}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
             {!hasMessages ? (
-              <div className="flex flex-col items-center justify-center h-full text-center px-4 pb-8">
-                <div className="w-12 h-12 rounded-full bg-terracotta flex items-center justify-center mb-4 shadow-md">
-                  <span className="text-white text-[9px] font-extrabold tracking-widest">ZOE</span>
+              /* ── Empty state: centered large input ── */
+              <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-5 py-10 gap-6">
+                <div className="text-center space-y-1.5">
+                  <div className="w-11 h-11 rounded-full bg-terracotta mx-auto mb-3 flex items-center justify-center shadow-md">
+                    <span className="text-white text-[8px] font-extrabold tracking-widest">ZOE</span>
+                  </div>
+                  <p className="text-[22px] font-semibold text-foreground tracking-tight">Hi, I&apos;m ZOE.</p>
+                  <p className="text-[14px] text-foreground/50 italic">Your academic writing assistant.</p>
                 </div>
-                <p className="text-[18px] font-semibold text-foreground mb-1">Hi, I&#39;m ZOE.</p>
-                <p className="text-[14px] text-foreground/55 mb-6 italic">What are we writing today?</p>
+
+                <InputArea compact={false} />
+
                 <div className="flex flex-wrap gap-2 justify-center">
                   {QUICK_ACTIONS.map(a => (
                     <button key={a.label} onClick={() => handleSend(a.prompt)} disabled={loading}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-white rounded-full text-[12px] font-medium text-foreground/75 border border-black/10 hover:border-terracotta/40 hover:bg-terracotta/5 active:scale-95 transition-all shadow-sm">
+                      className="flex items-center gap-1.5 px-3 py-2 bg-white rounded-full text-[12px] font-medium text-foreground/70 border border-black/10 hover:border-terracotta/40 hover:bg-terracotta/5 active:scale-95 transition-all shadow-sm">
                       <span>{a.icon}</span><span>{a.label}</span>
                     </button>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="space-y-5 pb-2">
-                {messages.map(msg => (
-                  <div key={msg.id} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
-                    {msg.role === "user" ? (
-                      /* User bubble */
-                      <div className="max-w-[82%] px-4 py-2.5 bg-terracotta text-white rounded-2xl rounded-br-sm text-[14px] leading-relaxed">
-                        {msg.content}
-                        {msg.attachments && msg.attachments.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/20">
-                            {msg.attachments.map((a, i) => (
-                              <span key={i} className="flex items-center gap-1 text-[10px] text-white/80">
-                                <Paperclip size={9} />{a.name}
-                              </span>
-                            ))}
+              <>
+                {/* ── Messages ── */}
+                <div className="flex-1 overflow-y-auto px-4 py-4 min-w-0" style={{ scrollbarWidth: "thin" }}>
+                  <div className="space-y-5 pb-2">
+                    {messages.map(msg => (
+                      <div key={msg.id} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+                        {msg.role === "user" ? (
+                          <div className="max-w-[82%] px-4 py-2.5 bg-terracotta text-white rounded-2xl rounded-br-sm text-[15px] leading-relaxed">
+                            {msg.content}
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/20">
+                                {msg.attachments.map((a, i) => (
+                                  <span key={i} className="flex items-center gap-1 text-[10px] text-white/80">
+                                    <Paperclip size={9} />{a.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="w-full min-w-0">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
+                                <span className="text-white text-[6px] font-extrabold tracking-widest">ZOE</span>
+                              </div>
+                              <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
+                            </div>
+                            {msg.content && (
+                              <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed">
+                                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                              </div>
+                            )}
+                            {msg.chart && <InlineChart chart={msg.chart} />}
                           </div>
                         )}
                       </div>
-                    ) : (
-                      /* ZOE response — on the page surface, no bubble */
+                    ))}
+
+                    {/* Streaming */}
+                    {streaming && (
                       <div className="w-full min-w-0">
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
@@ -348,102 +713,39 @@ export default function ZoeChat() {
                           </div>
                           <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
                         </div>
-                        <div className="prose prose-sm prose-stone max-w-none text-[14px] leading-relaxed">
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed">
+                          <ReactMarkdown>{streaming}</ReactMarkdown>
                         </div>
                       </div>
                     )}
-                  </div>
-                ))}
 
-                {/* Streaming */}
-                {streaming && (
-                  <div className="w-full min-w-0">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
-                        <span className="text-white text-[6px] font-extrabold tracking-widest">ZOE</span>
+                    {/* Typing dots */}
+                    {loading && !streaming && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-[6px] font-extrabold tracking-widest">ZOE</span>
+                        </div>
+                        <div className="flex gap-1 py-1">
+                          {[0, 1, 2].map(i => (
+                            <span key={i} className="w-1.5 h-1.5 rounded-full bg-foreground/25 animate-bounce"
+                              style={{ animationDelay: `${i * 0.18}s` }} />
+                          ))}
+                        </div>
                       </div>
-                      <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
-                    </div>
-                    <div className="prose prose-sm prose-stone max-w-none text-[14px] leading-relaxed">
-                      <ReactMarkdown>{streaming}</ReactMarkdown>
-                    </div>
+                    )}
+                    <div ref={messagesEndRef} />
                   </div>
-                )}
+                </div>
 
-                {/* Typing dots */}
-                {loading && !streaming && (
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
-                      <span className="text-white text-[6px] font-extrabold tracking-widest">ZOE</span>
-                    </div>
-                    <div className="flex gap-1 py-1">
-                      {[0, 1, 2].map(i => (
-                        <span key={i} className="w-1.5 h-1.5 rounded-full bg-foreground/25 animate-bounce"
-                          style={{ animationDelay: `${i * 0.18}s` }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
+                {/* ── Bottom input bar (active chat) ── */}
+                <div
+                  className="flex-shrink-0 border-t border-black/8 px-4 py-3 bg-[#F5F0EB]"
+                  style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+                >
+                  <InputArea compact={true} />
+                </div>
+              </>
             )}
-          </div>
-        </div>
-
-        {/* Input bar */}
-        <div className="flex-shrink-0 border-t border-black/8 px-3 py-3 bg-[#F5F0EB]"
-          style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-
-          {attachedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {attachedFiles.map((f, i) => (
-                <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-terracotta/10 text-terracotta text-[11px] font-medium rounded-full">
-                  <Paperclip size={9} />
-                  {f.name.length > 22 ? f.name.slice(0, 20) + "…" : f.name}
-                  <button type="button" onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 hover:opacity-70">
-                    <X size={9} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-end gap-2">
-            {/* File attach */}
-            <label className={cn(
-              "relative w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors overflow-hidden",
-              loading || uploadingFiles ? "bg-black/5 text-foreground/25 pointer-events-none" : "bg-black/8 text-foreground/55 hover:bg-black/12 hover:text-foreground cursor-pointer",
-            )}>
-              <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles}
-                onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }}
-                style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
-              {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Plus size={15} />}
-            </label>
-
-            {/* Textarea */}
-            <div className="flex-1 flex items-end bg-white rounded-2xl border border-black/12 focus-within:border-terracotta/50 transition-colors px-3 py-2.5 min-h-[44px]">
-              <textarea ref={textareaRef} value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder="Message ZOE…" rows={1}
-                autoCapitalize="sentences" autoCorrect="on" enterKeyHint="send" spellCheck
-                className="flex-1 bg-transparent outline-none resize-none text-foreground placeholder:text-foreground/38 leading-5 max-h-[120px] w-full"
-                style={{ fontSize: "16px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
-              />
-            </div>
-
-            {/* Send */}
-            <button type="button" onClick={() => handleSend()}
-              disabled={(!input.trim() && attachedFiles.length === 0) || loading}
-              className={cn(
-                "w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all",
-                (input.trim() || attachedFiles.length > 0) && !loading
-                  ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm"
-                  : "bg-black/8 text-foreground/25 cursor-not-allowed",
-              )}>
-              {loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            </button>
           </div>
         </div>
       </div>
