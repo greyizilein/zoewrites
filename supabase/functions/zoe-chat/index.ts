@@ -635,14 +635,16 @@ serve(async (req) => {
               if (docFile) xmlContent = await docFile.async("string");
             } else if (isXlsx) {
               // Extract all sheet XML files
-              const sheetFiles = Object.keys(zip.files).filter(f => f.match(/xl\/worksheets\/sheet\d+\.xml/));
+              const filesMap = zip.files as Record<string, any>;
+              const sheetFiles = Object.keys(filesMap).filter(f => f.match(/xl\/worksheets\/sheet\d+\.xml/));
               for (const sf of sheetFiles.slice(0, 3)) {
-                xmlContent += await zip.files[sf].async("string") + "\n";
+                xmlContent += await filesMap[sf].async("string") + "\n";
               }
             } else if (isPptx) {
-              const slideFiles = Object.keys(zip.files).filter(f => f.match(/ppt\/slides\/slide\d+\.xml/));
+              const filesMap2 = zip.files as Record<string, any>;
+              const slideFiles = Object.keys(filesMap2).filter(f => f.match(/ppt\/slides\/slide\d+\.xml/));
               for (const sf of slideFiles.slice(0, 20)) {
-                xmlContent += await zip.files[sf].async("string") + "\n";
+                xmlContent += await filesMap2[sf].async("string") + "\n";
               }
             }
 
