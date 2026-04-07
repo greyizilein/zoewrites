@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -159,6 +159,7 @@ function InlineChart({ chart }: { chart: ChartData }) {
 export default function ZoeChat() {
   const { user, session, signOut } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
@@ -447,7 +448,10 @@ export default function ZoeChat() {
   const messages = currentSession?.messages ?? [];
   const hasMessages = messages.length > 0 || !!streaming;
 
+  // Only render on assessment/workspace pages, and only for subscribed users
   if (!user) return null;
+  if (!pathname.startsWith("/assessment")) return null;
+  if (!profile || profile.tier === "free") return null;
 
   const initials = (profile?.full_name || user.email || "U").slice(0, 2).toUpperCase();
 
