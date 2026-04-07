@@ -180,6 +180,7 @@ export default function ZoeChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentSession = useMemo(() => sessions.find(s => s.id === currentId) ?? null, [sessions, currentId]);
 
@@ -515,6 +516,19 @@ export default function ZoeChat() {
 
   return (
     <>
+      {/* Hidden file input — triggered imperatively; reliable on iOS Safari */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="*/*"
+        className="hidden"
+        onChange={e => {
+          setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+          e.target.value = "";
+        }}
+      />
+
       {/* Launcher */}
       {(!open || minimized) && (
         <motion.button
@@ -674,10 +688,14 @@ export default function ZoeChat() {
                       style={{ fontSize: "18px", minHeight: "96px", maxHeight: "220px", padding: "18px 18px 10px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
                     />
                     <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                      <label className={cn("relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer", loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65")}>
-                        <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles} onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+                      <button
+                        type="button"
+                        disabled={loading || uploadingFiles}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", loading || uploadingFiles ? "text-foreground/25 cursor-not-allowed" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65 cursor-pointer")}
+                      >
                         {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
-                      </label>
+                      </button>
                       <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && attachedFiles.length === 0) || loading}
                         className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || attachedFiles.length > 0) && !loading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
@@ -793,10 +811,14 @@ export default function ZoeChat() {
                       style={{ fontSize: "18px", minHeight: "52px", maxHeight: "160px", padding: "14px 16px 10px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
                     />
                     <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                      <label className={cn("relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer", loading || uploadingFiles ? "text-foreground/25 pointer-events-none" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65")}>
-                        <input type="file" multiple accept="*/*" disabled={loading || uploadingFiles} onChange={e => { setAttachedFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+                      <button
+                        type="button"
+                        disabled={loading || uploadingFiles}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", loading || uploadingFiles ? "text-foreground/25 cursor-not-allowed" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65 cursor-pointer")}
+                      >
                         {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
-                      </label>
+                      </button>
                       <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && attachedFiles.length === 0) || loading}
                         className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || attachedFiles.length > 0) && !loading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
