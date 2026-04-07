@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { Plus, Trash2, Minus, X, Send, Paperclip, ChevronLeft, Search, MessageSquare, Loader2 } from "lucide-react";
+import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -218,10 +218,15 @@ export default function ZoeChat() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSidebarOpen(v => !v)}
-              className="hidden md:flex w-7 h-7 rounded-lg items-center justify-center text-foreground/50 hover:bg-black/8 transition-colors"
+              className={cn(
+                "flex w-8 h-8 rounded-lg items-center justify-center transition-colors",
+                sidebarOpen ? "bg-terracotta/15 text-terracotta" : "text-foreground/50 hover:bg-black/8"
+              )}
               title="Chat history"
+              aria-label="Toggle chat history"
+              aria-pressed={sidebarOpen}
             >
-              <ChevronLeft size={15} className={cn("transition-transform duration-300", sidebarOpen && "rotate-180")} />
+              <History size={15} />
             </button>
             <div className="w-6 h-6 rounded-full bg-terracotta flex items-center justify-center">
               <span className="text-white text-[7px] font-extrabold tracking-widest">ZOE</span>
@@ -247,7 +252,16 @@ export default function ZoeChat() {
         {/* Body */}
         <div className="flex flex-1 overflow-hidden relative">
 
-          {/* Desktop sidebar */}
+          {/* Sidebar backdrop — mobile only, tap to close */}
+          {sidebarOpen && (
+            <div
+              className="absolute inset-0 z-10 bg-black/40 md:hidden"
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Sidebar */}
           <div className={cn(
             "absolute inset-y-0 left-0 z-20 w-[270px] flex flex-col bg-[#EDE8E2] border-r border-black/10 shadow-xl transition-transform duration-300 ease-in-out",
             sidebarOpen ? "translate-x-0" : "-translate-x-full",
