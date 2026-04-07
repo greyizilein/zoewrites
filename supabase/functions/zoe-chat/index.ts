@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { JSZip } from "https://deno.land/x/jszip@0.11.0/mod.ts";
 import { getZoeBrain } from "../_shared/zoe-brain.ts";
 
 const corsHeaders = {
@@ -594,7 +595,10 @@ serve(async (req) => {
                 binary += String.fromCharCode(...uint8.slice(i, i + chunkSize));
               }
               const b64 = btoa(binary);
-              const mimeType = isImage ? att.type : "application/pdf";
+              // Determine MIME type — fall back to extension when browser didn't set att.type
+              const mimeType = isImage
+                ? (att.type || (nameLower.endsWith(".png") ? "image/png" : nameLower.endsWith(".gif") ? "image/gif" : nameLower.endsWith(".webp") ? "image/webp" : "image/jpeg"))
+                : "application/pdf";
               multimodalParts.push({
                 type: "image_url",
                 image_url: { url: `data:${mimeType};base64,${b64}` },
@@ -612,8 +616,8 @@ serve(async (req) => {
           try {
             const fileResp = await fetch(att.url);
             const buffer = await fileResp.arrayBuffer();
-            const JSZip = (await import("npm:jszip")).default;
-            const zip = await JSZip.loadAsync(buffer);
+            const zip = new JSZip();
+            await zip.loadAsync(new Uint8Array(buffer));
 
             let xmlContent = "";
             if (isDocx) {
