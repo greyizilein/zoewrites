@@ -551,29 +551,21 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         if (!imgPrompt) break;
         addMessage({ id: crypto.randomUUID(), role: "assistant", content: "🎨 Generating image…", timestamp: Date.now() });
         try {
-          const imgResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-flash-image",
-              messages: [{ role: "user", content: imgPrompt }],
-              modalities: ["image", "text"],
-            }),
+          const { data: genData, error: genErr } = await supabase.functions.invoke("generate-images", {
+            body: { prompt: imgPrompt, style: args.style, mode: "chat_inline" },
           });
-          // Use edge function for image generation to keep API key server-side
-          const { data: genData } = await supabase.functions.invoke("zoe-chat", {
-            body: { action: "generate_image", prompt: imgPrompt, style: args.style },
-          });
-          // Fallback: just show the prompt was attempted
+          if (genErr) throw genErr;
           if (genData?.image_url) {
-            addMessage({
-              id: crypto.randomUUID(), role: "assistant",
-              content: `![Generated Image](${genData.image_url})\n\n*${imgPrompt}*`,
-              timestamp: Date.now(),
-            });
+            // Replace the "Generating…" message with the actual image
+            setSessions(prev => prev.map(s => {
+              if (s.id !== currentId) return s;
+              const msgs = [...s.messages];
+              const lastIdx = msgs.length - 1;
+              if (lastIdx >= 0 && msgs[lastIdx].content === "🎨 Generating image…") {
+                msgs[lastIdx] = { ...msgs[lastIdx], content: `![Generated Image](${genData.image_url})\n\n*${imgPrompt}*` };
+              }
+              return { ...s, messages: msgs };
+            }));
           }
         } catch {
           addMessage({ id: crypto.randomUUID(), role: "assistant", content: "Image generation failed — please try again.", timestamp: Date.now() });
