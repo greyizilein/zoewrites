@@ -760,7 +760,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: model || "google/gemini-3-flash-preview",
+        model: resolvedModel,
         messages: [
           { role: "system", content: ZOE_SYSTEM + contextNote },
           ...processedMessages,
