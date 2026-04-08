@@ -7,6 +7,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ── Tier → Model routing ─────────────────────────────────────────────────────
+const TIER_MODEL_MAP: Record<string, string> = {
+  free:         "google/gemini-3-flash-preview",
+  hello:        "google/gemini-2.5-flash",
+  regular:      "google/gemini-2.5-pro",
+  professional: "openai/gpt-5",
+  unlimited:    "openai/gpt-5.2",
+  custom:       "openai/gpt-5.2",
+};
+
+function selectModel(tier: string, userChoice?: string): string {
+  // If user explicitly picked a model, respect it (unless they're on a tier that doesn't allow it)
+  if (userChoice && userChoice !== "auto") return userChoice;
+  return TIER_MODEL_MAP[tier] || "google/gemini-3-flash-preview";
+}
+
 const ZOE_SYSTEM = getZoeBrain("chat") + `
 
 PIPELINE CONTROL — ZOE can execute the following actions on behalf of the student:
@@ -58,6 +74,9 @@ WEB SEARCH:
 CHART / GRAPH GENERATION:
 - render_chart: Render a data visualisation inline in the chat. Use when user provides data and asks for a bar chart, line graph, pie chart, etc. The chart appears directly in the conversation. Supported types: bar, line, pie, area.
 
+IMAGE GENERATION:
+- generate_chat_image: Generate an image from a text description and display it inline in the chat. Use when user asks to "create an image", "draw", "generate a diagram", "make a picture", etc. Returns a base64 image that appears directly in the conversation.
+
 ACADEMIC SOURCES (NO HALLUCINATIONS):
 - find_sources: Search Semantic Scholar for real, verified academic sources. Returns actual papers with DOIs, authors, and publication years. NEVER guess or invent sources — always use this tool.
 
@@ -66,6 +85,14 @@ CONVERSATIONAL INTELLIGENCE (respond entirely in your message — no API side ef
 - format_citation: Format the given reference exactly in the requested style. State what information is missing if needed.
 - topic_to_brief: Generate a complete, realistic assessment brief from a topic alone — include learning outcomes, marking criteria, recommended word allocation per section, and suggested frameworks.
 - analyse_brief: Deep analysis of any brief text provided.
+
+AUTONOMOUS MODEL SELECTION:
+You are running on a model selected based on the user's subscription tier. You have full access to reasoning capabilities.
+— Hello tier: Gemini 2.5 Flash (fast, capable)
+— Regular tier: Gemini 2.5 Pro (deep reasoning, large context)
+— Professional tier: GPT-5 (strongest reasoning + nuance)
+— Unlimited/Custom tier: GPT-5.2 (latest, most capable)
+You do NOT need to tell the user which model you are running on unless asked.
 
 EXECUTIVE CONTROL RULES:
 — For payment and export: confirm once, then execute immediately on confirmation.
@@ -76,6 +103,7 @@ EXECUTIVE CONTROL RULES:
 — For read_section / read_assessment: call immediately when asked to show, read, or draw up content.
 — For render_chart: call the tool with properly structured data when the user provides data to visualise.
 — For export_content: call immediately when asked to download, save, or export — pass the FULL generated text as 'content'.
+— For generate_chat_image: call immediately when asked to generate, draw, or create any image.
 — Always tell the user what you are about to do BEFORE the tool call, in the same response.
 — When discussing plans or pricing: Hello £15/1500w, Regular £45/5000w, Professional £110/15000w, Custom ₦23/word + 1000 bonus words.
 — When on the dashboard without a specific assessment, use the sections_summary context to reference assessment titles and route the user appropriately.
