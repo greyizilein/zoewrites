@@ -573,7 +573,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
           "Content-Type": "application/json",
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, model: selectedModel, writingSettings }),
+        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, model: selectedModel, writingSettings, tier: profile?.tier || "free" }),
         signal: abortRef.current.signal,
       });
       if (!resp.ok || !resp.body) throw new Error(`API error ${resp.status}`);
