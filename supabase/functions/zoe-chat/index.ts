@@ -7,6 +7,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ── Tier → Model routing ─────────────────────────────────────────────────────
+const TIER_MODEL_MAP: Record<string, string> = {
+  free:         "google/gemini-3-flash-preview",
+  hello:        "google/gemini-2.5-flash",
+  regular:      "google/gemini-2.5-pro",
+  professional: "openai/gpt-5",
+  unlimited:    "openai/gpt-5.2",
+  custom:       "openai/gpt-5.2",
+};
+
+function selectModel(tier: string, userChoice?: string): string {
+  // If user explicitly picked a model, respect it (unless they're on a tier that doesn't allow it)
+  if (userChoice && userChoice !== "auto") return userChoice;
+  return TIER_MODEL_MAP[tier] || "google/gemini-3-flash-preview";
+}
+
 const ZOE_SYSTEM = getZoeBrain("chat") + `
 
 WRITING IN CHAT — CRITICAL RULE:
@@ -56,6 +72,25 @@ FILE ATTACHMENTS — ALL FORMATS SUPPORTED:
 — Text files (TXT, MD, CSV, JSON): read in full
 — CRITICAL: Never say you cannot read a file. All formats are extracted before reaching you.
 — After processing: if user wants to download the result, call export_content.
+
+AUTONOMOUS MODEL SELECTION:
+You are running on a model selected based on the user's subscription tier.
+— Hello tier: Gemini 2.5 Flash (fast, capable)
+— Regular tier: Gemini 2.5 Pro (deep reasoning, large context)
+— Professional tier: GPT-5 (strongest reasoning + nuance)
+— Unlimited/Custom tier: GPT-5.2 (latest, most capable)
+Do NOT tell the user which model you are on unless asked.
+
+EXECUTIVE CONTROL RULES:
+— For payment and export: confirm once, then execute immediately on confirmation.
+— For writing, editing, critique: execute immediately without asking.
+— For find_sources: ALWAYS call the tool — never invent references.
+— For web_search: call whenever factual or current information is needed.
+— For render_chart: call with properly structured data when user provides data to visualise.
+— For export_content: call immediately when asked to download, save, or export.
+— For generate_chat_image: call immediately when asked to generate, draw, or create any image.
+— Never say "I can't do that".
+— HALLUCINATION RULE: Never invent academic references, statistics, or factual claims.
 
 Use UK English throughout. When referencing academic work, cite correctly.`;
 
@@ -268,6 +303,22 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "generate_chat_image",
+      description: "Generate an image from a text prompt and display it inline in the chat. Use when user asks to create, draw, generate, or design any image, diagram, illustration, or visual.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Detailed description of the image to generate" },
+          style: { type: "string", description: "Image style hint — e.g. 'academic diagram', 'infographic', 'illustration', 'realistic photo'" },
+        },
+        required: ["prompt"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ── Semantic Scholar lookup ──────────────────────────────────────────────────
@@ -309,10 +360,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, section_content, assessment_title, sections_summary, attachments, model, writingSettings } = await req.json();
+    const { messages, section_content, assessment_title, sections_summary, attachments, model, writingSettings, tier } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY") || "";
+
+    // Autonomous model selection based on tier
+    const resolvedModel = selectModel(tier || "free", model);
 
     let contextNote = "";
     if (assessment_title) contextNote += `\n\nCurrent assessment: "${assessment_title}"`;
@@ -328,6 +382,9 @@ serve(async (req) => {
         `- Source Date Range: ${writingSettings.sourceDateFrom}–${writingSettings.sourceDateTo}\n` +
         `Apply these preferences automatically to all writing, editing, and generation tasks.`;
     }
+
+    // Add tier context
+    contextNote += `\n\nUser tier: ${tier || "free"}. Model in use: ${resolvedModel}.`;
 
     // Pre-fetch Semantic Scholar results if the last user message mentions sources/references
     const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
@@ -422,14 +479,16 @@ serve(async (req) => {
               if (docFile) xmlContent = await docFile.async("string");
             } else if (isXlsx) {
               // Extract all sheet XML files
-              const sheetFiles = Object.keys(zip.files).filter(f => f.match(/xl\/worksheets\/sheet\d+\.xml/));
+              const filesMap = zip.files as Record<string, any>;
+              const sheetFiles = Object.keys(filesMap).filter(f => f.match(/xl\/worksheets\/sheet\d+\.xml/));
               for (const sf of sheetFiles.slice(0, 3)) {
-                xmlContent += await zip.files[sf].async("string") + "\n";
+                xmlContent += await filesMap[sf].async("string") + "\n";
               }
             } else if (isPptx) {
-              const slideFiles = Object.keys(zip.files).filter(f => f.match(/ppt\/slides\/slide\d+\.xml/));
+              const filesMap2 = zip.files as Record<string, any>;
+              const slideFiles = Object.keys(filesMap2).filter(f => f.match(/ppt\/slides\/slide\d+\.xml/));
               for (const sf of slideFiles.slice(0, 20)) {
-                xmlContent += await zip.files[sf].async("string") + "\n";
+                xmlContent += await filesMap2[sf].async("string") + "\n";
               }
             }
 
@@ -495,7 +554,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: model || "google/gemini-3-flash-preview",
+        model: resolvedModel,
         messages: [
           { role: "system", content: ZOE_SYSTEM + contextNote },
           ...processedMessages,
