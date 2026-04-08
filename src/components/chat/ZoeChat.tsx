@@ -388,18 +388,14 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   async function handleToolCall(name: string, args: Record<string, any>) {
     switch (name) {
 
-      case "navigate_to":
-        if (args.route) { navigate(args.route); setOpen(false); }
+      case "navigate_to": {
+        const allowed = ["/dashboard", "/analytics"];
+        const route = (args.route as string) || "";
+        if (route && allowed.some(r => route.startsWith(r))) {
+          navigate(route); setOpen(false);
+        }
         break;
-
-      case "create_assessment":
-      case "create_full_assessment":
-        navigate("/assessment/new"); setOpen(false);
-        break;
-
-      case "open_assessment":
-        if (args.assessment_id) { navigate(`/assessment/${args.assessment_id}`); setOpen(false); }
-        break;
+      }
 
       case "sign_out":
         await signOut(); navigate("/");
@@ -462,19 +458,6 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         if (!error) {
           if (window.location.pathname.includes(aId)) navigate("/dashboard");
         }
-        break;
-      }
-
-      case "update_assessment_title": {
-        const aId = getAssessmentIdFromUrl();
-        if (!aId || !args.new_title) break;
-        await supabase.from("assessments").update({ title: args.new_title }).eq("id", aId);
-        break;
-      }
-
-      case "adjust_word_target": {
-        if (!args.section_id || !args.new_target) break;
-        await supabase.from("sections").update({ word_target: args.new_target }).eq("id", args.section_id);
         break;
       }
 

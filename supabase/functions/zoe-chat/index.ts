@@ -9,173 +9,72 @@ const corsHeaders = {
 
 const ZOE_SYSTEM = getZoeBrain("chat") + `
 
-PIPELINE CONTROL — ZOE can execute the following actions on behalf of the student:
-- analyse_brief: Analyse the assessment brief and generate an execution plan
-- write_all: Write all pending sections automatically
-- write_section: Write a specific section by title
-- run_critique: Run the quality review pass
-- humanise_all: Humanise all completed sections
-- export_document: Export the final document as .docx
-- apply_revision: Apply targeted revision feedback to a specific section
+WRITING IN CHAT — CRITICAL RULE:
+ZOE writes everything directly in the chat. There is no pipeline, no separate writing page,
+no external form. When a user asks ZOE to write, draft, outline, edit, revise, humanise,
+critique, or generate any academic content — ZOE does it immediately in the response.
+Never navigate to another page for any writing task.
 
-DASHBOARD NAVIGATION & CONTROL:
-- navigate_to: Navigate the user to any route (/dashboard, /assessment/:id, /analytics)
-- create_assessment: Open the new assessment creation page (use create_full_assessment instead when the user provides a brief/topic)
-- create_full_assessment: Create a complete assessment end-to-end from a brief or topic — parses brief, generates execution plan, creates all sections in one shot. PREFER this over create_assessment when any brief/topic text is provided.
-- confirm_execution_plan: Confirm an existing execution plan and create sections for the current assessment. Use when user says "confirm the plan", "start writing", "approve the plan".
-- open_assessment: Open a specific assessment by ID
-- process_payment: Trigger Paystack checkout for a subscription plan. ALWAYS confirm tier + price with the user before calling. Example: "You'd be upgrading to Professional for £110 (approx ₦229,000). Shall I open the checkout?"
-- sign_out: Sign the user out. Confirm once before calling.
-- read_analytics: Read and narrate the user's writing analytics — call this whenever asked about stats, progress, words written, completion rates, or "how am I doing".
+WHAT ZOE CAN DO IN CHAT:
+— Write full essays, reports, dissertations, case studies, literature reviews inline
+— Edit and proofread uploaded or pasted documents
+— Critique and score work against A+ criteria
+— Revise specific sections based on feedback
+— Use topic_to_brief to structure work before writing
+— Find real academic sources via find_sources (Semantic Scholar)
+— Generate charts and data visualisations with render_chart
+— Export any generated content as a file with export_content
+— Search the web for current information with web_search
+— Generate academic images with generate_images
 
-EXTENDED PIPELINE TOOLS:
-- edit_proofread: Grammar, style, and reference correction across all sections
-- generate_images: Generate academic figures and diagrams
-- coherence_check: Analyse argument flow and cross-section logical consistency
-- adjust_word_target: Update a section's word target directly in the database
-- delete_assessment: Permanently delete an assessment. ALWAYS confirm with the user first — say "Are you sure you want to permanently delete **[title]**?" and only call if confirmed is true.
-- get_recommendations: Get AI improvement recommendations for a specific section. Useful when a student asks "how can I improve this section?" or "what's wrong with my introduction?"
-- update_assessment_title: Rename the current assessment. Ask the user for the new title if not provided.
+EXPORT / DOWNLOAD RULE:
+After writing any substantial content, proactively offer to export it. When the user says
+"download", "save", "export", or "give me a file" — immediately call export_content with
+the full text as 'content'.
+
+WRITING WORKFLOW (everything in chat):
+1. Understand the brief — ask if unclear, analyse inline
+2. Optionally call topic_to_brief to structure the work
+3. Write the full content directly in the response
+4. Offer export_content when done
+
+NAVIGATION — only allowed when user explicitly asks to visit a page:
+- navigate_to "/dashboard" — the main dashboard
+- navigate_to "/analytics" — writing analytics and stats
+Never navigate to any other route.
+
+PAYMENT — always confirm tier + price before calling process_payment.
+Plans: Hello £15, Regular £45, Professional £110, Custom ₦23/word + 1000 bonus words.
+
+SOURCES — ALWAYS use find_sources for real references. Never invent citations.
+
+CHARTS — use render_chart when user provides data or asks for visualisation.
 
 FILE ATTACHMENTS — ALL FORMATS SUPPORTED:
-— PDFs: content extracted and injected directly — you can read, summarise, revise, and critique.
-— DOCX files: text extracted from Word documents — treat as the working draft.
-— Images (PNG, JPG, WEBP, GIF): analysed visually — describe, interpret, extract data from charts, annotate figures.
-— Text files (TXT, MD, CSV, JSON): read in full — analyse, transform, summarise.
-— For ALL uploaded files: treat the file content as the primary working document for any task the user requests.
-— After processing, if user wants to download the result: call export_content with the final text.
-— CRITICAL: Never say you cannot read a file. All formats are extracted server-side before reaching you.
+— PDFs, DOCX, XLSX, PPTX: text extracted server-side — treat as working document
+— Images (PNG, JPG, WEBP): analysed visually
+— Text files (TXT, MD, CSV, JSON): read in full
+— CRITICAL: Never say you cannot read a file. All formats are extracted before reaching you.
+— After processing: if user wants to download the result, call export_content.
 
-DOCUMENT READ, EDIT & EXPORT:
-- read_section: Display the full content of a specific section in the chat. Call this when the user says "show me [section]", "read [section]", "what does [section] say", "draw up [section]". Always confirm what you are displaying.
-- read_assessment: Display the full assembled document (all written sections) in the chat. Use when user says "show me the document", "read back my essay", "draw up my assessment".
-- update_assessment_settings: Change the assessment's citation style, academic level, or AI model. Call when user says "change citation to APA", "switch to Vancouver", "change level to postgraduate".
-- export_content: Trigger a file download for any content you have generated or processed — revised essays, summaries, critiques, rewritten documents, etc. Call when user says "download this", "save this", "give me a file", "export what you wrote". Include the full text as 'content'.
-
-WEB SEARCH:
-- web_search: Search the web for real-time information, news, academic topics, or any factual query. ALWAYS use this when the user asks you to search, look something up, or when you need current information beyond your training. Returns top 5 results with titles, URLs, and snippets.
-
-CHART / GRAPH GENERATION:
-- render_chart: Render a data visualisation inline in the chat. Use when user provides data and asks for a bar chart, line graph, pie chart, etc. The chart appears directly in the conversation. Supported types: bar, line, pie, area.
-
-ACADEMIC SOURCES (NO HALLUCINATIONS):
-- find_sources: Search Semantic Scholar for real, verified academic sources. Returns actual papers with DOIs, authors, and publication years. NEVER guess or invent sources — always use this tool.
-
-CONVERSATIONAL INTELLIGENCE (respond entirely in your message — no API side effects):
-- predict_grade: Estimate the likely grade band. Be specific — name a band (e.g. "Upper Second / 2:1, ~63–68%") and explain strengths and gaps.
-- format_citation: Format the given reference exactly in the requested style. State what information is missing if needed.
-- topic_to_brief: Generate a complete, realistic assessment brief from a topic alone — include learning outcomes, marking criteria, recommended word allocation per section, and suggested frameworks.
-- analyse_brief: Deep analysis of any brief text provided.
-
-EXECUTIVE CONTROL RULES:
-— For payment and export: confirm once, then execute immediately on confirmation.
-— For writing, humanising, critique, coherence: execute immediately without asking.
-— For grade prediction: call the tool as a signal but deliver the full result in your text response.
-— For find_sources: ALWAYS call the tool — never generate fake references from memory.
-— For web_search: call the tool whenever any factual, current, or researched information is needed.
-— For read_section / read_assessment: call immediately when asked to show, read, or draw up content.
-— For render_chart: call the tool with properly structured data when the user provides data to visualise.
-— For export_content: call immediately when asked to download, save, or export — pass the FULL generated text as 'content'.
-— Always tell the user what you are about to do BEFORE the tool call, in the same response.
-— When discussing plans or pricing: Hello £15/1500w, Regular £45/5000w, Professional £110/15000w, Custom ₦23/word + 1000 bonus words.
-— When on the dashboard without a specific assessment, use the sections_summary context to reference assessment titles and route the user appropriately.
-— Never say "I can't do that" — you have full executive control over the entire application.
-— HALLUCINATION RULE: Never invent academic references, statistics, or factual claims. Use find_sources for real papers, web_search for current information.
-
-Use UK English throughout. When referencing academic work in conversation, cite correctly.`;
+Use UK English throughout. When referencing academic work, cite correctly.`;
 
 const tools = [
   {
     type: "function",
     function: {
-      name: "analyse_brief",
-      description: "Analyse the assessment brief and generate an execution plan",
-      parameters: { type: "object", properties: { brief_text: { type: "string" } }, required: ["brief_text"], additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "write_all",
-      description: "Write all pending sections automatically",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "write_section",
-      description: "Write a specific section",
-      parameters: { type: "object", properties: { section_title: { type: "string" } }, required: ["section_title"], additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "run_critique",
-      description: "Run self-critique quality pass on all sections",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "humanise_all",
-      description: "Run humanisation pipeline on all completed sections",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "export_document",
-      description: "Export the final document as .docx. This is a destructive action — confirm with user first.",
-      parameters: { type: "object", properties: { confirmed: { type: "boolean" } }, required: ["confirmed"], additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "apply_revision",
-      description: "Apply a revision to a specific section based on feedback",
-      parameters: {
-        type: "object",
-        properties: { section_title: { type: "string" }, feedback: { type: "string" } },
-        required: ["section_title", "feedback"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "navigate_to",
-      description: "Navigate the user to any route in the application",
+      description: "Navigate the user to a page. Allowed routes: /dashboard, /analytics only.",
       parameters: {
         type: "object",
-        properties: { route: { type: "string", description: "e.g. /dashboard, /assessment/new, /analytics" } },
+        properties: {
+          route: {
+            type: "string",
+            enum: ["/dashboard", "/analytics"],
+            description: "The route to navigate to",
+          },
+        },
         required: ["route"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "create_assessment",
-      description: "Navigate to the new assessment creation page",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "open_assessment",
-      description: "Open a specific assessment by ID",
-      parameters: {
-        type: "object",
-        properties: { assessment_id: { type: "string" } },
-        required: ["assessment_id"],
         additionalProperties: false,
       },
     },
@@ -268,23 +167,6 @@ const tools = [
   {
     type: "function",
     function: {
-      name: "adjust_word_target",
-      description: "Update the word target for a specific section",
-      parameters: {
-        type: "object",
-        properties: {
-          section_id: { type: "string" },
-          section_title: { type: "string" },
-          new_target: { type: "number" },
-        },
-        required: ["new_target"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "topic_to_brief",
       description: "Generate a complete assessment brief from a topic title",
       parameters: {
@@ -303,51 +185,6 @@ const tools = [
   {
     type: "function",
     function: {
-      name: "delete_assessment",
-      description: "Permanently delete an assessment and all its sections. ALWAYS confirm with the user before calling.",
-      parameters: {
-        type: "object",
-        properties: {
-          assessment_id: { type: "string", description: "ID of the assessment to delete" },
-          confirmed: { type: "boolean", description: "Must be true — user has confirmed the deletion" },
-        },
-        required: ["confirmed"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_recommendations",
-      description: "Get per-section improvement recommendations from ZOE's analysis engine",
-      parameters: {
-        type: "object",
-        properties: {
-          section_title: { type: "string", description: "Title of the section to analyse (optional — defaults to first written section)" },
-        },
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "update_assessment_title",
-      description: "Rename the current assessment",
-      parameters: {
-        type: "object",
-        properties: {
-          new_title: { type: "string", description: "The new title for the assessment" },
-        },
-        required: ["new_title"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "sign_out",
       description: "Sign the user out of the application",
       parameters: { type: "object", properties: {}, additionalProperties: false },
@@ -358,56 +195,6 @@ const tools = [
     function: {
       name: "read_analytics",
       description: "Read and narrate the user's writing analytics — total words, completions, citations, plan status. Use when asked 'how am I doing', 'show my stats', 'analytics', 'how many words have I written', etc.",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "create_full_assessment",
-      description: "Create a complete assessment end-to-end from a brief or topic — parses brief, generates execution plan, creates all sections. Use this instead of create_assessment when the user provides brief/topic text and wants ZOE to set everything up without them visiting a form.",
-      parameters: {
-        type: "object",
-        properties: {
-          topic_or_brief: { type: "string", description: "The brief text or topic title" },
-          word_count: { type: "number", description: "Target word count (default 2000)" },
-          type: { type: "string", description: "Assessment type e.g. Essay, Report, Case Study" },
-          citation_style: { type: "string", description: "Citation style e.g. Harvard, APA, Vancouver" },
-          level: { type: "string", description: "Academic level e.g. Undergraduate L6, Postgraduate L7" },
-        },
-        required: ["topic_or_brief"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "confirm_execution_plan",
-      description: "Confirm the execution plan for the current assessment and create its sections without needing to visit the WriterEngine. Use when user says 'confirm the plan', 'start writing', 'approve the plan', or 'create the sections'.",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "read_section",
-      description: "Display the full written content of a specific section in the chat. Use when the user wants to read, review, or see the text of a section.",
-      parameters: {
-        type: "object",
-        properties: {
-          section_title: { type: "string", description: "Title of the section to display" },
-        },
-        required: ["section_title"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "read_assessment",
-      description: "Display the full assembled document (all written sections) in the chat. Use when the user wants to see the complete essay or report.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
