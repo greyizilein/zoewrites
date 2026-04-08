@@ -234,6 +234,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   const [streaming, setStreaming] = useState("");
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [profile, setProfile] = useState<{ full_name: string | null; tier: string } | null>(null);
 
   // Model + writing settings state
