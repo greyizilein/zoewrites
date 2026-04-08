@@ -589,6 +589,9 @@ serve(async (req) => {
         `Apply these preferences automatically to all writing, editing, and generation tasks.`;
     }
 
+    // Add tier context
+    contextNote += `\n\nUser tier: ${tier || "free"}. Model in use: ${resolvedModel}.`;
+
     // Pre-fetch Semantic Scholar results if the last user message mentions sources/references
     const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
     const lastText = (lastUserMsg?.content || "").toLowerCase();
