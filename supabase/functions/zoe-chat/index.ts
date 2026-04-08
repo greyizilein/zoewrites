@@ -509,6 +509,22 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "generate_chat_image",
+      description: "Generate an image from a text prompt and display it inline in the chat. Use when user asks to create, draw, generate, or design any image, diagram, illustration, or visual.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Detailed description of the image to generate" },
+          style: { type: "string", description: "Image style hint — e.g. 'academic diagram', 'infographic', 'illustration', 'realistic photo'" },
+        },
+        required: ["prompt"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ── Semantic Scholar lookup ──────────────────────────────────────────────────
