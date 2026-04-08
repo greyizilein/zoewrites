@@ -6,7 +6,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2, ChevronDown, Lock, ArrowUpRight, Settings, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2, ChevronDown, Lock, ArrowUpRight, Settings, ChevronRight, Copy, Download, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -234,6 +234,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   const [streaming, setStreaming] = useState("");
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [profile, setProfile] = useState<{ full_name: string | null; tier: string } | null>(null);
 
   // Model + writing settings state
@@ -544,6 +545,33 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         }
         break;
       }
+
+      case "generate_chat_image": {
+        const imgPrompt = (args.prompt as string) || "";
+        if (!imgPrompt) break;
+        addMessage({ id: crypto.randomUUID(), role: "assistant", content: "🎨 Generating image…", timestamp: Date.now() });
+        try {
+          const { data: genData, error: genErr } = await supabase.functions.invoke("generate-images", {
+            body: { prompt: imgPrompt, style: args.style, mode: "chat_inline" },
+          });
+          if (genErr) throw genErr;
+          if (genData?.image_url) {
+            // Replace the "Generating…" message with the actual image
+            setSessions(prev => prev.map(s => {
+              if (s.id !== currentId) return s;
+              const msgs = [...s.messages];
+              const lastIdx = msgs.length - 1;
+              if (lastIdx >= 0 && msgs[lastIdx].content === "🎨 Generating image…") {
+                msgs[lastIdx] = { ...msgs[lastIdx], content: `![Generated Image](${genData.image_url})\n\n*${imgPrompt}*` };
+              }
+              return { ...s, messages: msgs };
+            }));
+          }
+        } catch {
+          addMessage({ id: crypto.randomUUID(), role: "assistant", content: "Image generation failed — please try again.", timestamp: Date.now() });
+        }
+        break;
+      }
     }
   }
 
@@ -573,7 +601,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
           "Content-Type": "application/json",
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, model: selectedModel, writingSettings }),
+        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, model: selectedModel, writingSettings, tier: profile?.tier || "free" }),
         signal: abortRef.current.signal,
       });
       if (!resp.ok || !resp.body) throw new Error(`API error ${resp.status}`);
@@ -1021,7 +1049,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                             )}
                           </div>
                         ) : (
-                          <div className="w-full min-w-0">
+                          <div className="w-full min-w-0 group/msg">
                             <div className="flex items-center gap-1.5 mb-1.5">
                               <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
                                 <span className="text-white text-[6px] font-extrabold tracking-widest">ZOE</span>
@@ -1034,6 +1062,37 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                               </div>
                             )}
                             {msg.chart && <InlineChart chart={msg.chart} />}
+                            {/* Copy / Download actions */}
+                            {msg.content && msg.content.length > 20 && (
+                              <div className="flex items-center gap-1 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(msg.content);
+                                    setCopiedId(msg.id);
+                                    setTimeout(() => setCopiedId(null), 2000);
+                                  }}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
+                                  title="Copy"
+                                >
+                                  {copiedId === msg.id ? <Check size={11} /> : <Copy size={11} />}
+                                  {copiedId === msg.id ? "Copied" : "Copy"}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const blob = new Blob([msg.content], { type: "text/plain" });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url; a.download = "zoe-output.txt";
+                                    document.body.appendChild(a); a.click();
+                                    document.body.removeChild(a); URL.revokeObjectURL(url);
+                                  }}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
+                                  title="Download"
+                                >
+                                  <Download size={11} /> Download
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
