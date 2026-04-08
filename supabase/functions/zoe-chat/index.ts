@@ -566,10 +566,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, section_content, assessment_title, sections_summary, attachments, model, writingSettings } = await req.json();
+    const { messages, section_content, assessment_title, sections_summary, attachments, model, writingSettings, tier } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY") || "";
+
+    // Autonomous model selection based on tier
+    const resolvedModel = selectModel(tier || "free", model);
 
     let contextNote = "";
     if (assessment_title) contextNote += `\n\nCurrent assessment: "${assessment_title}"`;
