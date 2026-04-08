@@ -6,7 +6,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2, ChevronDown, Lock, ArrowUpRight, Settings, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2, ChevronDown, Lock, ArrowUpRight, Settings, ChevronRight, Copy, Download, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
