@@ -1464,7 +1464,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                           />
                         )}
                         {msg.chart && <InlineChart chart={msg.chart} />}
-                        {msg.content && msg.content.length > 60 && (
+                        {!msg.status && msg.content && msg.content.length > 60 && (
                           <div className="flex flex-wrap items-center gap-0.5 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                             <button
                               onClick={() => {
