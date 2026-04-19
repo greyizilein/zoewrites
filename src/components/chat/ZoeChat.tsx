@@ -582,6 +582,24 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       });
       return;
     }
+    // Soft warnings for formats the model can't actually read — still let the upload proceed.
+    const lname = file.name.toLowerCase();
+    const isHeic = /\.(heic|heif)$/.test(lname) || /heic|heif/i.test(file.type);
+    const isAudio = file.type.startsWith("audio/") || /\.(mp3|wav|m4a|ogg|flac|aac|wma|opus|aiff)$/.test(lname);
+    const isVideo = file.type.startsWith("video/") || /\.(mp4|mov|webm|mkv|avi|wmv|flv|m4v)$/.test(lname);
+    if (isHeic) {
+      addMessage({
+        id: crypto.randomUUID(), role: "assistant",
+        content: `Heads up — HEIC images aren't readable by the model yet. For best results, re-export "${file.name}" as JPG or PNG. I'll still try with this one.`,
+        timestamp: Date.now(),
+      });
+    } else if (isAudio || isVideo) {
+      addMessage({
+        id: crypto.randomUUID(), role: "assistant",
+        content: `${isAudio ? "Audio" : "Video"} files aren't supported in chat yet — "${file.name}" will be skipped. If you have a transcript or written summary, paste or upload that instead.`,
+        timestamp: Date.now(),
+      });
+    }
     setPendingUploads(prev => [...prev, { id, name: file.name, type: file.type, progress: 0, status: "uploading" }]);
     try {
       const path = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
