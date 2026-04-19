@@ -420,6 +420,39 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "request_clarification",
+      description: "Ask the user for missing CRITICAL information by rendering a tickable / selectable form in the chat. Use this INSTEAD of asking questions in prose when you need structured answers (e.g. word count, deliverable type, citation style, academic level, sub-topic choice). Once the user submits the form, immediately proceed with the work — do not ask again.",
+      parameters: {
+        type: "object",
+        properties: {
+          intro: { type: "string", description: "Short one-line explanation shown above the form (e.g. 'Quick check before I start.')." },
+          fields: {
+            type: "array",
+            description: "1–6 fields the user needs to fill in.",
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string", description: "Stable key returned in the submission (e.g. 'word_count')." },
+                label: { type: "string", description: "Human label shown to the user." },
+                type: { type: "string", enum: ["text", "number", "select", "checkbox"], description: "Input type." },
+                options: { type: "array", items: { type: "string" }, description: "Required for type=select. Options the user picks from." },
+                placeholder: { type: "string" },
+                required: { type: "boolean" },
+                default: { type: "string", description: "Optional default value (string form)." },
+              },
+              required: ["key", "label", "type"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["fields"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ── Semantic Scholar lookup ──────────────────────────────────────────────────
