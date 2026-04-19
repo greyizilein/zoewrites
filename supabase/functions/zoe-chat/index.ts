@@ -552,160 +552,257 @@ serve(async (req) => {
     }
 
     // ── File attachment processing ─────────────────────────────────────────
-    // Multimodal parts (images, PDFs) go here and are appended to the last user message
+    // Strict budgets to prevent "CPU Time exceeded" on large multi-file prompts.
+    // Per-file caps keep any single download/parse from blowing the request budget.
+    // The total text budget caps how much extracted prose we shove into context.
+    const PER_FILE_BYTE_LIMIT = 8 * 1024 * 1024;   // 8 MB hard cap per file fetch
+    const PER_FILE_FETCH_MS   = 12_000;            // 12s fetch+download timeout per file
+    const PER_FILE_PARSE_MS   = 8_000;             // 8s parse timeout per file
+    const TOTAL_TEXT_BUDGET   = 60_000;            // total chars of extracted prose injected
+    const PER_FILE_TEXT_MAX   = 12_000;            // cap any single file's extracted text
+    const IMAGE_BYTE_LIMIT    = 6 * 1024 * 1024;   // 6 MB cap for inline images
+    const MAX_IMAGES          = 4;
+
     const multimodalParts: { type: string; image_url?: { url: string } }[] = [];
+    let textBudgetRemaining = TOTAL_TEXT_BUDGET;
+    let imagesAccepted = 0;
+    const skipNotes: string[] = [];
+
+    // Race a promise against a timeout so a slow download / hung parse
+    // can't burn the entire CPU budget for the request.
+    function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+      return new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+        p.then(v => { clearTimeout(t); resolve(v); },
+               e => { clearTimeout(t); reject(e); });
+      });
+    }
+
+    // Fetch a file with a size cap — abort the read once we exceed limit.
+    async function fetchCapped(url: string, maxBytes: number): Promise<{ buffer: ArrayBuffer; truncated: boolean }> {
+      const ctrl = new AbortController();
+      const resp = await fetch(url, { signal: ctrl.signal });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const cl = resp.headers.get("content-length");
+      if (cl && Number(cl) > maxBytes) {
+        ctrl.abort();
+        throw new Error(`file is ${(Number(cl) / 1024 / 1024).toFixed(1)}MB — exceeds ${(maxBytes / 1024 / 1024).toFixed(0)}MB cap`);
+      }
+      // Stream-read up to the cap; abort if we cross it.
+      const reader = resp.body?.getReader();
+      if (!reader) {
+        const buffer = await resp.arrayBuffer();
+        if (buffer.byteLength > maxBytes) throw new Error(`file exceeds ${(maxBytes / 1024 / 1024).toFixed(0)}MB cap`);
+        return { buffer, truncated: false };
+      }
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      let truncated = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          if (total + value.byteLength > maxBytes) {
+            truncated = true;
+            ctrl.abort();
+            const remaining = maxBytes - total;
+            if (remaining > 0) chunks.push(value.slice(0, remaining));
+            break;
+          }
+          chunks.push(value);
+          total += value.byteLength;
+        }
+      }
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) { out.set(c, offset); offset += c.byteLength; }
+      return { buffer: out.buffer, truncated };
+    }
+
+    function classify(att: { name: string; type: string }) {
+      const n = (att.name || "").toLowerCase();
+      const t = (att.type || "").toLowerCase();
+      return {
+        isText: t.startsWith("text/") || t === "application/json" ||
+                /\.(md|txt|csv|json|log|xml|yaml|yml)$/.test(n),
+        isPDF: t === "application/pdf" || n.endsWith(".pdf"),
+        isImage: t.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/.test(n),
+        isDocx: t.includes("wordprocessingml") || n.endsWith(".docx"),
+        isXlsx: t.includes("spreadsheetml") || n.endsWith(".xlsx"),
+        isPptx: n.endsWith(".pptx"),
+      };
+    }
 
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {
       contextNote += "\n\nATTACHED FILES:";
 
-      for (const att of attachments as { name: string; url: string; type: string }[]) {
-        const nameLower = att.name.toLowerCase();
-        const isTextLike = att.type.startsWith("text/") ||
-          att.type === "application/json" ||
-          nameLower.endsWith(".md") || nameLower.endsWith(".txt") ||
-          nameLower.endsWith(".csv") || nameLower.endsWith(".json");
-        const isPDF = att.type === "application/pdf" || nameLower.endsWith(".pdf");
-        const isImage = att.type.startsWith("image/") ||
-          nameLower.endsWith(".png") || nameLower.endsWith(".jpg") ||
-          nameLower.endsWith(".jpeg") || nameLower.endsWith(".webp") ||
-          nameLower.endsWith(".gif");
-        const isDocx = att.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-          nameLower.endsWith(".docx");
-        const isXlsx = att.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-          nameLower.endsWith(".xlsx");
-        const isPptx = nameLower.endsWith(".pptx");
+      // Hard cap on number of files we even try to process.
+      const MAX_FILES = 8;
+      const filesToProcess = (attachments as { name: string; url: string; type: string }[])
+        .filter(a => a && typeof a.url === "string" && typeof a.name === "string")
+        .slice(0, MAX_FILES);
+      if (attachments.length > MAX_FILES) {
+        skipNotes.push(`${attachments.length - MAX_FILES} extra file(s) ignored — limit is ${MAX_FILES}/turn.`);
+      }
 
+      // Process files sequentially so the budget can short-circuit cleanly,
+      // but each file is wrapped in its own timeout so one bad file can't
+      // stall the whole request.
+      for (const att of filesToProcess) {
+        const kind = classify(att);
         contextNote += `\n\n[File: ${att.name}]`;
 
-        if (isTextLike) {
-          // ── Plain text: inject directly into context ──────────────────────
-          try {
-            const fileResp = await fetch(att.url);
-            const text = await fileResp.text();
-            contextNote += `\n${text.slice(0, 10000)}`;
-          } catch { contextNote += "\n[Could not retrieve file content]"; }
-
-        } else if (isImage) {
-          // ── Image: fetch as binary, base64-encode, pass as multimodal ─────
-          try {
-            const fileResp = await fetch(att.url);
-            const buffer = await fileResp.arrayBuffer();
-            const limitBytes = 20 * 1024 * 1024; // 20 MB cap
-            if (buffer.byteLength > limitBytes) {
-              contextNote += `\n[Image too large for inline processing — ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB. Limit: 20 MB]`;
-            } else {
-              const uint8 = new Uint8Array(buffer);
-              let binary = "";
-              const chunkSize = 32768;
-              for (let i = 0; i < uint8.length; i += chunkSize) {
-                binary += String.fromCharCode(...uint8.slice(i, i + chunkSize));
-              }
-              const b64 = btoa(binary);
-              const mimeType = att.type ||
-                (nameLower.endsWith(".png") ? "image/png" :
-                 nameLower.endsWith(".gif") ? "image/gif" :
-                 nameLower.endsWith(".webp") ? "image/webp" : "image/jpeg");
-              multimodalParts.push({
-                type: "image_url",
-                image_url: { url: `data:${mimeType};base64,${b64}` },
-              });
-              contextNote += "\n[Image transmitted as multimodal — analyse it visually]";
-            }
-          } catch (e) {
-            contextNote += `\n[Could not load image: ${(e as Error).message}]`;
-          }
-
-        } else if (isPDF) {
-          // ── PDF: extract text server-side via unpdf ───────────────────────
-          // The Lovable AI gateway only accepts true image MIME types in
-          // image_url parts; PDFs must be turned into text first.
-          try {
-            const fileResp = await fetch(att.url);
-            const buffer = await fileResp.arrayBuffer();
-            const sizeMb = buffer.byteLength / 1024 / 1024;
-            if (sizeMb > 20) {
-              contextNote += `\n[PDF too large — ${sizeMb.toFixed(1)} MB. Limit: 20 MB. Please upload a smaller file or paste key sections.]`;
-            } else {
-              let extracted = "";
-              try {
-                const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
-                extracted = (Array.isArray(text) ? text.join("\n\n") : text || "").trim();
-              } catch (parseErr) {
-                console.warn(`[zoe-chat] unpdf failed for ${att.name}:`, (parseErr as Error).message);
-              }
-              if (extracted.length > 0) {
-                contextNote += `\n${extracted.slice(0, 15000)}`;
-                if (extracted.length > 15000) {
-                  contextNote += `\n[…PDF truncated at 15k chars (${extracted.length} total)…]`;
-                }
-              } else {
-                contextNote += `\n[PDF "${att.name}" appears to be scanned/image-only — text extraction returned nothing. Ask the user to paste the key passages.]`;
-              }
-            }
-          } catch (e) {
-            contextNote += `\n[Could not read PDF "${att.name}": ${(e as Error).message}. Try uploading a .docx version.]`;
-          }
-
-        } else if (isDocx || isXlsx || isPptx) {
-          // ── DOCX/XLSX/PPTX: unzip and extract XML text ────────────────────
-          try {
-            const fileResp = await fetch(att.url);
-            const buffer = await fileResp.arrayBuffer();
-            const zip = new JSZip();
-            await zip.loadAsync(new Uint8Array(buffer));
-
-            let xmlContent = "";
-            if (isDocx) {
-              const docFile = zip.file("word/document.xml");
-              if (docFile) xmlContent = await docFile.async("string");
-            } else if (isXlsx) {
-              // Extract all sheet XML files
-              const filesMap = zip.files as Record<string, any>;
-              const sheetFiles = Object.keys(filesMap).filter(f => f.match(/xl\/worksheets\/sheet\d+\.xml/));
-              for (const sf of sheetFiles.slice(0, 3)) {
-                xmlContent += await filesMap[sf].async("string") + "\n";
-              }
-            } else if (isPptx) {
-              const filesMap2 = zip.files as Record<string, any>;
-              const slideFiles = Object.keys(filesMap2).filter(f => f.match(/ppt\/slides\/slide\d+\.xml/));
-              for (const sf of slideFiles.slice(0, 20)) {
-                xmlContent += await filesMap2[sf].async("string") + "\n";
-              }
-            }
-
-            if (xmlContent) {
-              const plainText = xmlContent
-                .replace(/<a:br[^>]*\/?>/g, "\n")
-                .replace(/<w:br[^>]*\/?>/g, "\n")
-                .replace(/<\/w:p>/g, "\n")
-                .replace(/<\/a:p>/g, "\n")
-                .replace(/<[^>]+>/g, " ")
-                .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-                .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ")
-                .replace(/[ \t]{2,}/g, " ")
-                .replace(/\n{3,}/g, "\n\n")
-                .trim();
-              contextNote += `\n${plainText.slice(0, 12000)}`;
-            } else {
-              contextNote += "\n[Could not extract text from this Office file]";
-            }
-          } catch (e) {
-            contextNote += `\n[Office file extraction failed: ${(e as Error).message}]`;
-          }
-
-        } else {
-          // ── Unknown format: try as text, fallback gracefully ──────────────
-          try {
-            const fileResp = await fetch(att.url);
-            const text = await fileResp.text();
-            const isBinary = text.includes("\x00") || (text.length > 10 && /[\x01-\x08\x0E-\x1F]/.test(text.slice(0, 200)));
-            if (!isBinary) {
-              contextNote += `\n${text.slice(0, 6000)}`;
-            } else {
-              contextNote += `\n[Binary file — cannot extract text from this format]`;
-            }
-          } catch { contextNote += `\n[Could not retrieve file]`; }
+        // If we've burned the text budget, skip parsing further non-image files.
+        if (!kind.isImage && textBudgetRemaining <= 200) {
+          contextNote += "\n[Skipped — total extracted text budget for this turn was exhausted by earlier files. Ask user to send fewer files or paste key passages.]";
+          skipNotes.push(`${att.name} skipped (budget exhausted)`);
+          continue;
         }
+
+        try {
+          if (kind.isImage) {
+            if (imagesAccepted >= MAX_IMAGES) {
+              contextNote += `\n[Image skipped — only ${MAX_IMAGES} images per turn.]`;
+              continue;
+            }
+            const { buffer } = await withTimeout(
+              fetchCapped(att.url, IMAGE_BYTE_LIMIT),
+              PER_FILE_FETCH_MS, `fetch ${att.name}`,
+            );
+            const uint8 = new Uint8Array(buffer);
+            let binary = "";
+            const chunkSize = 0x8000;
+            for (let i = 0; i < uint8.length; i += chunkSize) {
+              binary += String.fromCharCode.apply(null, uint8.subarray(i, i + chunkSize) as unknown as number[]);
+            }
+            const b64 = btoa(binary);
+            const n = att.name.toLowerCase();
+            const mimeType = (att.type && att.type.startsWith("image/"))
+              ? att.type
+              : (n.endsWith(".png") ? "image/png" :
+                 n.endsWith(".gif") ? "image/gif" :
+                 n.endsWith(".webp") ? "image/webp" : "image/jpeg");
+            multimodalParts.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } });
+            imagesAccepted++;
+            contextNote += "\n[Image transmitted — analyse visually]";
+
+          } else if (kind.isText) {
+            const { buffer, truncated } = await withTimeout(
+              fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
+              PER_FILE_FETCH_MS, `fetch ${att.name}`,
+            );
+            const text = new TextDecoder().decode(buffer);
+            const slice = text.slice(0, Math.min(PER_FILE_TEXT_MAX, textBudgetRemaining));
+            contextNote += `\n${slice}`;
+            textBudgetRemaining -= slice.length;
+            if (truncated || text.length > slice.length) {
+              contextNote += `\n[…truncated…]`;
+            }
+
+          } else if (kind.isPDF) {
+            const { buffer } = await withTimeout(
+              fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
+              PER_FILE_FETCH_MS, `fetch ${att.name}`,
+            );
+            let extracted = "";
+            try {
+              const result = await withTimeout(
+                extractText(new Uint8Array(buffer), { mergePages: true }) as Promise<{ text: string | string[] }>,
+                PER_FILE_PARSE_MS, `parse ${att.name}`,
+              );
+              const t = result?.text;
+              extracted = (Array.isArray(t) ? t.join("\n\n") : t || "").trim();
+            } catch (parseErr) {
+              console.warn(`[zoe-chat] pdf parse failed for ${att.name}:`, (parseErr as Error).message);
+            }
+            if (extracted.length > 0) {
+              const slice = extracted.slice(0, Math.min(PER_FILE_TEXT_MAX, textBudgetRemaining));
+              contextNote += `\n${slice}`;
+              textBudgetRemaining -= slice.length;
+              if (extracted.length > slice.length) contextNote += `\n[…PDF truncated, ${extracted.length} total chars…]`;
+            } else {
+              contextNote += `\n[PDF "${att.name}" appears to be scanned/image-only — no extractable text. Ask user to paste key passages or upload .docx.]`;
+              skipNotes.push(`${att.name} (no extractable text)`);
+            }
+
+          } else if (kind.isDocx || kind.isXlsx || kind.isPptx) {
+            const { buffer } = await withTimeout(
+              fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
+              PER_FILE_FETCH_MS, `fetch ${att.name}`,
+            );
+            let plainText = "";
+            try {
+              plainText = await withTimeout((async () => {
+                const zip = new JSZip();
+                await zip.loadAsync(new Uint8Array(buffer));
+                let xmlContent = "";
+                if (kind.isDocx) {
+                  const docFile = zip.file("word/document.xml");
+                  if (docFile) xmlContent = await docFile.async("string");
+                } else if (kind.isXlsx) {
+                  const filesMap = zip.files as Record<string, any>;
+                  const sheetFiles = Object.keys(filesMap).filter(f => /xl\/worksheets\/sheet\d+\.xml/.test(f)).slice(0, 3);
+                  for (const sf of sheetFiles) xmlContent += await filesMap[sf].async("string") + "\n";
+                } else if (kind.isPptx) {
+                  const filesMap = zip.files as Record<string, any>;
+                  const slideFiles = Object.keys(filesMap).filter(f => /ppt\/slides\/slide\d+\.xml/.test(f)).slice(0, 20);
+                  for (const sf of slideFiles) xmlContent += await filesMap[sf].async("string") + "\n";
+                }
+                if (!xmlContent) return "";
+                return xmlContent
+                  .replace(/<a:br[^>]*\/?>/g, "\n").replace(/<w:br[^>]*\/?>/g, "\n")
+                  .replace(/<\/w:p>/g, "\n").replace(/<\/a:p>/g, "\n")
+                  .replace(/<[^>]+>/g, " ")
+                  .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+                  .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ")
+                  .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+              })(), PER_FILE_PARSE_MS, `parse ${att.name}`);
+            } catch (parseErr) {
+              console.warn(`[zoe-chat] office parse failed for ${att.name}:`, (parseErr as Error).message);
+            }
+            if (plainText) {
+              const slice = plainText.slice(0, Math.min(PER_FILE_TEXT_MAX, textBudgetRemaining));
+              contextNote += `\n${slice}`;
+              textBudgetRemaining -= slice.length;
+              if (plainText.length > slice.length) contextNote += `\n[…truncated, ${plainText.length} total chars…]`;
+            } else {
+              contextNote += "\n[Could not extract text from this Office file — please paste the key sections.]";
+              skipNotes.push(`${att.name} (office extraction failed)`);
+            }
+
+          } else {
+            // Unknown — try as text, fall back gracefully.
+            try {
+              const { buffer } = await withTimeout(
+                fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
+                PER_FILE_FETCH_MS, `fetch ${att.name}`,
+              );
+              const text = new TextDecoder().decode(buffer);
+              const isBinary = text.includes("\x00") || /[\x01-\x08\x0E-\x1F]/.test(text.slice(0, 200));
+              if (!isBinary) {
+                const slice = text.slice(0, Math.min(6_000, textBudgetRemaining));
+                contextNote += `\n${slice}`;
+                textBudgetRemaining -= slice.length;
+              } else {
+                contextNote += "\n[Binary file — cannot extract text from this format]";
+                skipNotes.push(`${att.name} (unsupported binary format)`);
+              }
+            } catch (e) {
+              contextNote += `\n[Could not retrieve file: ${(e as Error).message}]`;
+              skipNotes.push(`${att.name} (fetch failed)`);
+            }
+          }
+        } catch (e) {
+          // Per-file failure: log and continue with the rest.
+          const msg = (e as Error).message || "unknown error";
+          console.warn(`[zoe-chat] attachment failed: ${att.name}:`, msg);
+          contextNote += `\n[Failed: ${msg}]`;
+          skipNotes.push(`${att.name} (${msg})`);
+        }
+      }
+
+      if (skipNotes.length > 0) {
+        contextNote += `\n\n[ZOE NOTE: ${skipNotes.length} file(s) had issues. If the user asks about them, briefly mention which were skipped: ${skipNotes.join("; ")}.]`;
       }
     }
 
