@@ -578,9 +578,10 @@ serve(async (req) => {
     const PER_FILE_FETCH_MS   = 12_000;            // 12s fetch+download timeout per file
     const PER_FILE_PARSE_MS   = 8_000;             // 8s parse timeout per file
     const TOTAL_TEXT_BUDGET   = 60_000;            // total chars of extracted prose injected
-    const PER_FILE_TEXT_MAX   = 12_000;            // cap any single file's extracted text
+    const PER_FILE_TEXT_MAX   = 12_000;            // absolute cap for any single file's extracted text
     const IMAGE_BYTE_LIMIT    = 6 * 1024 * 1024;   // 6 MB cap for inline images
     const MAX_IMAGES          = 4;
+    const MAX_FILES           = 10;                // matches client-side documented limit
 
     const multimodalParts: { type: string; image_url?: { url: string } }[] = [];
     let textBudgetRemaining = TOTAL_TEXT_BUDGET;
@@ -601,13 +602,16 @@ serve(async (req) => {
     async function fetchCapped(url: string, maxBytes: number): Promise<{ buffer: ArrayBuffer; truncated: boolean }> {
       const ctrl = new AbortController();
       const resp = await fetch(url, { signal: ctrl.signal });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) {
+        throw new Error(resp.status === 403 || resp.status === 401
+          ? `signed URL expired or unauthorised (${resp.status})`
+          : `HTTP ${resp.status}`);
+      }
       const cl = resp.headers.get("content-length");
       if (cl && Number(cl) > maxBytes) {
         ctrl.abort();
         throw new Error(`file is ${(Number(cl) / 1024 / 1024).toFixed(1)}MB — exceeds ${(maxBytes / 1024 / 1024).toFixed(0)}MB cap`);
       }
-      // Stream-read up to the cap; abort if we cross it.
       const reader = resp.body?.getReader();
       if (!reader) {
         const buffer = await resp.arrayBuffer();
@@ -638,56 +642,197 @@ serve(async (req) => {
       return { buffer: out.buffer, truncated };
     }
 
-    function classify(att: { name: string; type: string }) {
-      const n = (att.name || "").toLowerCase();
-      const t = (att.type || "").toLowerCase();
-      return {
-        isText: t.startsWith("text/") || t === "application/json" ||
-                /\.(md|txt|csv|json|log|xml|yaml|yml)$/.test(n),
-        isPDF: t === "application/pdf" || n.endsWith(".pdf"),
-        isImage: t.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/.test(n),
-        isDocx: t.includes("wordprocessingml") || n.endsWith(".docx"),
-        isXlsx: t.includes("spreadsheetml") || n.endsWith(".xlsx"),
-        isPptx: n.endsWith(".pptx"),
+    // ── Broad file-type classifier ────────────────────────────────────────
+    type Kind =
+      | "image" | "heic" | "pdf" | "docx" | "xlsx" | "pptx"
+      | "odt" | "rtf" | "epub" | "text" | "code"
+      | "audio" | "video" | "unknown";
+
+    const TEXT_EXTS = new Set([
+      "txt","md","markdown","rst","csv","tsv","json","jsonl","xml","yaml","yml",
+      "toml","ini","cfg","conf","env","log","html","htm","svg","tex","bib",
+    ]);
+    const CODE_EXTS = new Set([
+      "ts","tsx","js","jsx","mjs","cjs","py","rb","go","rs","java","kt","kts",
+      "swift","c","h","cpp","cc","hpp","cs","php","scala","clj","ex","exs",
+      "erl","hs","lua","pl","pm","r","jl","dart","sh","bash","zsh","fish",
+      "ps1","bat","sql","graphql","gql","proto","dockerfile","makefile","gradle",
+      "vue","svelte","astro",
+    ]);
+    const AUDIO_EXTS = new Set(["mp3","wav","m4a","ogg","flac","aac","wma","opus","aiff"]);
+    const VIDEO_EXTS = new Set(["mp4","mov","webm","mkv","avi","wmv","flv","m4v"]);
+
+    function extOf(name: string): string {
+      const m = (name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+      return m ? m[1] : "";
+    }
+
+    function languageHint(ext: string): string {
+      const map: Record<string, string> = {
+        ts: "ts", tsx: "tsx", js: "js", jsx: "jsx", py: "python", rb: "ruby",
+        go: "go", rs: "rust", java: "java", kt: "kotlin", swift: "swift",
+        c: "c", h: "c", cpp: "cpp", hpp: "cpp", cs: "csharp", php: "php",
+        sh: "bash", bash: "bash", zsh: "bash", sql: "sql", json: "json",
+        yaml: "yaml", yml: "yaml", toml: "toml", html: "html", htm: "html",
+        xml: "xml", md: "markdown", csv: "csv", tsv: "tsv", env: "ini",
+        ini: "ini", cfg: "ini", conf: "ini", log: "", txt: "",
       };
+      return map[ext] ?? "";
+    }
+
+    function sniffMagic(bytes: Uint8Array): Kind | null {
+      if (bytes.length < 4) return null;
+      if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "pdf";
+      // ZIP container — disambiguate by extension/MIME later, do not return
+      if (bytes[0] === 0x50 && bytes[1] === 0x4B && (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07)) return null;
+      if (bytes[0] === 0x7B && bytes[1] === 0x5C && bytes[2] === 0x72 && bytes[3] === 0x74) return "rtf";
+      if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return "image";
+      if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return "image";
+      if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return "image";
+      if (bytes.length >= 12) {
+        if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+            bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image";
+        if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+          const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+          if (["heic","heix","heim","hevc","mif1","msf1","heis"].includes(brand)) return "heic";
+          if (brand === "M4A ") return "audio";
+          if (brand === "qt  " || brand.startsWith("mp4") || brand === "isom" || brand === "M4V ") return "video";
+        }
+      }
+      if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return "audio";
+      if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return "audio";
+      if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) return "audio";
+      return null;
+    }
+
+    function classifyAttachment(name: string, mime: string, head: Uint8Array | null): Kind {
+      const ext = extOf(name);
+      const m = (mime || "").toLowerCase();
+      if (head) {
+        const sniff = sniffMagic(head);
+        if (sniff) return sniff;
+      }
+      if (m.startsWith("image/heic") || m.startsWith("image/heif")) return "heic";
+      if (m.startsWith("image/")) return "image";
+      if (m.startsWith("audio/")) return "audio";
+      if (m.startsWith("video/")) return "video";
+      if (m === "application/pdf") return "pdf";
+      if (m.includes("wordprocessingml")) return "docx";
+      if (m.includes("spreadsheetml")) return "xlsx";
+      if (m.includes("presentationml")) return "pptx";
+      if (m === "application/vnd.oasis.opendocument.text") return "odt";
+      if (m === "application/rtf" || m === "text/rtf") return "rtf";
+      if (m === "application/epub+zip") return "epub";
+      if (ext === "pdf") return "pdf";
+      if (ext === "docx") return "docx";
+      if (ext === "xlsx") return "xlsx";
+      if (ext === "pptx") return "pptx";
+      if (ext === "odt") return "odt";
+      if (ext === "rtf") return "rtf";
+      if (ext === "epub") return "epub";
+      if (ext === "heic" || ext === "heif") return "heic";
+      if (["png","jpg","jpeg","gif","webp","bmp","svg"].includes(ext)) return "image";
+      if (AUDIO_EXTS.has(ext)) return "audio";
+      if (VIDEO_EXTS.has(ext)) return "video";
+      if (TEXT_EXTS.has(ext)) return "text";
+      if (CODE_EXTS.has(ext)) return "code";
+      if (m.startsWith("text/") || m === "application/json") return "text";
+      return "unknown";
+    }
+
+    function decodeText(buffer: ArrayBuffer): string {
+      const bytes = new Uint8Array(buffer);
+      let text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      return text;
+    }
+
+    function rtfToText(rtf: string): string {
+      return rtf
+        .replace(/\\par[d]?/g, "\n")
+        .replace(/\\line/g, "\n")
+        .replace(/\\tab/g, "\t")
+        .replace(/\\'[0-9a-fA-F]{2}/g, " ")
+        .replace(/\\[a-zA-Z]+-?\d* ?/g, "")
+        .replace(/[{}]/g, "")
+        .replace(/\\\*/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+    }
+
+    function stripXml(xml: string): string {
+      return xml
+        .replace(/<a:br[^>]*\/?>/g, "\n").replace(/<w:br[^>]*\/?>/g, "\n")
+        .replace(/<text:line-break[^>]*\/?>/g, "\n")
+        .replace(/<\/w:p>/g, "\n").replace(/<\/a:p>/g, "\n").replace(/<\/text:p>/g, "\n")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&apos;/g, "'").replace(/&nbsp;/g, " ")
+        .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
     }
 
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {
       contextNote += "\n\nATTACHED FILES:";
 
-      // Hard cap on number of files we even try to process.
-      const MAX_FILES = 8;
-      const filesToProcess = (attachments as { name: string; url: string; type: string }[])
-        .filter(a => a && typeof a.url === "string" && typeof a.name === "string")
-        .slice(0, MAX_FILES);
-      if (attachments.length > MAX_FILES) {
-        skipNotes.push(`${attachments.length - MAX_FILES} extra file(s) ignored — limit is ${MAX_FILES}/turn.`);
-      }
-
-      // Process files sequentially so the budget can short-circuit cleanly,
-      // but each file is wrapped in its own timeout so one bad file can't
-      // stall the whole request.
-      for (const att of filesToProcess) {
-        const kind = classify(att);
-        contextNote += `\n\n[File: ${att.name}]`;
-
-        // If we've burned the text budget, skip parsing further non-image files.
-        if (!kind.isImage && textBudgetRemaining <= 200) {
-          contextNote += "\n[Skipped — total extracted text budget for this turn was exhausted by earlier files. Ask user to send fewer files or paste key passages.]";
-          skipNotes.push(`${att.name} skipped (budget exhausted)`);
+      // Filter, dedupe (name+url), cap at MAX_FILES.
+      const valid = (attachments as { name: string; url: string; type: string }[])
+        .filter(a => a && typeof a.url === "string" && typeof a.name === "string");
+      const seenKey = new Set<string>();
+      const filesToProcess: { name: string; url: string; type: string }[] = [];
+      let dupCount = 0;
+      for (const a of valid) {
+        const key = `${a.name}::${a.url}`;
+        if (seenKey.has(key)) { dupCount++; continue; }
+        seenKey.add(key);
+        if (filesToProcess.length >= MAX_FILES) {
+          skipNotes.push(`${a.name} skipped (max ${MAX_FILES} files/turn)`);
           continue;
         }
+        filesToProcess.push(a);
+      }
+      if (dupCount > 0) skipNotes.push(`${dupCount} duplicate attachment(s) ignored`);
+      if (valid.length !== attachments.length) {
+        skipNotes.push(`${attachments.length - valid.length} invalid attachment(s) ignored`);
+      }
+
+      // Per-file fair share so one huge file can't starve the rest.
+      const fairShare = Math.max(2_000, Math.floor(TOTAL_TEXT_BUDGET / Math.max(1, filesToProcess.length)));
+      const perFileCap = Math.min(PER_FILE_TEXT_MAX, fairShare);
+
+      for (const att of filesToProcess) {
+        contextNote += `\n\n[File: ${att.name}]`;
 
         try {
-          if (kind.isImage) {
-            if (imagesAccepted >= MAX_IMAGES) {
-              contextNote += `\n[Image skipped — only ${MAX_IMAGES} images per turn.]`;
-              continue;
-            }
-            const { buffer } = await withTimeout(
-              fetchCapped(att.url, IMAGE_BYTE_LIMIT),
+          let buffer: ArrayBuffer;
+          let truncated = false;
+          try {
+            const fetched = await withTimeout(
+              fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
               PER_FILE_FETCH_MS, `fetch ${att.name}`,
             );
+            buffer = fetched.buffer;
+            truncated = fetched.truncated;
+          } catch (fetchErr) {
+            const msg = (fetchErr as Error).message || "fetch failed";
+            contextNote += `\n[Could not retrieve file: ${msg}]`;
+            skipNotes.push(`${att.name} (${msg})`);
+            continue;
+          }
+
+          const head = new Uint8Array(buffer.slice(0, 16));
+          const kind = classifyAttachment(att.name, att.type || "", head);
+
+          if (kind === "image") {
+            if (imagesAccepted >= MAX_IMAGES) {
+              contextNote += `\n[Image skipped — only ${MAX_IMAGES} images per turn.]`;
+              skipNotes.push(`${att.name} (image limit reached)`);
+              continue;
+            }
+            if (buffer.byteLength > IMAGE_BYTE_LIMIT) {
+              contextNote += `\n[Image too large for inline analysis (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB).]`;
+              skipNotes.push(`${att.name} (image too large)`);
+              continue;
+            }
             const uint8 = new Uint8Array(buffer);
             let binary = "";
             const chunkSize = 0x8000;
@@ -695,34 +840,52 @@ serve(async (req) => {
               binary += String.fromCharCode.apply(null, uint8.subarray(i, i + chunkSize) as unknown as number[]);
             }
             const b64 = btoa(binary);
-            const n = att.name.toLowerCase();
-            const mimeType = (att.type && att.type.startsWith("image/"))
+            const ext = extOf(att.name);
+            const mimeType = (att.type && att.type.startsWith("image/") && !att.type.includes("heic") && !att.type.includes("heif"))
               ? att.type
-              : (n.endsWith(".png") ? "image/png" :
-                 n.endsWith(".gif") ? "image/gif" :
-                 n.endsWith(".webp") ? "image/webp" : "image/jpeg");
+              : (ext === "png" ? "image/png" :
+                 ext === "gif" ? "image/gif" :
+                 ext === "webp" ? "image/webp" :
+                 ext === "svg" ? "image/svg+xml" : "image/jpeg");
             multimodalParts.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } });
             imagesAccepted++;
             contextNote += "\n[Image transmitted — analyse visually]";
+            continue;
+          }
 
-          } else if (kind.isText) {
-            const { buffer, truncated } = await withTimeout(
-              fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
-              PER_FILE_FETCH_MS, `fetch ${att.name}`,
-            );
-            const text = new TextDecoder().decode(buffer);
-            const slice = text.slice(0, Math.min(PER_FILE_TEXT_MAX, textBudgetRemaining));
-            contextNote += `\n${slice}`;
+          if (kind === "heic") {
+            contextNote += `\n[HEIC images aren't readable by the AI yet. Ask the user to re-export as JPG or PNG.]`;
+            skipNotes.push(`${att.name} (HEIC not supported — convert to JPG/PNG)`);
+            continue;
+          }
+
+          if (kind === "audio" || kind === "video") {
+            contextNote += `\n[${kind === "audio" ? "Audio" : "Video"} attachments aren't supported in chat yet. Ask the user for a transcript or written summary.]`;
+            skipNotes.push(`${att.name} (${kind} not supported yet)`);
+            continue;
+          }
+
+          // For non-image extracted-text kinds, bail early if budget burned.
+          if (textBudgetRemaining <= 200) {
+            contextNote += `\n[Skipped — extracted-text budget for this turn was exhausted by earlier files.]`;
+            skipNotes.push(`${att.name} (budget exhausted)`);
+            continue;
+          }
+
+          if (kind === "text" || kind === "code") {
+            const text = decodeText(buffer);
+            const slice = text.slice(0, Math.min(perFileCap, textBudgetRemaining));
+            const lang = languageHint(extOf(att.name));
+            contextNote += `\n\`\`\`${lang}\n${slice}\n\`\`\``;
             textBudgetRemaining -= slice.length;
             if (truncated || text.length > slice.length) {
-              contextNote += `\n[…truncated…]`;
+              contextNote += `\n[…truncated — ${text.length} total chars]`;
+              skipNotes.push(`${att.name} (truncated, ${(buffer.byteLength / 1024).toFixed(0)}KB)`);
             }
+            continue;
+          }
 
-          } else if (kind.isPDF) {
-            const { buffer } = await withTimeout(
-              fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
-              PER_FILE_FETCH_MS, `fetch ${att.name}`,
-            );
+          if (kind === "pdf") {
             let extracted = "";
             try {
               const result = await withTimeout(
@@ -734,85 +897,105 @@ serve(async (req) => {
             } catch (parseErr) {
               console.warn(`[zoe-chat] pdf parse failed for ${att.name}:`, (parseErr as Error).message);
             }
-            if (extracted.length > 0) {
-              const slice = extracted.slice(0, Math.min(PER_FILE_TEXT_MAX, textBudgetRemaining));
+            if (extracted.length >= 40) {
+              const slice = extracted.slice(0, Math.min(perFileCap, textBudgetRemaining));
               contextNote += `\n${slice}`;
               textBudgetRemaining -= slice.length;
-              if (extracted.length > slice.length) contextNote += `\n[…PDF truncated, ${extracted.length} total chars…]`;
+              if (extracted.length > slice.length) {
+                contextNote += `\n[…PDF truncated, ${extracted.length} total chars…]`;
+                skipNotes.push(`${att.name} (PDF truncated)`);
+              }
             } else {
-              contextNote += `\n[PDF "${att.name}" appears to be scanned/image-only — no extractable text. Ask user to paste key passages or upload .docx.]`;
-              skipNotes.push(`${att.name} (no extractable text)`);
+              contextNote += `\n[PDF "${att.name}" looks scanned — no selectable text. Ask the user to paste the key passages or upload a text/.docx version.]`;
+              skipNotes.push(`${att.name} (scanned PDF — no text)`);
             }
+            continue;
+          }
 
-          } else if (kind.isDocx || kind.isXlsx || kind.isPptx) {
-            const { buffer } = await withTimeout(
-              fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
-              PER_FILE_FETCH_MS, `fetch ${att.name}`,
-            );
+          if (kind === "docx" || kind === "xlsx" || kind === "pptx" || kind === "odt" || kind === "epub") {
             let plainText = "";
             try {
               plainText = await withTimeout((async () => {
                 const zip = new JSZip();
                 await zip.loadAsync(new Uint8Array(buffer));
+                const filesMap = zip.files as Record<string, any>;
                 let xmlContent = "";
-                if (kind.isDocx) {
+                if (kind === "docx") {
                   const docFile = zip.file("word/document.xml");
                   if (docFile) xmlContent = await docFile.async("string");
-                } else if (kind.isXlsx) {
-                  const filesMap = zip.files as Record<string, any>;
+                } else if (kind === "xlsx") {
                   const sheetFiles = Object.keys(filesMap).filter(f => /xl\/worksheets\/sheet\d+\.xml/.test(f)).slice(0, 3);
                   for (const sf of sheetFiles) xmlContent += await filesMap[sf].async("string") + "\n";
-                } else if (kind.isPptx) {
-                  const filesMap = zip.files as Record<string, any>;
+                } else if (kind === "pptx") {
                   const slideFiles = Object.keys(filesMap).filter(f => /ppt\/slides\/slide\d+\.xml/.test(f)).slice(0, 20);
                   for (const sf of slideFiles) xmlContent += await filesMap[sf].async("string") + "\n";
+                } else if (kind === "odt") {
+                  const contentFile = zip.file("content.xml");
+                  if (contentFile) xmlContent = await contentFile.async("string");
+                } else if (kind === "epub") {
+                  const docFiles = Object.keys(filesMap)
+                    .filter(f => /\.(xhtml|html|htm)$/i.test(f))
+                    .slice(0, 30);
+                  for (const sf of docFiles) {
+                    xmlContent += await filesMap[sf].async("string") + "\n";
+                    if (xmlContent.length > perFileCap * 4) break;
+                  }
                 }
                 if (!xmlContent) return "";
-                return xmlContent
-                  .replace(/<a:br[^>]*\/?>/g, "\n").replace(/<w:br[^>]*\/?>/g, "\n")
-                  .replace(/<\/w:p>/g, "\n").replace(/<\/a:p>/g, "\n")
-                  .replace(/<[^>]+>/g, " ")
-                  .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-                  .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ")
-                  .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+                return stripXml(xmlContent);
               })(), PER_FILE_PARSE_MS, `parse ${att.name}`);
             } catch (parseErr) {
-              console.warn(`[zoe-chat] office parse failed for ${att.name}:`, (parseErr as Error).message);
+              console.warn(`[zoe-chat] ${kind} parse failed for ${att.name}:`, (parseErr as Error).message);
             }
             if (plainText) {
-              const slice = plainText.slice(0, Math.min(PER_FILE_TEXT_MAX, textBudgetRemaining));
+              const slice = plainText.slice(0, Math.min(perFileCap, textBudgetRemaining));
               contextNote += `\n${slice}`;
               textBudgetRemaining -= slice.length;
-              if (plainText.length > slice.length) contextNote += `\n[…truncated, ${plainText.length} total chars…]`;
-            } else {
-              contextNote += "\n[Could not extract text from this Office file — please paste the key sections.]";
-              skipNotes.push(`${att.name} (office extraction failed)`);
-            }
-
-          } else {
-            // Unknown — try as text, fall back gracefully.
-            try {
-              const { buffer } = await withTimeout(
-                fetchCapped(att.url, PER_FILE_BYTE_LIMIT),
-                PER_FILE_FETCH_MS, `fetch ${att.name}`,
-              );
-              const text = new TextDecoder().decode(buffer);
-              const isBinary = text.includes("\x00") || /[\x01-\x08\x0E-\x1F]/.test(text.slice(0, 200));
-              if (!isBinary) {
-                const slice = text.slice(0, Math.min(6_000, textBudgetRemaining));
-                contextNote += `\n${slice}`;
-                textBudgetRemaining -= slice.length;
-              } else {
-                contextNote += "\n[Binary file — cannot extract text from this format]";
-                skipNotes.push(`${att.name} (unsupported binary format)`);
+              if (plainText.length > slice.length) {
+                contextNote += `\n[…truncated, ${plainText.length} total chars…]`;
+                skipNotes.push(`${att.name} (truncated)`);
               }
-            } catch (e) {
-              contextNote += `\n[Could not retrieve file: ${(e as Error).message}]`;
-              skipNotes.push(`${att.name} (fetch failed)`);
+            } else {
+              contextNote += `\n[Could not extract text from this ${kind.toUpperCase()} file — please paste the key sections.]`;
+              skipNotes.push(`${att.name} (${kind} extraction failed)`);
+            }
+            continue;
+          }
+
+          if (kind === "rtf") {
+            const raw = decodeText(buffer);
+            const text = rtfToText(raw);
+            if (text) {
+              const slice = text.slice(0, Math.min(perFileCap, textBudgetRemaining));
+              contextNote += `\n${slice}`;
+              textBudgetRemaining -= slice.length;
+              if (text.length > slice.length) {
+                contextNote += `\n[…RTF truncated, ${text.length} total chars…]`;
+                skipNotes.push(`${att.name} (truncated)`);
+              }
+            } else {
+              contextNote += `\n[RTF appeared empty after stripping formatting.]`;
+              skipNotes.push(`${att.name} (empty RTF)`);
+            }
+            continue;
+          }
+
+          // Unknown — last-chance UTF-8 sniff.
+          {
+            const text = decodeText(buffer);
+            const sample = text.slice(0, 400);
+            const isBinary = sample.includes("\x00") || /[\x01-\x08\x0E-\x1F]/.test(sample);
+            if (!isBinary && text.trim().length > 0) {
+              const slice = text.slice(0, Math.min(perFileCap, textBudgetRemaining));
+              contextNote += `\n${slice}`;
+              textBudgetRemaining -= slice.length;
+              if (text.length > slice.length) contextNote += `\n[…truncated]`;
+            } else {
+              contextNote += `\n[Binary file — cannot extract text from this format.]`;
+              skipNotes.push(`${att.name} (unsupported binary format)`);
             }
           }
         } catch (e) {
-          // Per-file failure: log and continue with the rest.
           const msg = (e as Error).message || "unknown error";
           console.warn(`[zoe-chat] attachment failed: ${att.name}:`, msg);
           contextNote += `\n[Failed: ${msg}]`;
