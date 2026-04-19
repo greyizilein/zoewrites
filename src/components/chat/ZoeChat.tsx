@@ -708,7 +708,9 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     ? sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
     : sessions;
 
-  const messages = currentSession?.messages ?? [];
+  const allMessages = currentSession?.messages ?? [];
+  // Hide internal status / blueprint stash messages from the UI.
+  const messages = allMessages.filter(m => !m.hidden && !m.content.startsWith("__ARCHITECT_BLUEPRINT__") && !m.content.startsWith("__INTERNAL_AUTO_WRITE__"));
   const hasMessages = messages.length > 0 || !!streaming;
 
   // Only render for subscribed users (free tier does not get ZoeChat)
