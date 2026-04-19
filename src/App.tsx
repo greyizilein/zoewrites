@@ -13,18 +13,8 @@ import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
 import ZoePage from "./pages/Zoe";
-import ZoeChat from "./components/chat/ZoeChat";
-import { useLocation } from "react-router-dom";
 
 const queryClient = new QueryClient();
-
-// Hide the floating ZOE widget on /zoe (renders inline) and on /dashboard
-// (the dashboard has dedicated "Open ZOE" buttons that route to the AMOLED workspace).
-function GlobalZoeWidget() {
-  const { pathname } = useLocation();
-  if (pathname.startsWith("/zoe") || pathname.startsWith("/dashboard")) return null;
-  return <ZoeChat mode="widget" />;
-}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -33,7 +23,6 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <GlobalZoeWidget />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
