@@ -353,6 +353,65 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "architect_work",
+      description: "PHASE 1 of the writing doctrine. Call this FIRST for any structured deliverable (essay, report, dissertation, case study, business plan, reflective piece, lit review, proposal). Produces ONE meticulous markdown execution table that becomes the blueprint for writing. Do NOT write the deliverable yourself — call this tool, then present the returned table to the user and ask them to reply 'begin' / 'next' to start the writing phase. Always pass the FULL brief verbatim, including any uploaded text the user attached.",
+      parameters: {
+        type: "object",
+        properties: {
+          brief: {
+            type: "string",
+            description: "The complete brief, verbatim. Include the user's request and ALL attached/extracted document text. Do not summarise. Do not paraphrase.",
+          },
+          deliverable_type: {
+            type: "string",
+            description: "Essay, Report, Dissertation, Case Study, Business Plan, Reflective Piece, Literature Review, Proposal, etc.",
+          },
+          word_count: {
+            type: "number",
+            description: "Total target word count. If the brief specifies a range, use the upper bound.",
+          },
+          academic_level: {
+            type: "string",
+            description: "e.g. Undergraduate L4/L5/L6, Postgraduate L7, Doctoral L8. Default L7 if unspecified.",
+          },
+          citation_style: {
+            type: "string",
+            description: "Harvard, APA, MLA, Vancouver, Chicago, OSCOLA, etc. Default Harvard if unspecified.",
+          },
+          min_citations: {
+            type: "number",
+            description: "Minimum total citations required. Use the brief's number if stated; otherwise default to ceil(word_count / 100).",
+          },
+          subject_or_module: {
+            type: "string",
+            description: "Subject area or module name if discernible from the brief.",
+          },
+        },
+        required: ["brief", "deliverable_type", "word_count"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "write_section",
+      description: "PHASE 2 of the writing doctrine. Call this when the user has approved the architect table and asked to begin (or to continue with the next section). Writes EXACTLY ONE section from the architect table at a time, then pauses for user feedback or 'next'. The section text is rendered inline in the chat by the model — this tool just signals which section is being written so the UI can show progress.",
+      parameters: {
+        type: "object",
+        properties: {
+          section_title: { type: "string", description: "Exact heading from the architect table." },
+          section_index: { type: "number", description: "0-indexed position within the table." },
+          word_target: { type: "number", description: "Target word count for this section (the model must honour ±1%)." },
+        },
+        required: ["section_title"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ── Semantic Scholar lookup ──────────────────────────────────────────────────
