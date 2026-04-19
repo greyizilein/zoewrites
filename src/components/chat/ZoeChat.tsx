@@ -7,7 +7,11 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2, ArrowUpRight, Settings, ChevronRight, Copy, Download, Check, FileText, FileType } from "lucide-react";
+import {
+  Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare,
+  Loader2, ArrowUpRight, Settings, ChevronRight, Copy, Download, Check,
+  FileText, FileType, Menu, PanelLeftClose, Palette, ThumbsUp, ThumbsDown, RotateCw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,7 +28,7 @@ interface PendingUpload {
   id: string;
   name: string;
   type: string;
-  progress: number; // 0–100
+  progress: number;
   status: UploadStatus;
   attachment?: Attachment;
 }
@@ -60,7 +64,7 @@ interface Message {
   attachments?: Attachment[];
   chart?: ChartData;
   clarification?: ClarificationData;
-  hidden?: boolean; // internal status messages (e.g. "Planning your work…") — replaced by streamed output
+  hidden?: boolean;
 }
 
 interface ChatSession {
@@ -76,12 +80,6 @@ interface ChatSession {
 const PAYSTACK_PUBLIC_KEY = "pk_live_e1d5c33f8f38484c592eaad87382adab502a8c1e";
 const GBP_TO_NGN = 2083;
 const TIER_PRICES_GBP: Record<string, number> = { hello: 15, regular: 45, professional: 110 };
-
-// (Model selection is fully autonomous and tier-based on the server.
-//  No client-side model picker.)
-
-
-// ─────────────────────────── Writing settings ────────────────────────────────
 
 interface WritingSettings {
   citationStyle: string;
@@ -102,21 +100,40 @@ const DEFAULT_WRITING_SETTINGS: WritingSettings = {
   sourceDateFrom: 2015,
   sourceDateTo: 2025,
 };
-const CHART_COLORS = ["#c87a55", "#5c8671", "#7e68a8", "#436fa3", "#c49a30", "#c8556f"];
+const CHART_COLORS = ["#10b981", "#5c8671", "#7e68a8", "#436fa3", "#c49a30", "#c8556f"];
 
 const QUICK_ACTIONS = [
   { icon: "✍️", label: "Write", prompt: "I need help writing an academic assignment." },
   { icon: "✏️", label: "Edit", prompt: "Can you edit and improve my work?" },
   { icon: "📋", label: "Outline", prompt: "Help me create an outline for my assignment." },
   { icon: "💡", label: "Brainstorm", prompt: "Let us brainstorm ideas for my topic." },
-  { icon: "⚙️", label: "Settings", prompt: "What can you help me with?" },
+];
+
+// ─────────────────────────── Theme palette (10 colours) ──────────────────────
+
+interface ZoeTheme {
+  key: string;
+  label: string;
+  accent: string;       // primary colour (bubble + send button)
+  accentHover: string;  // slightly darker for hover
+  accentFg: string;     // text colour on accent
+}
+
+const THEMES: ZoeTheme[] = [
+  { key: "emerald",    label: "Emerald",    accent: "#10b981", accentHover: "#0ea372", accentFg: "#ffffff" },
+  { key: "terracotta", label: "Terracotta", accent: "#c87a55", accentHover: "#b56a47", accentFg: "#ffffff" },
+  { key: "sky",        label: "Sky",        accent: "#0ea5e9", accentHover: "#0284c7", accentFg: "#ffffff" },
+  { key: "violet",     label: "Violet",     accent: "#8b5cf6", accentHover: "#7c3aed", accentFg: "#ffffff" },
+  { key: "rose",       label: "Rose",       accent: "#f43f5e", accentHover: "#e11d48", accentFg: "#ffffff" },
+  { key: "amber",      label: "Amber",      accent: "#f59e0b", accentHover: "#d97706", accentFg: "#1a1a1a" },
+  { key: "slate",      label: "Slate",      accent: "#64748b", accentHover: "#475569", accentFg: "#ffffff" },
+  { key: "teal",       label: "Teal",       accent: "#14b8a6", accentHover: "#0d9488", accentFg: "#ffffff" },
+  { key: "indigo",     label: "Indigo",     accent: "#6366f1", accentHover: "#4f46e5", accentFg: "#ffffff" },
+  { key: "pink",       label: "Pink",       accent: "#ec4899", accentHover: "#db2777", accentFg: "#ffffff" },
 ];
 
 const SK = (uid: string) => `zoe_sessions_${uid}`;
-
-// Marker prefix used by the zoe-architect edge function. Messages whose content
-// begins with this token are rendered as architect-table cards with a CTA.
-const ARCHITECT_TABLE_MARKER = "<!--ZOE_ARCHITECT_TABLE-->";
+const TK = (uid: string) => `zoe_theme_${uid}`;
 
 // ─────────────────────────── Storage helpers ─────────────────────────────────
 
@@ -153,15 +170,17 @@ function fileTypeLabel(name: string): string {
 
 function InlineChart({ chart }: { chart: ChartData }) {
   const rechartData = chart.data.map(d => ({ name: d.label, value: d.value }));
-  const h = 180;
+  const h = 200;
+  const wrap = "w-full mt-3 rounded-xl overflow-hidden bg-white/5 border border-white/10 p-3";
 
   if (chart.type === "pie") {
     return (
-      <div className="w-full mt-3 rounded-xl overflow-hidden bg-white/60 border border-black/8 p-3">
-        {chart.title && <p className="text-[12px] font-semibold text-foreground/65 mb-2">{chart.title}</p>}
+      <div className={wrap}>
+        {chart.title && <p className="text-[12px] font-semibold text-white/65 mb-2">{chart.title}</p>}
         <ResponsiveContainer width="100%" height={h}>
           <PieChart>
-            <Pie data={rechartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={68} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+            <Pie data={rechartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={68}
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
               {rechartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
             </Pie>
             <Tooltip formatter={(v: number) => v.toLocaleString()} />
@@ -170,63 +189,56 @@ function InlineChart({ chart }: { chart: ChartData }) {
       </div>
     );
   }
-
   if (chart.type === "line") {
     return (
-      <div className="w-full mt-3 rounded-xl overflow-hidden bg-white/60 border border-black/8 p-3">
-        {chart.title && <p className="text-[12px] font-semibold text-foreground/65 mb-2">{chart.title}</p>}
+      <div className={wrap}>
+        {chart.title && <p className="text-[12px] font-semibold text-white/65 mb-2">{chart.title}</p>}
         <ResponsiveContainer width="100%" height={h}>
           <LineChart data={rechartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#999" }} />
+            <YAxis tick={{ fontSize: 10, fill: "#999" }} />
             <Tooltip formatter={(v: number) => v.toLocaleString()} />
             <Line type="monotone" dataKey="value" stroke={CHART_COLORS[0]} strokeWidth={2} dot={{ r: 3 }} />
           </LineChart>
         </ResponsiveContainer>
-        {chart.x_label && <p className="text-[10px] text-foreground/40 text-center mt-1">{chart.x_label}</p>}
       </div>
     );
   }
-
   if (chart.type === "area") {
     return (
-      <div className="w-full mt-3 rounded-xl overflow-hidden bg-white/60 border border-black/8 p-3">
-        {chart.title && <p className="text-[12px] font-semibold text-foreground/65 mb-2">{chart.title}</p>}
+      <div className={wrap}>
+        {chart.title && <p className="text-[12px] font-semibold text-white/65 mb-2">{chart.title}</p>}
         <ResponsiveContainer width="100%" height={h}>
           <AreaChart data={rechartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#999" }} />
+            <YAxis tick={{ fontSize: 10, fill: "#999" }} />
             <Tooltip formatter={(v: number) => v.toLocaleString()} />
             <Area type="monotone" dataKey="value" stroke={CHART_COLORS[0]} fill={`${CHART_COLORS[0]}30`} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
-        {chart.x_label && <p className="text-[10px] text-foreground/40 text-center mt-1">{chart.x_label}</p>}
       </div>
     );
   }
-
-  // Default: bar
   return (
-    <div className="w-full mt-3 rounded-xl overflow-hidden bg-white/60 border border-black/8 p-3">
-      {chart.title && <p className="text-[12px] font-semibold text-foreground/65 mb-2">{chart.title}</p>}
+    <div className={wrap}>
+      {chart.title && <p className="text-[12px] font-semibold text-white/65 mb-2">{chart.title}</p>}
       <ResponsiveContainer width="100%" height={h}>
         <BarChart data={rechartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} />
+          <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#999" }} />
+          <YAxis tick={{ fontSize: 10, fill: "#999" }} />
           <Tooltip formatter={(v: number) => v.toLocaleString()} />
           <Bar dataKey="value" radius={[4, 4, 0, 0]}>
             {rechartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-      {chart.x_label && <p className="text-[10px] text-foreground/40 text-center mt-1">{chart.x_label}</p>}
     </div>
   );
 }
 
 // ─────────────────────────── Clarification Form ──────────────────────────────
 
-function ClarificationForm({ data, onSubmit }: { data: ClarificationData; onSubmit: (a: Record<string, any>) => void }) {
+function ClarificationForm({ data, onSubmit, accent }: { data: ClarificationData; onSubmit: (a: Record<string, any>) => void; accent: string; }) {
   const [values, setValues] = useState<Record<string, any>>(() => {
     const init: Record<string, any> = {};
     for (const f of data.fields) {
@@ -236,7 +248,6 @@ function ClarificationForm({ data, onSubmit }: { data: ClarificationData; onSubm
   });
 
   const update = (k: string, v: any) => setValues(prev => ({ ...prev, [k]: v }));
-
   const canSubmit = data.fields.every(f => {
     if (!f.required) return true;
     const v = values[f.key];
@@ -245,24 +256,20 @@ function ClarificationForm({ data, onSubmit }: { data: ClarificationData; onSubm
   });
 
   return (
-    <div className="mt-2 rounded-xl border border-black/10 bg-white/70 p-3 shadow-sm space-y-3">
-      {data.intro && <p className="text-[12px] text-foreground/65">{data.intro}</p>}
+    <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
+      {data.intro && <p className="text-[13px] text-white/70">{data.intro}</p>}
       {data.fields.map(f => (
-        <div key={f.key} className="space-y-1">
-          <label className="text-[11px] font-semibold text-foreground/70">
-            {f.label}{f.required && <span className="text-terracotta"> *</span>}
+        <div key={f.key} className="space-y-1.5">
+          <label className="text-[11px] font-semibold text-white/70">
+            {f.label}{f.required && <span style={{ color: accent }}> *</span>}
           </label>
-          {f.type === "text" && (
-            <input type="text" placeholder={f.placeholder} value={values[f.key]} onChange={e => update(f.key, e.target.value)}
-              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none focus:border-terracotta/50" />
-          )}
-          {f.type === "number" && (
-            <input type="number" placeholder={f.placeholder} value={values[f.key]} onChange={e => update(f.key, e.target.value)}
-              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none focus:border-terracotta/50" />
+          {(f.type === "text" || f.type === "number") && (
+            <input type={f.type} placeholder={f.placeholder} value={values[f.key]} onChange={e => update(f.key, e.target.value)}
+              className="w-full text-[13px] bg-black/40 border border-white/10 rounded-lg px-3 py-2 outline-none text-white placeholder:text-white/30 focus:border-white/30" />
           )}
           {f.type === "select" && (
             <select value={values[f.key]} onChange={e => update(f.key, e.target.value)}
-              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer">
+              className="w-full text-[13px] bg-black/40 border border-white/10 rounded-lg px-3 py-2 outline-none text-white cursor-pointer">
               {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
             </select>
           )}
@@ -273,8 +280,9 @@ function ClarificationForm({ data, onSubmit }: { data: ClarificationData; onSubm
                 return (
                   <button key={o} type="button"
                     onClick={() => update(f.key, checked ? (values[f.key] as string[]).filter(x => x !== o) : [...(values[f.key] as string[]), o])}
-                    className={cn("text-[11px] px-2.5 py-1 rounded-full border transition-colors",
-                      checked ? "bg-terracotta text-white border-terracotta" : "bg-white text-foreground/65 border-black/15 hover:border-terracotta/40")}>
+                    style={checked ? { backgroundColor: accent, borderColor: accent, color: "#fff" } : undefined}
+                    className={cn("text-[11px] px-3 py-1.5 rounded-full border transition-colors",
+                      !checked && "bg-transparent text-white/65 border-white/15 hover:border-white/30")}>
                     {o}
                   </button>
                 );
@@ -284,9 +292,128 @@ function ClarificationForm({ data, onSubmit }: { data: ClarificationData; onSubm
         </div>
       ))}
       <button type="button" disabled={!canSubmit} onClick={() => onSubmit(values)}
-        className={cn("mt-1 w-full px-3 py-2 rounded-xl text-[12px] font-semibold transition-all",
-          canSubmit ? "bg-terracotta text-white hover:brightness-110 active:scale-[0.98]" : "bg-black/8 text-foreground/30 cursor-not-allowed")}>
+        style={canSubmit ? { backgroundColor: accent, color: "#fff" } : undefined}
+        className={cn("mt-1 w-full px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all",
+          canSubmit ? "hover:brightness-110 active:scale-[0.98]" : "bg-white/5 text-white/30 cursor-not-allowed")}>
         Submit & continue
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────── Pending uploads strip ───────────────────────────
+
+function UploadsStrip({ uploads, onRemove, accent }: {
+  uploads: PendingUpload[];
+  onRemove: (id: string) => void;
+  accent: string;
+}) {
+  if (uploads.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mb-2">
+      {uploads.map(p => {
+        const label = fileTypeLabel(p.name);
+        const r = 10, circ = 2 * Math.PI * r;
+        return (
+          <div key={p.id} className="relative flex items-center gap-2 px-2.5 py-2 bg-white/5 border border-white/10 rounded-xl max-w-[200px]">
+            <span className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-[9px] font-extrabold tracking-wide"
+              style={{ backgroundColor: `${accent}22`, color: accent }}>
+              {label}
+            </span>
+            <span className="text-[11px] text-white/75 font-medium truncate flex-1 min-w-0">
+              {p.name.length > 18 ? p.name.slice(0, 16) + "…" : p.name}
+            </span>
+            {p.status === "uploading" && (
+              <svg width="22" height="22" viewBox="0 0 24 24" className="flex-shrink-0" style={{ color: accent }}>
+                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.5"/>
+                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5"
+                  strokeDasharray={circ} strokeDashoffset={circ - (p.progress / 100) * circ}
+                  strokeLinecap="round" transform="rotate(-90 12 12)"
+                  style={{ transition: "stroke-dashoffset 0.15s ease" }}/>
+              </svg>
+            )}
+            {p.status === "done" && (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="flex-shrink-0 text-emerald-400">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                <path d="M8 12l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+            {p.status === "error" && (
+              <span className="text-[9px] text-red-400 font-semibold flex-shrink-0">Failed</span>
+            )}
+            <button type="button" onClick={() => onRemove(p.id)}
+              className="flex-shrink-0 text-white/30 hover:text-white/70 ml-0.5 leading-none">
+              <X size={11}/>
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────── Pill composer ───────────────────────────────────
+
+function PillComposer({
+  input, setInput, onSend, onAttach, loading, anyUploading, hasContent, placeholder, theme, large,
+}: {
+  input: string;
+  setInput: (v: string) => void;
+  onSend: () => void;
+  onAttach: () => void;
+  loading: boolean;
+  anyUploading: boolean;
+  hasContent: boolean;
+  placeholder: string;
+  theme: ZoeTheme;
+  large?: boolean;
+}) {
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, large ? 200 : 160)}px`;
+  }, [input, large]);
+
+  const canSend = hasContent && !loading && !anyUploading;
+
+  return (
+    <div className="flex items-end gap-2 w-full bg-[#1a1a1a] border border-white/10 rounded-[28px] px-3 py-2 shadow-[0_8px_30px_rgba(0,0,0,0.6)] focus-within:border-white/25 transition-colors">
+      <button
+        type="button"
+        disabled={loading}
+        onClick={onAttach}
+        title="Attach"
+        className={cn("flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-colors",
+          loading ? "text-white/25 cursor-not-allowed" : "text-white/55 hover:bg-white/10 hover:text-white cursor-pointer")}
+      >
+        <Plus size={18} />
+      </button>
+      <textarea
+        ref={taRef}
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+        placeholder={placeholder}
+        rows={1}
+        autoCapitalize="sentences" autoCorrect="on" enterKeyHint="send" spellCheck
+        className="flex-1 bg-transparent outline-none resize-none text-white placeholder:text-white/40 leading-relaxed py-2"
+        style={{ fontSize: large ? "17px" : "16px", minHeight: "24px", maxHeight: large ? "200px" : "160px", overflowY: "auto", scrollbarWidth: "none", touchAction: "manipulation" }}
+      />
+      <button
+        type="button"
+        onClick={onSend}
+        disabled={!canSend}
+        title="Send"
+        style={canSend ? { backgroundColor: theme.accent, color: theme.accentFg } : undefined}
+        className={cn(
+          "flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all",
+          canSend ? "hover:brightness-110 active:scale-95" : "bg-white/10 text-white/30 cursor-not-allowed",
+        )}
+      >
+        {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={15} />}
       </button>
     </div>
   );
@@ -297,13 +424,14 @@ function ClarificationForm({ data, onSubmit }: { data: ClarificationData; onSubm
 export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" }) {
   const { user, session, signOut } = useAuth();
   const navigate = useNavigate();
-  useLocation(); // keep router context fresh
+  useLocation();
   const launcherX = useMotionValue(0);
   const launcherY = useMotionValue(0);
 
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);          // page mode default open on desktop
+  const [mobileSidebar, setMobileSidebar] = useState(false);     // mobile slide-over state
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentId, setCurrentId] = useState("");
   const [input, setInput] = useState("");
@@ -314,17 +442,15 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [profile, setProfile] = useState<{ full_name: string | null; tier: string } | null>(null);
 
-  // Model + writing settings state
-  const [selectedModel, setSelectedModel] = useState("google/gemini-3-flash-preview");
   const [writingSettings, setWritingSettings] = useState<WritingSettings>(DEFAULT_WRITING_SETTINGS);
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const [settingsGroupOpen, setSettingsGroupOpen] = useState({ writing: true, style: false, sources: false });
+  const [settingsGroupOpen, setSettingsGroupOpen] = useState({ appearance: true, writing: false, style: false, sources: false });
+
+  const [themeKey, setThemeKey] = useState<string>("emerald");
+  const theme = useMemo(() => THEMES.find(t => t.key === themeKey) ?? THEMES[0], [themeKey]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Callback ref so the stable native event listener can always call the latest version
   const startFileUploadRef = useRef<(file: File) => void>(() => {});
 
   const currentSession = useMemo(() => sessions.find(s => s.id === currentId) ?? null, [sessions, currentId]);
@@ -357,35 +483,26 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       const saved = localStorage.getItem(`zoe_launcher_pos_${user.id}`);
       if (saved) {
         const { x, y } = JSON.parse(saved);
-        launcherX.set(x);
-        launcherY.set(y);
+        launcherX.set(x); launcherY.set(y);
       }
     } catch {}
-  }, [user?.id]);
+  }, [user?.id, launcherX, launcherY]);
 
-  // Load persisted model + writing settings
+  // Load persisted writing settings + theme
   useEffect(() => {
     if (!user?.id) return;
     try {
-      const m = localStorage.getItem(`zoe_model_${user.id}`);
-      if (m) setSelectedModel(m);
       const s = localStorage.getItem(`zoe_settings_${user.id}`);
       if (s) setWritingSettings(prev => ({ ...prev, ...JSON.parse(s) }));
+      const t = localStorage.getItem(TK(user.id));
+      if (t && THEMES.some(x => x.key === t)) setThemeKey(t);
     } catch {}
   }, [user?.id]);
 
+  // Native file change listener (Android Chrome quirk)
   useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-  }, [input]);
-
-  // Native change listener — Android Chrome sometimes doesn't fire React's
-  // synthetic onChange on programmatically triggered file inputs; this catches it.
-  useEffect(() => {
-    const input = fileInputRef.current;
-    if (!input) return;
+    const inputEl = fileInputRef.current;
+    if (!inputEl) return;
     const handleNativeChange = (e: Event) => {
       const files = (e.target as HTMLInputElement).files;
       if (files && files.length > 0) {
@@ -393,9 +510,9 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         (e.target as HTMLInputElement).value = "";
       }
     };
-    input.addEventListener("change", handleNativeChange);
-    return () => input.removeEventListener("change", handleNativeChange);
-  }, []); // startFileUploadRef is a stable ref; callback is updated every render
+    inputEl.addEventListener("change", handleNativeChange);
+    return () => inputEl.removeEventListener("change", handleNativeChange);
+  }, []);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -417,7 +534,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     }));
   }
 
-  // ── Upload on file-select ─────────────────────────────────────────────────
+  // ── Upload ────────────────────────────────────────────────────────────────
 
   async function startFileUpload(file: File) {
     if (!user?.id) return;
@@ -453,11 +570,8 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       setPendingUploads(prev => prev.map(p => p.id === id ? { ...p, status: "error" } : p));
     }
   }
-
-  // Keep the ref current so the stable native event listener always calls the latest closure
   startFileUploadRef.current = startFileUpload;
 
-  // Derived upload state
   const anyUploading = pendingUploads.some(p => p.status === "uploading");
   const readyAttachments = pendingUploads.filter(p => p.status === "done").map(p => p.attachment!);
 
@@ -467,34 +581,23 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     switch (name) {
 
       case "architect_work": {
-        // Phase 1 of the writing doctrine.
-        // Show a placeholder while the architect runs (it can take 30–60 s).
         const placeholderId = crypto.randomUUID();
         addMessage({
-          id: placeholderId,
-          role: "assistant",
+          id: placeholderId, role: "assistant",
           content: "Planning your work…",
           timestamp: Date.now(),
         });
-
         try {
           const { data, error } = await supabase.functions.invoke("zoe-architect", {
             body: {
-              brief: args.brief,
-              deliverable_type: args.deliverable_type,
-              word_count: args.word_count,
-              academic_level: args.academic_level,
-              citation_style: args.citation_style,
-              min_citations: args.min_citations,
-              subject_or_module: args.subject_or_module,
+              brief: args.brief, deliverable_type: args.deliverable_type, word_count: args.word_count,
+              academic_level: args.academic_level, citation_style: args.citation_style,
+              min_citations: args.min_citations, subject_or_module: args.subject_or_module,
             },
           });
           if (error) throw error;
           const table = (data as any)?.table || "";
           if (!table) throw new Error("Empty architect response");
-
-          // Silent architect: do NOT show the table. Stash it on the placeholder
-          // (hidden) so we can pass it back to the model in the next turn for writing.
           setSessions(prev => prev.map(s => {
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
@@ -504,10 +607,6 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
             );
             return { ...s, messages: msgs, updatedAt: Date.now() };
           }));
-
-          // Auto-continue: immediately ask the model to write Section 1 against the
-          // (now silent) blueprint. The blueprint is included in the next turn's
-          // history under a system-style note.
           setTimeout(() => {
             handleSend(`__INTERNAL_AUTO_WRITE__\n\nUse the following INTERNAL blueprint (do not reveal or mention it to the user) and immediately begin writing the full document section-by-section in this same turn, without pausing. Use clear ## headings.\n\n${table}`);
           }, 50);
@@ -525,19 +624,13 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         break;
       }
 
-      case "write_section": {
-        // Phase 2 marker — the actual prose comes streamed inline.
-        break;
-      }
+      case "write_section": break;
 
       case "request_clarification": {
         const fields = Array.isArray(args.fields) ? args.fields : [];
         if (fields.length === 0) break;
         addMessage({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "",
-          timestamp: Date.now(),
+          id: crypto.randomUUID(), role: "assistant", content: "", timestamp: Date.now(),
           clarification: { intro: args.intro || "Quick check before I start:", fields, submitted: false },
         });
         break;
@@ -546,9 +639,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       case "navigate_to": {
         const allowed = ["/dashboard", "/analytics"];
         const route = (args.route as string) || "";
-        if (route && allowed.some(r => route.startsWith(r))) {
-          navigate(route); setOpen(false);
-        }
+        if (route && allowed.some(r => route.startsWith(r))) { navigate(route); setOpen(false); }
         break;
       }
 
@@ -563,7 +654,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         if (tier === "custom") {
           const customWords = Math.round((args.custom_words as number) || 0);
           if (!customWords) break;
-          amountNGN = customWords * 23; // ₦23/word
+          amountNGN = customWords * 23;
         } else {
           const priceGBP = TIER_PRICES_GBP[tier];
           if (!priceGBP) break;
@@ -571,15 +662,10 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         }
         await loadPaystackScript();
         openPaystackPopup({
-          email: user.email,
-          amountInKobo: amountNGN * 100,
-          tier,
-          customWords: args.custom_words,
-          publicKey: PAYSTACK_PUBLIC_KEY,
+          email: user.email, amountInKobo: amountNGN * 100, tier,
+          customWords: args.custom_words, publicKey: PAYSTACK_PUBLIC_KEY,
           onSuccess: async (reference) => {
-            await supabase.functions.invoke("paystack-verify", {
-              body: { reference, tier, custom_words: args.custom_words ?? 0 },
-            });
+            await supabase.functions.invoke("paystack-verify", { body: { reference, tier, custom_words: args.custom_words ?? 0 } });
             const customWords = args.custom_words as number | undefined;
             addMessage({
               id: crypto.randomUUID(), role: "assistant",
@@ -610,9 +696,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         const aId = (args.assessment_id as string) || getAssessmentIdFromUrl();
         if (!aId) break;
         const { error } = await supabase.from("assessments").delete().eq("id", aId);
-        if (!error) {
-          if (window.location.pathname.includes(aId)) navigate("/dashboard");
-        }
+        if (!error && window.location.pathname.includes(aId)) navigate("/dashboard");
         break;
       }
 
@@ -633,13 +717,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         if (!args.data?.length) break;
         addMessage({
           id: crypto.randomUUID(), role: "assistant", content: "", timestamp: Date.now(),
-          chart: {
-            type: args.type || "bar",
-            title: args.title,
-            data: args.data,
-            x_label: args.x_label,
-            y_label: args.y_label,
-          },
+          chart: { type: args.type || "bar", title: args.title, data: args.data, x_label: args.x_label, y_label: args.y_label },
         });
         break;
       }
@@ -648,9 +726,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         const aId = getAssessmentIdFromUrl();
         if (!aId) break;
         const { data } = await supabase.functions.invoke("coherence-pass", { body: { assessment_id: aId } });
-        if (data?.result) {
-          addMessage({ id: crypto.randomUUID(), role: "assistant", content: data.result, timestamp: Date.now() });
-        }
+        if (data?.result) addMessage({ id: crypto.randomUUID(), role: "assistant", content: data.result, timestamp: Date.now() });
         break;
       }
 
@@ -660,15 +736,11 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         const { data } = await supabase.functions.invoke("predict-grade", {
           body: { assessment_id: aId, focus_areas: args.focus_areas },
         });
-        if (data?.result) {
-          addMessage({ id: crypto.randomUUID(), role: "assistant", content: data.result, timestamp: Date.now() });
-        }
+        if (data?.result) addMessage({ id: crypto.randomUUID(), role: "assistant", content: data.result, timestamp: Date.now() });
         break;
       }
 
-      case "confirm_execution_plan":
-        // Acknowledged inline by ZOE's text response; no additional action needed
-        break;
+      case "confirm_execution_plan": break;
 
       case "generate_images": {
         const { data: imgData } = await supabase.functions.invoke("generate-images", {
@@ -693,7 +765,6 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
           });
           if (genErr) throw genErr;
           if (genData?.image_url) {
-            // Replace the "Generating…" message with the actual image
             setSessions(prev => prev.map(s => {
               if (s.id !== currentId) return s;
               const msgs = [...s.messages];
@@ -712,7 +783,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     }
   }
 
-  // ── Send message ──────────────────────────────────────────────────────────
+  // ── Send ──────────────────────────────────────────────────────────────────
 
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
@@ -757,7 +828,8 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         addMessage({ id: crypto.randomUUID(), role: "assistant", content: "Something went wrong — please try again.", timestamp: Date.now() });
       }
     } finally { setLoading(false); setStreaming(""); }
-  }, [input, pendingUploads, loading, currentSession, session, user?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, pendingUploads, loading, currentSession, session, user?.id, writingSettings, profile?.tier]);
 
   // ── Session management ────────────────────────────────────────────────────
 
@@ -765,11 +837,22 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     const s = mkSession();
     setSessions(prev => [s, ...prev]);
     setCurrentId(s.id);
-    setSidebarOpen(false);
+    setMobileSidebar(false);
   }
 
-  function handleDeleteMessages() {
-    updateSession(currentId, s => ({ ...s, messages: [], title: "New Chat", updatedAt: Date.now() }));
+  function handleDeleteSession(id: string) {
+    setSessions(prev => {
+      const next = prev.filter(s => s.id !== id);
+      if (id === currentId) {
+        if (next.length === 0) {
+          const fresh = mkSession();
+          setCurrentId(fresh.id);
+          return [fresh];
+        }
+        setCurrentId(next[0].id);
+      }
+      return next;
+    });
   }
 
   const filteredSessions = searchQuery
@@ -777,11 +860,9 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     : sessions;
 
   const allMessages = currentSession?.messages ?? [];
-  // Hide internal status / blueprint stash messages from the UI.
   const messages = allMessages.filter(m => !m.hidden && !m.content.startsWith("__ARCHITECT_BLUEPRINT__") && !m.content.startsWith("__INTERNAL_AUTO_WRITE__"));
   const hasMessages = messages.length > 0 || !!streaming;
 
-  // Only render for subscribed users (free tier does not get ZoeChat)
   if (!user) return null;
   if (!profile || profile.tier === "free") return null;
 
@@ -789,17 +870,8 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
 
   function saveLauncherPos() {
     if (user?.id) {
-      localStorage.setItem(
-        `zoe_launcher_pos_${user.id}`,
-        JSON.stringify({ x: launcherX.get(), y: launcherY.get() })
-      );
+      localStorage.setItem(`zoe_launcher_pos_${user.id}`, JSON.stringify({ x: launcherX.get(), y: launcherY.get() }));
     }
-  }
-
-  function changeModel(id: string) {
-    setSelectedModel(id);
-    setShowModelPicker(false);
-    if (user?.id) localStorage.setItem(`zoe_model_${user.id}`, id);
   }
 
   function changeWritingSetting<K extends keyof WritingSettings>(key: K, value: WritingSettings[K]) {
@@ -810,547 +882,483 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     });
   }
 
-  // Model selection is fully autonomous — no UI helpers required.
+  function changeTheme(key: string) {
+    setThemeKey(key);
+    if (user?.id) localStorage.setItem(TK(user.id), key);
+  }
 
+  // ── Render: WIDGET MODE (legacy, kept minimal — unmounted in routes) ────
+  if (mode === "widget") {
+    return (
+      <>
+        <input ref={fileInputRef} type="file" multiple accept="*/*"
+          style={{ position: "fixed", top: 0, left: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+          onChange={e => {
+            Array.from(e.target.files || []).forEach(f => startFileUploadRef.current(f));
+            e.target.value = "";
+          }}/>
+        {(!open || minimized) && (
+          <motion.button drag dragMomentum={false} dragElastic={0}
+            style={{ x: launcherX, y: launcherY }} onDragEnd={saveLauncherPos}
+            onClick={() => { setOpen(true); setMinimized(false); }} aria-label="Open ZOE"
+            className="fixed bottom-20 right-6 md:bottom-6 z-50 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none">
+            <span className="absolute inset-0 rounded-full animate-ping" style={{ backgroundColor: `${theme.accent}66` }}/>
+            <span className="relative w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-[13px] font-extrabold tracking-widest z-10 hover:brightness-110 active:scale-95 transition-all select-none"
+              style={{ backgroundColor: theme.accent, color: theme.accentFg }}>
+              ZOE
+            </span>
+          </motion.button>
+        )}
+      </>
+    );
+  }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
+  // ── Render: PAGE MODE (ChatGPT-style layout) ──────────────────────────────
   return (
-    <>
-      {/* Hidden file input — 1×1px at top-left corner (NOT off-viewport, NOT display:none)
-          so both iOS Safari and Android Chrome open the native file picker on .click() */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept="*/*"
-        style={{ position: "fixed", top: "0", left: "0", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }}
+    <div
+      data-zoe-mode="page"
+      className="zoe-amoled flex w-full h-screen bg-black text-white overflow-hidden"
+      style={{
+        ["--zoe-accent" as any]: theme.accent,
+        ["--zoe-accent-fg" as any]: theme.accentFg,
+        ["--zoe-accent-hover" as any]: theme.accentHover,
+      }}
+    >
+      {/* Hidden file input */}
+      <input ref={fileInputRef} type="file" multiple accept="*/*"
+        style={{ position: "fixed", top: 0, left: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
         onChange={e => {
           Array.from(e.target.files || []).forEach(f => startFileUploadRef.current(f));
           e.target.value = "";
-        }}
-      />
+        }}/>
 
-      {/* Launcher — widget mode only */}
-      {mode === "widget" && (!open || minimized) && (
-        <motion.button
-          drag
-          dragMomentum={false}
-          dragElastic={0}
-          style={{ x: launcherX, y: launcherY }}
-          onDragEnd={saveLauncherPos}
-          onClick={() => { setOpen(true); setMinimized(false); }}
-          aria-label="Open ZOE"
-          className="fixed bottom-20 right-6 md:bottom-6 z-50 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
-        >
-          <span className="absolute inset-0 rounded-full bg-terracotta/40 animate-ping" />
-          <span className="relative w-14 h-14 rounded-full bg-terracotta shadow-lg flex items-center justify-center text-white text-[13px] font-extrabold tracking-widest z-10 hover:brightness-110 active:scale-95 transition-all select-none">
-            ZOE
-          </span>
-        </motion.button>
+      {/* Mobile sidebar backdrop */}
+      {mobileSidebar && (
+        <div className="fixed inset-0 z-40 bg-black/70 md:hidden" onClick={() => setMobileSidebar(false)} aria-hidden="true" />
       )}
 
-      {/* Mobile backdrop — widget mode only */}
-      {mode === "widget" && open && !minimized && (
-        <div className="fixed inset-0 bg-black/40 z-[55] md:hidden" onClick={() => setOpen(false)} />
-      )}
-
-      {/* Chat panel */}
-      <div
-        data-zoe-mode={mode}
-        className={cn(
-          "flex flex-col",
-          mode === "page" ? "zoe-amoled w-full h-screen bg-black" : "bg-[#F5F0EB]",
-          mode === "widget" && cn(
-            "fixed z-[60] shadow-2xl transition-all duration-300 ease-in-out",
-            "inset-0 md:inset-auto md:top-0 md:right-0 md:h-screen md:w-[420px] md:border-l md:border-black/10",
-            open && !minimized
-              ? "translate-y-0 md:translate-x-0 opacity-100"
-              : "translate-y-full md:translate-y-0 md:translate-x-full opacity-0 pointer-events-none",
-          ),
-        )}>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-black/8 flex-shrink-0">
+      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      <aside className={cn(
+        "z-50 flex flex-col flex-shrink-0 border-r border-white/[0.08] transition-all duration-300 ease-in-out bg-[#0A0A0A]",
+        // Mobile: slide-over fixed
+        "fixed inset-y-0 left-0 w-[280px] md:relative md:inset-auto",
+        mobileSidebar ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+        // Desktop: collapsible width
+        sidebarOpen ? "md:w-[270px]" : "md:w-0 md:border-r-0 md:overflow-hidden",
+      )}>
+        {/* Top: brand + collapse */}
+        <div className="flex items-center justify-between px-3 py-3 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSidebarOpen(v => !v)}
-              className={cn(
-                "flex w-8 h-8 rounded-lg items-center justify-center transition-colors",
-                sidebarOpen ? "bg-terracotta/15 text-terracotta" : "text-foreground/50 hover:bg-black/8",
-              )}
-              title="Chat history"
-              aria-label="Toggle chat history"
-              aria-pressed={sidebarOpen}
-            >
-              <History size={15} />
-            </button>
-            <div className="w-6 h-6 rounded-full bg-terracotta flex items-center justify-center">
-              <span className="text-white text-[7px] font-extrabold tracking-widest">ZOE</span>
+            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.accent }}>
+              <span className="text-[8px] font-extrabold tracking-widest" style={{ color: theme.accentFg }}>ZOE</span>
             </div>
-            <span className="text-[15px] font-bold text-foreground">ZOE</span>
+            <span className="text-[14px] font-semibold tracking-tight">ZOE</span>
           </div>
-          <div className="flex items-center gap-0.5">
-            <button onClick={handleNewChat} title="New Chat" className="w-8 h-8 rounded-lg flex items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
-              <Plus size={16} />
+          <button
+            onClick={() => { setSidebarOpen(false); setMobileSidebar(false); }}
+            title="Collapse sidebar"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-white/45 hover:bg-white/[0.06] hover:text-white transition-colors"
+          >
+            <PanelLeftClose size={16} />
+          </button>
+        </div>
+
+        {/* New chat */}
+        <div className="px-2">
+          <button
+            onClick={handleNewChat}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[13px] font-medium text-white/85 hover:bg-white/[0.06] transition-colors border border-white/[0.08]"
+          >
+            <Plus size={15} /> New chat
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-2 pt-2">
+          <div className="flex items-center gap-2 bg-white/[0.04] rounded-lg px-3 py-2 border border-transparent focus-within:border-white/[0.12] transition-colors">
+            <Search size={13} className="text-white/35 flex-shrink-0" />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search chats"
+              className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-white/35 text-white"
+              style={{ fontSize: "16px" }}
+            />
+          </div>
+        </div>
+
+        {/* Chat list */}
+        <div className="flex-1 overflow-y-auto py-3 px-2">
+          <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">Chats</p>
+          {filteredSessions.length === 0 && (
+            <p className="text-[11px] text-white/30 text-center py-6">No chats yet</p>
+          )}
+          <div className="space-y-0.5">
+            {filteredSessions.map(s => {
+              const active = s.id === currentId;
+              return (
+                <div key={s.id} className="group/row relative">
+                  <button
+                    onClick={() => { setCurrentId(s.id); setMobileSidebar(false); }}
+                    className={cn(
+                      "w-full text-left px-3 py-2 rounded-lg text-[13px] truncate transition-colors flex items-center gap-2",
+                      active ? "bg-white/[0.08] text-white" : "text-white/65 hover:bg-white/[0.04]",
+                    )}
+                    style={active ? { boxShadow: `inset 2px 0 0 ${theme.accent}` } : undefined}
+                  >
+                    <span className="truncate flex-1">{s.title}</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
+                    title="Delete"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-md flex items-center justify-center opacity-0 group-hover/row:opacity-100 text-white/40 hover:text-white hover:bg-white/[0.08] transition-opacity"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Settings panel */}
+        <div className="border-t border-white/[0.08] flex-shrink-0 overflow-y-auto max-h-[55%]">
+          <div className="px-3 pt-3 pb-1 flex items-center gap-1.5 text-[10px] font-semibold text-white/40 uppercase tracking-wider">
+            <Settings size={10} /> Settings
+          </div>
+
+          {/* Appearance */}
+          <div className="px-3 pb-1">
+            <button onClick={() => setSettingsGroupOpen(p => ({ ...p, appearance: !p.appearance }))}
+              className="w-full flex items-center justify-between py-2 text-[12px] font-semibold text-white/80 hover:text-white transition-colors">
+              <span className="flex items-center gap-1.5"><Palette size={11} /> Appearance</span>
+              <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.appearance ? "rotate-90" : "")} />
             </button>
-            <button onClick={handleDeleteMessages} title="Clear chat" className="w-8 h-8 rounded-lg flex items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
-              <Trash2 size={14} />
+            {settingsGroupOpen.appearance && (
+              <div className="pb-3">
+                <p className="text-[10px] text-white/45 mb-2">Chat theme</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {THEMES.map(t => {
+                    const active = t.key === themeKey;
+                    return (
+                      <button
+                        key={t.key}
+                        onClick={() => changeTheme(t.key)}
+                        title={t.label}
+                        className={cn(
+                          "relative w-full aspect-square rounded-full transition-transform hover:scale-110 active:scale-95",
+                          active && "ring-2 ring-offset-2 ring-offset-[#0A0A0A]",
+                        )}
+                        style={{
+                          backgroundColor: t.accent,
+                          boxShadow: active ? `0 0 0 2px ${t.accent}` : undefined,
+                          ["--tw-ring-color" as any]: t.accent,
+                        }}
+                      >
+                        {active && <Check size={11} className="absolute inset-0 m-auto" style={{ color: t.accentFg }} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Writing */}
+          <div className="px-3 pb-1 border-t border-white/[0.05]">
+            <button onClick={() => setSettingsGroupOpen(p => ({ ...p, writing: !p.writing }))}
+              className="w-full flex items-center justify-between py-2 text-[12px] font-semibold text-white/80 hover:text-white transition-colors">
+              Writing
+              <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.writing ? "rotate-90" : "")} />
             </button>
-            {mode === "widget" && (
-              <button onClick={() => { navigate("/chat"); setOpen(false); }} title="Open full chat" className="w-8 h-8 rounded-lg flex items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
-                <ArrowUpRight size={15} />
-              </button>
+            {settingsGroupOpen.writing && (
+              <div className="space-y-1.5 pb-2">
+                {[
+                  { label: "Citation", key: "citationStyle" as const, opts: ["Harvard","APA 7th","MLA 9th","Chicago","Vancouver","IEEE","OSCOLA"] },
+                  { label: "Level", key: "academicLevel" as const, opts: ["L4","L5","L6","L7","Doctoral"] },
+                  { label: "Type", key: "assessmentType" as const, opts: ["Essay","Report","Case Study","Dissertation","Literature Review","Research Paper","Reflection"] },
+                ].map(({ label, key, opts }) => (
+                  <div key={key}>
+                    <p className="text-[9px] text-white/40 mb-0.5">{label}</p>
+                    <select value={writingSettings[key]} onChange={e => changeWritingSetting(key, e.target.value)}
+                      className="w-full text-[11px] bg-white/[0.04] rounded-lg px-2 py-1.5 outline-none border border-white/[0.08] text-white/85 cursor-pointer">
+                      {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
             )}
-            {mode === "page" && (
-              <button onClick={() => navigate("/dashboard")} title="Dashboard" className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
-                Dashboard
-              </button>
+          </div>
+
+          {/* Style */}
+          <div className="px-3 pb-1 border-t border-white/[0.05]">
+            <button onClick={() => setSettingsGroupOpen(p => ({ ...p, style: !p.style }))}
+              className="w-full flex items-center justify-between py-2 text-[12px] font-semibold text-white/80 hover:text-white transition-colors">
+              Style
+              <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.style ? "rotate-90" : "")} />
+            </button>
+            {settingsGroupOpen.style && (
+              <div className="space-y-1.5 pb-2">
+                {[
+                  { label: "Tone", key: "writingTone" as const, opts: ["Analytical","Critical","Evaluative","Reflective","Argumentative"] },
+                  { label: "Humanisation", key: "humanisationLevel" as const, opts: ["Low","Medium","High"] },
+                ].map(({ label, key, opts }) => (
+                  <div key={key}>
+                    <p className="text-[9px] text-white/40 mb-0.5">{label}</p>
+                    <select value={writingSettings[key]} onChange={e => changeWritingSetting(key, e.target.value)}
+                      className="w-full text-[11px] bg-white/[0.04] rounded-lg px-2 py-1.5 outline-none border border-white/[0.08] text-white/85 cursor-pointer">
+                      {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
             )}
-            {mode === "widget" && (
-              <button onClick={() => setMinimized(true)} title="Minimize" className="hidden md:flex w-8 h-8 rounded-lg items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
-                <Minus size={15} />
-              </button>
-            )}
-            {mode === "widget" && (
-              <button onClick={() => { setOpen(false); setMinimized(false); }} title="Close" className="w-8 h-8 rounded-lg flex items-center justify-center text-foreground/50 hover:bg-black/8 hover:text-foreground transition-colors">
-                <X size={16} />
-              </button>
+          </div>
+
+          {/* Sources */}
+          <div className="px-3 pb-2 border-t border-white/[0.05]">
+            <button onClick={() => setSettingsGroupOpen(p => ({ ...p, sources: !p.sources }))}
+              className="w-full flex items-center justify-between py-2 text-[12px] font-semibold text-white/80 hover:text-white transition-colors">
+              Sources
+              <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.sources ? "rotate-90" : "")} />
+            </button>
+            {settingsGroupOpen.sources && (
+              <div className="pb-2">
+                <p className="text-[9px] text-white/40 mb-1">Date Range</p>
+                <div className="flex items-center gap-1.5">
+                  <input type="number" value={writingSettings.sourceDateFrom} onChange={e => changeWritingSetting("sourceDateFrom", Number(e.target.value))}
+                    className="w-full text-[11px] bg-white/[0.04] rounded-lg px-2 py-1.5 outline-none border border-white/[0.08] text-white/85" />
+                  <span className="text-[10px] text-white/40">–</span>
+                  <input type="number" value={writingSettings.sourceDateTo} onChange={e => changeWritingSetting("sourceDateTo", Number(e.target.value))}
+                    className="w-full text-[11px] bg-white/[0.04] rounded-lg px-2 py-1.5 outline-none border border-white/[0.08] text-white/85" />
+                </div>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Body */}
-        <div className="flex flex-1 overflow-hidden relative">
-
-          {/* Sidebar backdrop (mobile only) */}
-          {sidebarOpen && (
-            <div className="absolute inset-0 z-10 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
-          )}
-
-          {/* Sidebar */}
-          <div className={cn(
-            "absolute inset-y-0 left-0 z-20 w-[270px] flex flex-col bg-[#EDE8E2] border-r border-black/10 shadow-xl transition-transform duration-300 ease-in-out",
-            sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          )}>
-            <div className="p-3 border-b border-black/8 flex-shrink-0">
-              <div className="flex items-center gap-2 bg-white/60 rounded-xl px-3 py-2 border border-black/10">
-                <Search size={13} className="text-foreground/40 flex-shrink-0" />
-                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search chats…"
-                  className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-foreground/40" style={{ fontSize: "16px" }} />
-              </div>
+        {/* User footer */}
+        <div className="border-t border-white/[0.08] p-3 flex-shrink-0 space-y-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: `${theme.accent}33` }}>
+              <span className="text-[10px] font-bold" style={{ color: theme.accent }}>{initials}</span>
             </div>
-            <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
-              {filteredSessions.length === 0 && <p className="text-[11px] text-foreground/40 text-center py-8">No chats yet</p>}
-              {filteredSessions.map(s => (
-                <button key={s.id} onClick={() => { setCurrentId(s.id); setSidebarOpen(false); }}
-                  className={cn("w-full text-left px-3 py-2.5 rounded-xl text-[12px] transition-colors flex items-center gap-2",
-                    s.id === currentId ? "bg-terracotta/15 text-terracotta font-semibold" : "text-foreground/65 hover:bg-black/5")}>
-                  <MessageSquare size={11} className="flex-shrink-0 opacity-50" />
-                  <span className="truncate flex-1">{s.title}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] font-semibold text-white truncate">{profile?.full_name || user.email}</p>
+              <p className="text-[10px] text-white/45 capitalize">{profile?.tier || "free"} plan</p>
+            </div>
+          </div>
+          {profile && !["professional", "unlimited"].includes(profile.tier ?? "") && (
+            <button onClick={() => { navigate("/dashboard"); setMobileSidebar(false); }}
+              style={{ backgroundColor: theme.accent, color: theme.accentFg }}
+              className="w-full py-1.5 text-[11px] font-semibold rounded-lg hover:brightness-110 transition-all">
+              Upgrade Plan
+            </button>
+          )}
+        </div>
+      </aside>
+
+      {/* ── Main pane ──────────────────────────────────────────────────── */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-black">
+        {/* Slim top bar */}
+        <header className="flex items-center justify-between px-3 md:px-4 py-2.5 flex-shrink-0 border-b border-white/[0.05]">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {!sidebarOpen && (
+              <button onClick={() => setSidebarOpen(true)} title="Open sidebar"
+                className="hidden md:flex w-8 h-8 rounded-lg items-center justify-center text-white/55 hover:bg-white/[0.06] hover:text-white transition-colors">
+                <Menu size={16} />
+              </button>
+            )}
+            <button onClick={() => setMobileSidebar(true)} title="Menu"
+              className="md:hidden w-8 h-8 rounded-lg flex items-center justify-center text-white/55 hover:bg-white/[0.06] hover:text-white transition-colors">
+              <Menu size={16} />
+            </button>
+            <span className="text-[14px] font-semibold tracking-tight text-white/90">ZOE</span>
+          </div>
+          <button onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium text-white/55 hover:bg-white/[0.06] hover:text-white transition-colors">
+            Dashboard
+          </button>
+        </header>
+
+        {/* Body */}
+        {!hasMessages ? (
+          /* Empty state */
+          <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-5 gap-8">
+            <div className="text-center space-y-3">
+              <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center"
+                style={{ backgroundColor: theme.accent }}>
+                <span className="text-[8px] font-extrabold tracking-widest" style={{ color: theme.accentFg }}>ZOE</span>
+              </div>
+              <h1 className="text-[28px] md:text-[32px] font-semibold tracking-tight">Hi, I&apos;m ZOE.</h1>
+              <p className="text-[14px] text-white/45">Your academic writing assistant.</p>
+            </div>
+
+            <div className="w-full max-w-3xl">
+              <UploadsStrip uploads={pendingUploads} onRemove={(id) => setPendingUploads(prev => prev.filter(x => x.id !== id))} accent={theme.accent} />
+              <PillComposer
+                input={input} setInput={setInput}
+                onSend={() => handleSend()} onAttach={() => fileInputRef.current?.click()}
+                loading={loading} anyUploading={anyUploading}
+                hasContent={!!input.trim() || readyAttachments.length > 0}
+                placeholder="Ask anything"
+                theme={theme}
+                large
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2 justify-center max-w-2xl">
+              {QUICK_ACTIONS.map(a => (
+                <button key={a.label} onClick={() => handleSend(a.prompt)} disabled={loading}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-white/[0.04] rounded-full text-[12px] font-medium text-white/70 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.07] active:scale-95 transition-all">
+                  <span>{a.icon}</span><span>{a.label}</span>
                 </button>
               ))}
             </div>
-            {/* ── Settings panel ── */}
-            <div className="border-t border-black/8 flex-shrink-0 overflow-y-auto max-h-[40%]">
-              <div className="px-3 pt-2.5 pb-1 flex items-center gap-1.5 text-[10px] font-semibold text-foreground/40 uppercase tracking-wider">
-                <Settings size={10} /> Settings
-              </div>
-
-              {/* Writing group */}
-              <div className="px-3 pb-1">
-                <button onClick={() => setSettingsGroupOpen(p => ({ ...p, writing: !p.writing }))}
-                  className="w-full flex items-center justify-between py-1.5 text-[11px] font-semibold text-foreground/70 hover:text-foreground transition-colors">
-                  Writing
-                  <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.writing ? "rotate-90" : "")} />
-                </button>
-                {settingsGroupOpen.writing && (
-                  <div className="space-y-1.5 pb-2">
-                    {[
-                      { label: "Citation", key: "citationStyle" as const, opts: ["Harvard","APA 7th","MLA 9th","Chicago","Vancouver","IEEE","OSCOLA"] },
-                      { label: "Level", key: "academicLevel" as const, opts: ["L4","L5","L6","L7","Doctoral"] },
-                      { label: "Type", key: "assessmentType" as const, opts: ["Essay","Report","Case Study","Dissertation","Literature Review","Research Paper","Reflection"] },
-                    ].map(({ label, key, opts }) => (
-                      <div key={key}>
-                        <p className="text-[9px] text-foreground/40 mb-0.5">{label}</p>
-                        <select value={writingSettings[key]} onChange={e => changeWritingSetting(key, e.target.value)}
-                          className="w-full text-[11px] bg-black/5 rounded-lg px-2 py-1 outline-none border border-black/8 text-foreground/80 cursor-pointer">
-                          {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Style group */}
-              <div className="px-3 pb-1 border-t border-black/6">
-                <button onClick={() => setSettingsGroupOpen(p => ({ ...p, style: !p.style }))}
-                  className="w-full flex items-center justify-between py-1.5 text-[11px] font-semibold text-foreground/70 hover:text-foreground transition-colors">
-                  Style
-                  <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.style ? "rotate-90" : "")} />
-                </button>
-                {settingsGroupOpen.style && (
-                  <div className="space-y-1.5 pb-2">
-                    {[
-                      { label: "Tone", key: "writingTone" as const, opts: ["Analytical","Critical","Evaluative","Reflective","Argumentative"] },
-                      { label: "Humanisation", key: "humanisationLevel" as const, opts: ["Low","Medium","High"] },
-                    ].map(({ label, key, opts }) => (
-                      <div key={key}>
-                        <p className="text-[9px] text-foreground/40 mb-0.5">{label}</p>
-                        <select value={writingSettings[key]} onChange={e => changeWritingSetting(key, e.target.value)}
-                          className="w-full text-[11px] bg-black/5 rounded-lg px-2 py-1 outline-none border border-black/8 text-foreground/80 cursor-pointer">
-                          {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Sources group */}
-              <div className="px-3 pb-1 border-t border-black/6">
-                <button onClick={() => setSettingsGroupOpen(p => ({ ...p, sources: !p.sources }))}
-                  className="w-full flex items-center justify-between py-1.5 text-[11px] font-semibold text-foreground/70 hover:text-foreground transition-colors">
-                  Sources
-                  <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.sources ? "rotate-90" : "")} />
-                </button>
-                {settingsGroupOpen.sources && (
-                  <div className="pb-2">
-                    <p className="text-[9px] text-foreground/40 mb-1">Date Range</p>
-                    <div className="flex items-center gap-1.5">
-                      <input type="number" value={writingSettings.sourceDateFrom} onChange={e => changeWritingSetting("sourceDateFrom", Number(e.target.value))}
-                        className="w-full text-[11px] bg-black/5 rounded-lg px-2 py-1 outline-none border border-black/8 text-foreground/80" />
-                      <span className="text-[10px] text-foreground/40">–</span>
-                      <input type="number" value={writingSettings.sourceDateTo} onChange={e => changeWritingSetting("sourceDateTo", Number(e.target.value))}
-                        className="w-full text-[11px] bg-black/5 rounded-lg px-2 py-1 outline-none border border-black/8 text-foreground/80" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="border-t border-black/8 p-3 flex-shrink-0 space-y-2">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-terracotta/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[9px] font-bold text-terracotta">{initials}</span>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold text-foreground truncate">{profile?.full_name || user.email}</p>
-                  <p className="text-[10px] text-foreground/50 capitalize">{profile?.tier || "free"} plan</p>
-                </div>
-              </div>
-              {profile && !["professional", "unlimited"].includes(profile.tier ?? "") && (
-                <button onClick={() => { navigate("/dashboard"); setSidebarOpen(false); }}
-                  className="w-full py-1.5 text-[11px] font-semibold text-white bg-terracotta rounded-lg hover:brightness-110 transition-all">
-                  Upgrade Plan
-                </button>
-              )}
-            </div>
           </div>
-
-          {/* Main content */}
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-
-            {!hasMessages ? (
-              /* ── Empty state: centered large input ── */
-              <div className="flex-1 overflow-y-auto flex flex-col items-center px-5 gap-6" style={{ paddingTop: "18%", paddingBottom: "8%" }}>
-                <div className="text-center space-y-1.5">
-                  <div className="w-11 h-11 rounded-full bg-terracotta mx-auto mb-3 flex items-center justify-center shadow-md">
-                    <span className="text-white text-[8px] font-extrabold tracking-widest">ZOE</span>
-                  </div>
-                  <p className="text-[22px] font-semibold text-foreground tracking-tight">Hi, I&apos;m ZOE.</p>
-                  <p className="text-[14px] text-foreground/50 italic">Your academic writing assistant.</p>
-                </div>
-
-                {/* Large input card — inlined to avoid unmount/remount on every keystroke */}
-                <div className="w-full max-w-[360px]">
-                  {pendingUploads.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {pendingUploads.map(p => {
-                        const label = fileTypeLabel(p.name);
-                        const r = 10, circ = 2 * Math.PI * r;
-                        return (
-                          <div key={p.id} className="relative flex items-center gap-2 px-2.5 py-2 bg-white border border-black/10 rounded-xl shadow-sm max-w-[190px]">
-                            <span className="flex-shrink-0 w-9 h-9 rounded-lg bg-terracotta/10 flex items-center justify-center text-[9px] font-extrabold text-terracotta tracking-wide">
-                              {label}
-                            </span>
-                            <span className="text-[11px] text-foreground/70 font-medium truncate flex-1 min-w-0">
-                              {p.name.length > 18 ? p.name.slice(0, 16) + "…" : p.name}
-                            </span>
-                            {p.status === "uploading" && (
-                              <svg width="22" height="22" viewBox="0 0 24 24" className="flex-shrink-0 text-terracotta">
-                                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.5"/>
-                                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5"
-                                  strokeDasharray={circ} strokeDashoffset={circ - (p.progress / 100) * circ}
-                                  strokeLinecap="round" transform="rotate(-90 12 12)"
-                                  style={{ transition: "stroke-dashoffset 0.15s ease" }}/>
-                              </svg>
-                            )}
-                            {p.status === "done" && (
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="flex-shrink-0 text-green-500">
-                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
-                                <path d="M8 12l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            )}
-                            {p.status === "error" && (
-                              <span className="text-[9px] text-red-500 font-semibold flex-shrink-0">Failed</span>
-                            )}
-                            <button type="button"
-                              onClick={() => setPendingUploads(prev => prev.filter(x => x.id !== p.id))}
-                              className="flex-shrink-0 text-foreground/30 hover:text-foreground/60 ml-0.5 leading-none">
-                              <X size={11}/>
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <div className="bg-white border border-black/12 focus-within:border-terracotta/50 transition-colors overflow-hidden rounded-2xl shadow-lg shadow-black/5">
-                    <textarea
-                      ref={textareaRef}
-                      value={input}
-                      onChange={e => setInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                      placeholder="What are we writing today?"
-                      rows={1}
-                      autoCapitalize="sentences" autoCorrect="on" enterKeyHint="send" spellCheck
-                      className="w-full bg-transparent outline-none resize-none text-foreground placeholder:text-foreground/35 leading-relaxed"
-                      style={{ fontSize: "18px", minHeight: "96px", maxHeight: "220px", padding: "18px 18px 10px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
-                    />
-                    <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                      <button
-                        type="button"
-                        disabled={loading}
-                        onClick={() => fileInputRef.current?.click()}
-                        className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", loading ? "text-foreground/25 cursor-not-allowed" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65 cursor-pointer")}
+        ) : (
+          /* Conversation */
+          <>
+            <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
+              <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-7">
+                {messages.map(msg => (
+                  <div key={msg.id} className={cn("flex w-full", msg.role === "user" ? "justify-end" : "justify-start")}>
+                    {msg.role === "user" ? (
+                      <div
+                        className="max-w-[85%] px-4 py-2.5 rounded-3xl text-[15px] leading-relaxed shadow-sm"
+                        style={{ backgroundColor: theme.accent, color: theme.accentFg }}
                       >
-                        <Paperclip size={15} />
-                      </button>
-                      {/* Model selection is fully autonomous — no picker shown. */}
-                      <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
-                        className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
-                        {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {QUICK_ACTIONS.map(a => (
-                    <button key={a.label} onClick={() => handleSend(a.prompt)} disabled={loading}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-white rounded-full text-[12px] font-medium text-foreground/70 border border-black/10 hover:border-terracotta/40 hover:bg-terracotta/5 active:scale-95 transition-all shadow-sm">
-                      <span>{a.icon}</span><span>{a.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* ── Messages ── */}
-                <div className="flex-1 overflow-y-auto px-4 py-4 min-w-0" style={{ scrollbarWidth: "thin" }}>
-                  <div className="space-y-5 pb-2">
-                    {messages.map(msg => (
-                      <div key={msg.id} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
-                        {msg.role === "user" ? (
-                          <div className="max-w-[82%] px-4 py-2.5 bg-terracotta text-white rounded-2xl rounded-br-sm text-[15px] leading-relaxed">
-                            {msg.content}
-                            {msg.attachments && msg.attachments.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/20">
-                                {msg.attachments.map((a, i) => (
-                                  <span key={i} className="flex items-center gap-1 text-[10px] text-white/80">
-                                    <Paperclip size={9} />{a.name}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="w-full min-w-0 group/msg">
-                            <div className="flex items-center gap-1.5 mb-1.5">
-                              <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
-                                <span className="text-white text-[6px] font-extrabold tracking-widest">ZOE</span>
-                              </div>
-                              <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
-                            </div>
-                            {msg.content && (
-                              <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed prose-table:text-[12px] prose-th:bg-terracotta/10 prose-th:text-foreground prose-th:font-semibold prose-th:px-2 prose-th:py-1.5 prose-td:px-2 prose-td:py-1.5 prose-td:align-top prose-th:border prose-td:border prose-th:border-black/10 prose-td:border-black/10">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                              </div>
-                            )}
-                            {msg.clarification && !msg.clarification.submitted && (
-                              <ClarificationForm
-                                data={msg.clarification}
-                                onSubmit={(answers) => {
-                                  // Mark form as submitted
-                                  setSessions(prev => prev.map(s => s.id !== currentId ? s : ({
-                                    ...s,
-                                    messages: s.messages.map(mm => mm.id === msg.id
-                                      ? { ...mm, clarification: { ...msg.clarification!, submitted: true } }
-                                      : mm),
-                                  })));
-                                  // Send the structured answers as a user reply
-                                  const summary = Object.entries(answers)
-                                    .map(([k, v]) => `- ${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
-                                    .join("\n");
-                                  handleSend(`Here are my answers — proceed immediately:\n${summary}`);
-                                }}
-                              />
-                            )}
-                            {msg.chart && <InlineChart chart={msg.chart} />}
-                            {/* Multi-format export actions */}
-                            {msg.content && msg.content.length > 60 && (
-                              <div className="flex flex-wrap items-center gap-1 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(msg.content);
-                                    setCopiedId(msg.id);
-                                    setTimeout(() => setCopiedId(null), 2000);
-                                  }}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
-                                  title="Copy"
-                                >
-                                  {copiedId === msg.id ? <Check size={11} /> : <Copy size={11} />}
-                                  {copiedId === msg.id ? "Copied" : "Copy"}
-                                </button>
-                                <button
-                                  onClick={() => exportDocx(msg.content, "zoe-output.docx")}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
-                                  title="Download .docx"
-                                >
-                                  <FileText size={11} /> .docx
-                                </button>
-                                <button
-                                  onClick={() => exportPdf(msg.content, "zoe-output.pdf")}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
-                                  title="Download .pdf"
-                                >
-                                  <FileType size={11} /> .pdf
-                                </button>
-                                <button
-                                  onClick={() => exportTxt(msg.content, "zoe-output.txt")}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
-                                  title="Download .txt"
-                                >
-                                  <Download size={11} /> .txt
-                                </button>
-                              </div>
-                            )}
+                        <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+                        {msg.attachments && msg.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/20">
+                            {msg.attachments.map((a, i) => (
+                              <span key={i} className="flex items-center gap-1 text-[10px] opacity-80">
+                                <Paperclip size={9} />{a.name}
+                              </span>
+                            ))}
                           </div>
                         )}
                       </div>
-                    ))}
-
-                    {/* Streaming */}
-                    {streaming && (
-                      <div className="w-full min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
-                            <span className="text-white text-[6px] font-extrabold tracking-widest">ZOE</span>
+                    ) : (
+                      <div className="w-full min-w-0 group/msg">
+                        {msg.content && (
+                          <div className="prose prose-invert prose-sm md:prose-base max-w-none text-[15px] leading-relaxed
+                            prose-headings:text-white prose-strong:text-white prose-p:text-white/85
+                            prose-table:text-[12px] prose-th:bg-white/5 prose-th:text-white prose-th:font-semibold
+                            prose-th:px-2 prose-th:py-1.5 prose-td:px-2 prose-td:py-1.5 prose-td:align-top
+                            prose-th:border prose-td:border prose-th:border-white/10 prose-td:border-white/10
+                            prose-a:text-white prose-code:text-white">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                           </div>
-                          <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
-                        </div>
-                        <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{streaming}</ReactMarkdown>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Typing dots */}
-                    {loading && !streaming && (
-                      <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-full bg-terracotta flex items-center justify-center flex-shrink-0">
-                          <span className="text-white text-[6px] font-extrabold tracking-widest">ZOE</span>
-                        </div>
-                        <div className="flex gap-1 py-1">
-                          {[0, 1, 2].map(i => (
-                            <span key={i} className="w-1.5 h-1.5 rounded-full bg-foreground/25 animate-bounce"
-                              style={{ animationDelay: `${i * 0.18}s` }} />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div ref={messagesEndRef} />
-                  </div>
-                </div>
-
-                {/* ── Bottom input bar (active chat) — inlined to avoid unmount/remount ── */}
-                <div className="flex-shrink-0 border-t border-black/8 px-4 py-3 bg-[#F5F0EB]" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-                  {pendingUploads.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {pendingUploads.map(p => {
-                        const label = fileTypeLabel(p.name);
-                        const r = 10, circ = 2 * Math.PI * r;
-                        return (
-                          <div key={p.id} className="relative flex items-center gap-2 px-2.5 py-2 bg-white border border-black/10 rounded-xl shadow-sm max-w-[190px]">
-                            <span className="flex-shrink-0 w-9 h-9 rounded-lg bg-terracotta/10 flex items-center justify-center text-[9px] font-extrabold text-terracotta tracking-wide">
-                              {label}
-                            </span>
-                            <span className="text-[11px] text-foreground/70 font-medium truncate flex-1 min-w-0">
-                              {p.name.length > 18 ? p.name.slice(0, 16) + "…" : p.name}
-                            </span>
-                            {p.status === "uploading" && (
-                              <svg width="22" height="22" viewBox="0 0 24 24" className="flex-shrink-0 text-terracotta">
-                                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.5"/>
-                                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5"
-                                  strokeDasharray={circ} strokeDashoffset={circ - (p.progress / 100) * circ}
-                                  strokeLinecap="round" transform="rotate(-90 12 12)"
-                                  style={{ transition: "stroke-dashoffset 0.15s ease" }}/>
-                              </svg>
-                            )}
-                            {p.status === "done" && (
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="flex-shrink-0 text-green-500">
-                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
-                                <path d="M8 12l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            )}
-                            {p.status === "error" && (
-                              <span className="text-[9px] text-red-500 font-semibold flex-shrink-0">Failed</span>
-                            )}
-                            <button type="button"
-                              onClick={() => setPendingUploads(prev => prev.filter(x => x.id !== p.id))}
-                              className="flex-shrink-0 text-foreground/30 hover:text-foreground/60 ml-0.5 leading-none">
-                              <X size={11}/>
+                        )}
+                        {msg.clarification && !msg.clarification.submitted && (
+                          <ClarificationForm
+                            data={msg.clarification}
+                            accent={theme.accent}
+                            onSubmit={(answers) => {
+                              setSessions(prev => prev.map(s => s.id !== currentId ? s : ({
+                                ...s,
+                                messages: s.messages.map(mm => mm.id === msg.id
+                                  ? { ...mm, clarification: { ...msg.clarification!, submitted: true } }
+                                  : mm),
+                              })));
+                              const summary = Object.entries(answers)
+                                .map(([k, v]) => `- ${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+                                .join("\n");
+                              handleSend(`Here are my answers — proceed immediately:\n${summary}`);
+                            }}
+                          />
+                        )}
+                        {msg.chart && <InlineChart chart={msg.chart} />}
+                        {msg.content && msg.content.length > 60 && (
+                          <div className="flex flex-wrap items-center gap-0.5 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(msg.content);
+                                setCopiedId(msg.id);
+                                setTimeout(() => setCopiedId(null), 2000);
+                              }}
+                              className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium text-white/40 hover:bg-white/[0.06] hover:text-white transition-colors"
+                              title="Copy"
+                            >
+                              {copiedId === msg.id ? <Check size={12} /> : <Copy size={12} />}
+                            </button>
+                            <button className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium text-white/40 hover:bg-white/[0.06] hover:text-white transition-colors" title="Good response">
+                              <ThumbsUp size={12} />
+                            </button>
+                            <button className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium text-white/40 hover:bg-white/[0.06] hover:text-white transition-colors" title="Bad response">
+                              <ThumbsDown size={12} />
+                            </button>
+                            <button
+                              onClick={() => exportDocx(msg.content, "zoe-output.docx")}
+                              className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium text-white/40 hover:bg-white/[0.06] hover:text-white transition-colors"
+                              title="Download .docx"
+                            >
+                              <FileText size={12} /> .docx
+                            </button>
+                            <button
+                              onClick={() => exportPdf(msg.content, "zoe-output.pdf")}
+                              className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium text-white/40 hover:bg-white/[0.06] hover:text-white transition-colors"
+                              title="Download .pdf"
+                            >
+                              <FileType size={12} /> .pdf
+                            </button>
+                            <button
+                              onClick={() => exportTxt(msg.content, "zoe-output.txt")}
+                              className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium text-white/40 hover:bg-white/[0.06] hover:text-white transition-colors"
+                              title="Download .txt"
+                            >
+                              <Download size={12} /> .txt
                             </button>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <div className="bg-white border border-black/12 focus-within:border-terracotta/50 transition-colors overflow-hidden rounded-2xl">
-                    <textarea
-                      ref={textareaRef}
-                      value={input}
-                      onChange={e => setInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                      placeholder="Message ZOE…"
-                      rows={1}
-                      autoCapitalize="sentences" autoCorrect="on" enterKeyHint="send" spellCheck
-                      className="w-full bg-transparent outline-none resize-none text-foreground placeholder:text-foreground/35 leading-relaxed"
-                      style={{ fontSize: "18px", minHeight: "52px", maxHeight: "160px", padding: "14px 16px 10px", overflowY: "auto", scrollbarWidth: "none", WebkitUserSelect: "text", touchAction: "manipulation" }}
-                    />
-                    <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                      <button
-                        type="button"
-                        disabled={loading}
-                        onClick={() => fileInputRef.current?.click()}
-                        className={cn("w-8 h-8 rounded-lg flex items-center justify-center transition-colors", loading ? "text-foreground/25 cursor-not-allowed" : "text-foreground/40 hover:bg-black/6 hover:text-foreground/65 cursor-pointer")}
-                      >
-                        <Paperclip size={15} />
-                      </button>
-                      {/* Model selection is fully autonomous — no picker shown. */}
-                      <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
-                        className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
-                        {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                      </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {streaming && (
+                  <div className="w-full min-w-0">
+                    <div className="prose prose-invert prose-sm md:prose-base max-w-none text-[15px] leading-relaxed prose-headings:text-white prose-strong:text-white prose-p:text-white/85">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{streaming}</ReactMarkdown>
                     </div>
                   </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </>
+                )}
+
+                {loading && !streaming && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1 py-1">
+                      {[0, 1, 2].map(i => (
+                        <span key={i} className="w-2 h-2 rounded-full bg-white/35 animate-bounce"
+                          style={{ animationDelay: `${i * 0.18}s` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+
+            {/* Bottom composer */}
+            <div className="flex-shrink-0 px-4 md:px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black to-transparent"
+              style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+              <div className="max-w-3xl mx-auto">
+                <UploadsStrip uploads={pendingUploads} onRemove={(id) => setPendingUploads(prev => prev.filter(x => x.id !== id))} accent={theme.accent} />
+                <PillComposer
+                  input={input} setInput={setInput}
+                  onSend={() => handleSend()} onAttach={() => fileInputRef.current?.click()}
+                  loading={loading} anyUploading={anyUploading}
+                  hasContent={!!input.trim() || readyAttachments.length > 0}
+                  placeholder="Ask anything"
+                  theme={theme}
+                />
+                <p className="text-center text-[10px] text-white/30 mt-2">ZOE can make mistakes. Verify important information.</p>
+              </div>
+            </div>
+          </>
+        )}
+      </main>
+    </div>
   );
 }
