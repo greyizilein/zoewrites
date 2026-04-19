@@ -18,10 +18,11 @@ import { useLocation } from "react-router-dom";
 
 const queryClient = new QueryClient();
 
-// Hide the floating ZOE widget on the dedicated /zoe page (it renders inline there).
+// Hide the floating ZOE widget on /zoe (renders inline) and on /dashboard
+// (the dashboard has dedicated "Open ZOE" buttons that route to the AMOLED workspace).
 function GlobalZoeWidget() {
   const { pathname } = useLocation();
-  if (pathname.startsWith("/zoe")) return null;
+  if (pathname.startsWith("/zoe") || pathname.startsWith("/dashboard")) return null;
   return <ZoeChat mode="widget" />;
 }
 
