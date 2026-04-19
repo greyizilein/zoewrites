@@ -37,6 +37,21 @@ interface ChartData {
   y_label?: string;
 }
 
+interface ClarificationField {
+  key: string;
+  label: string;
+  type: "text" | "number" | "select" | "checkbox";
+  options?: string[];
+  placeholder?: string;
+  required?: boolean;
+  default?: string;
+}
+interface ClarificationData {
+  intro?: string;
+  fields: ClarificationField[];
+  submitted?: boolean;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -44,6 +59,8 @@ interface Message {
   timestamp: number;
   attachments?: Attachment[];
   chart?: ChartData;
+  clarification?: ClarificationData;
+  hidden?: boolean; // internal status messages (e.g. "Planning your work…") — replaced by streamed output
 }
 
 interface ChatSession {
