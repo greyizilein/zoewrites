@@ -928,6 +928,11 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     if (user?.id) localStorage.setItem(TK(user.id), key);
   }
 
+  function changeInterface(key: string) {
+    setInterfaceKey(key);
+    if (user?.id) localStorage.setItem(IK(user.id), key);
+  }
+
   // ── Render: WIDGET MODE (legacy, kept minimal — unmounted in routes) ────
   if (mode === "widget") {
     return (
