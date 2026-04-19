@@ -132,8 +132,30 @@ const THEMES: ZoeTheme[] = [
   { key: "pink",       label: "Pink",       accent: "#ec4899", accentHover: "#db2777", accentFg: "#ffffff" },
 ];
 
+// ─────────────────────────── Interface themes (full canvas) ──────────────────
+
+interface InterfaceTheme {
+  key: string;
+  label: string;
+  className: string;     // CSS class applied to root (drives index.css overrides)
+  bg: string;            // canvas bg (also used as swatch preview)
+  fg: string;            // primary text on canvas
+  sidebar: string;       // sidebar bg
+  border: string;        // hairline border
+  swatchBorder: string;  // contrasting border for the picker swatch
+}
+
+const INTERFACE_THEMES: InterfaceTheme[] = [
+  { key: "amoled",   label: "AMOLED",   className: "zoe-amoled",   bg: "#000000", fg: "#ffffff", sidebar: "#0A0A0A", border: "#1F1F1F", swatchBorder: "#333" },
+  { key: "white",    label: "White",    className: "zoe-light",    bg: "#ffffff", fg: "#0a0a0a", sidebar: "#F7F7F7", border: "#E5E5E5", swatchBorder: "#cfcfcf" },
+  { key: "cream",    label: "Cream",    className: "zoe-cream",    bg: "#FAF8F4", fg: "#1a1a1a", sidebar: "#F2EEE7", border: "#E4DED3", swatchBorder: "#d6cfc1" },
+  { key: "navy",     label: "Navy",     className: "zoe-navy",     bg: "#0B1220", fg: "#ffffff", sidebar: "#0F1828", border: "#1B2A44", swatchBorder: "#1B2A44" },
+  { key: "graphite", label: "Graphite", className: "zoe-graphite", bg: "#1A1A1A", fg: "#ffffff", sidebar: "#222222", border: "#2E2E2E", swatchBorder: "#3a3a3a" },
+];
+
 const SK = (uid: string) => `zoe_sessions_${uid}`;
 const TK = (uid: string) => `zoe_theme_${uid}`;
+const IK = (uid: string) => `zoe_interface_${uid}`;
 
 // ─────────────────────────── Storage helpers ─────────────────────────────────
 
@@ -448,6 +470,12 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   const [themeKey, setThemeKey] = useState<string>("emerald");
   const theme = useMemo(() => THEMES.find(t => t.key === themeKey) ?? THEMES[0], [themeKey]);
 
+  const [interfaceKey, setInterfaceKey] = useState<string>("amoled");
+  const interfaceTheme = useMemo(
+    () => INTERFACE_THEMES.find(t => t.key === interfaceKey) ?? INTERFACE_THEMES[0],
+    [interfaceKey],
+  );
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -496,6 +524,8 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       if (s) setWritingSettings(prev => ({ ...prev, ...JSON.parse(s) }));
       const t = localStorage.getItem(TK(user.id));
       if (t && THEMES.some(x => x.key === t)) setThemeKey(t);
+      const i = localStorage.getItem(IK(user.id));
+      if (i && INTERFACE_THEMES.some(x => x.key === i)) setInterfaceKey(i);
     } catch {}
   }, [user?.id]);
 
@@ -898,6 +928,11 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     if (user?.id) localStorage.setItem(TK(user.id), key);
   }
 
+  function changeInterface(key: string) {
+    setInterfaceKey(key);
+    if (user?.id) localStorage.setItem(IK(user.id), key);
+  }
+
   // ── Render: WIDGET MODE (legacy, kept minimal — unmounted in routes) ────
   if (mode === "widget") {
     return (
@@ -928,8 +963,18 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   return (
     <div
       data-zoe-mode="page"
-      className="zoe-amoled flex w-full h-screen bg-black text-white overflow-hidden"
+      data-zoe-interface={interfaceTheme.key}
+      className={cn(
+        "flex w-full h-screen overflow-hidden",
+        interfaceTheme.className,
+      )}
       style={{
+        backgroundColor: interfaceTheme.bg,
+        color: interfaceTheme.fg,
+        ["--zoe-bg" as any]: interfaceTheme.bg,
+        ["--zoe-fg" as any]: interfaceTheme.fg,
+        ["--zoe-sidebar" as any]: interfaceTheme.sidebar,
+        ["--zoe-border" as any]: interfaceTheme.border,
         ["--zoe-accent" as any]: theme.accent,
         ["--zoe-accent-fg" as any]: theme.accentFg,
         ["--zoe-accent-hover" as any]: theme.accentHover,
@@ -1046,34 +1091,76 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
               <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.appearance ? "rotate-90" : "")} />
             </button>
             {settingsGroupOpen.appearance && (
-              <div className="pb-3">
-                <p className="text-[10px] text-white/45 mb-2">Chat theme</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {THEMES.map(t => {
-                    const active = t.key === themeKey;
-                    return (
-                      <button
-                        key={t.key}
-                        onClick={() => changeTheme(t.key)}
-                        title={t.label}
-                        className={cn(
-                          "relative w-full aspect-square rounded-full transition-transform hover:scale-110 active:scale-95",
-                          active && "ring-2 ring-offset-2 ring-offset-[#0A0A0A]",
-                        )}
-                        style={{
-                          backgroundColor: t.accent,
-                          boxShadow: active ? `0 0 0 2px ${t.accent}` : undefined,
-                          ["--tw-ring-color" as any]: t.accent,
-                        }}
-                      >
-                        {active && <Check size={11} className="absolute inset-0 m-auto" style={{ color: t.accentFg }} />}
-                      </button>
-                    );
-                  })}
+              <div className="pb-3 space-y-3">
+                {/* Interface theme — full canvas */}
+                <div>
+                  <p className="text-[10px] text-white/45 mb-2">Interface theme</p>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {INTERFACE_THEMES.map(it => {
+                      const active = it.key === interfaceKey;
+                      return (
+                        <button
+                          key={it.key}
+                          onClick={() => changeInterface(it.key)}
+                          title={it.label}
+                          className="group flex flex-col items-center gap-1"
+                        >
+                          <span
+                            className="relative w-full aspect-square rounded-md transition-transform group-hover:scale-105 group-active:scale-95 border overflow-hidden"
+                            style={{
+                              backgroundColor: it.bg,
+                              borderColor: active ? theme.accent : it.swatchBorder,
+                              boxShadow: active ? `0 0 0 2px ${theme.accent}` : undefined,
+                            }}
+                          >
+                            <span
+                              className="absolute inset-y-1 left-1 w-[28%] rounded-sm"
+                              style={{ backgroundColor: it.sidebar, opacity: 0.9 }}
+                            />
+                            {active && (
+                              <Check size={10} className="absolute right-1 bottom-1" style={{ color: it.fg }} />
+                            )}
+                          </span>
+                          <span
+                            className="text-[9px] leading-none"
+                            style={{ color: active ? theme.accent : undefined, opacity: active ? 1 : 0.55 }}
+                          >
+                            {it.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Accent colour — bubble + send button */}
+                <div>
+                  <p className="text-[10px] text-white/45 mb-2">Accent colour</p>
+                  <div className="grid grid-cols-5 gap-2">
+                    {THEMES.map(t => {
+                      const active = t.key === themeKey;
+                      return (
+                        <button
+                          key={t.key}
+                          onClick={() => changeTheme(t.key)}
+                          title={t.label}
+                          className="relative w-full aspect-square rounded-full transition-transform hover:scale-110 active:scale-95"
+                          style={{
+                            backgroundColor: t.accent,
+                            boxShadow: active ? `0 0 0 2px ${t.accent}` : undefined,
+                            ["--tw-ring-color" as any]: t.accent,
+                          }}
+                        >
+                          {active && <Check size={11} className="absolute inset-0 m-auto" style={{ color: t.accentFg }} />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
           </div>
+
 
           {/* Writing */}
           <div className="px-3 pb-1 border-t border-white/[0.05]">
