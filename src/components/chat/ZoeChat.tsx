@@ -482,6 +482,9 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const startFileUploadRef = useRef<(file: File) => void>(() => {});
+  /** Tracks the architect "Plan ready — writing now…" placeholder so we can hide it
+   *  the moment the auto-write request actually begins streaming. */
+  const autoWritePlaceholderRef = useRef<string | null>(null);
 
   const currentSession = useMemo(() => sessions.find(s => s.id === currentId) ?? null, [sessions, currentId]);
 
