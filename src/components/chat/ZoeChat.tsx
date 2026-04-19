@@ -1197,7 +1197,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                           <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
                         </div>
                         <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed">
-                          <ReactMarkdown>{streaming}</ReactMarkdown>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{streaming}</ReactMarkdown>
                         </div>
                       </div>
                     )}
