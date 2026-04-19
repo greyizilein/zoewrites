@@ -1102,18 +1102,58 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                               </div>
                               <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
                             </div>
-                            {msg.content && (
-                              <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed">
-                                <ReactMarkdown>{msg.content}</ReactMarkdown>
-                              </div>
-                            )}
+                            {msg.content && (() => {
+                              const isArchitect = msg.content.startsWith(ARCHITECT_TABLE_MARKER);
+                              const display = isArchitect
+                                ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
+                                : msg.content;
+                              return (
+                                <>
+                                  {isArchitect && (
+                                    <div className="mb-2 flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-terracotta">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />
+                                      Execution Blueprint
+                                    </div>
+                                  )}
+                                  <div className={cn(
+                                    "prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed",
+                                    "prose-table:text-[12px] prose-th:bg-terracotta/10 prose-th:text-foreground prose-th:font-semibold prose-th:px-2 prose-th:py-1.5 prose-td:px-2 prose-td:py-1.5 prose-td:align-top prose-th:border prose-td:border prose-th:border-black/10 prose-td:border-black/10",
+                                    isArchitect && "rounded-xl border border-terracotta/25 bg-white/60 p-3 shadow-sm",
+                                  )}>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{display}</ReactMarkdown>
+                                  </div>
+                                  {isArchitect && (
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                      <button
+                                        onClick={() => handleSend("Begin writing. Start with the first section, write it section by section, and pause until I say next.")}
+                                        disabled={loading}
+                                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-terracotta text-white text-[12px] font-semibold hover:brightness-110 active:scale-95 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                                      >
+                                        <ChevronRight size={14} />
+                                        Begin writing
+                                      </button>
+                                      <button
+                                        onClick={() => handleSend("Revise the execution blueprint — keep the structure but tighten anything that is generic or under-specified.")}
+                                        disabled={loading}
+                                        className="px-3 py-2 rounded-xl bg-white border border-black/10 text-foreground/70 text-[12px] font-medium hover:bg-black/5 transition-colors disabled:opacity-40"
+                                      >
+                                        Refine blueprint
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                             {msg.chart && <InlineChart chart={msg.chart} />}
                             {/* Copy / Download actions */}
                             {msg.content && msg.content.length > 20 && (
                               <div className="flex items-center gap-1 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                                 <button
                                   onClick={() => {
-                                    navigator.clipboard.writeText(msg.content);
+                                    const text = msg.content.startsWith(ARCHITECT_TABLE_MARKER)
+                                      ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
+                                      : msg.content;
+                                    navigator.clipboard.writeText(text);
                                     setCopiedId(msg.id);
                                     setTimeout(() => setCopiedId(null), 2000);
                                   }}
@@ -1125,7 +1165,10 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                                 </button>
                                 <button
                                   onClick={() => {
-                                    const blob = new Blob([msg.content], { type: "text/plain" });
+                                    const text = msg.content.startsWith(ARCHITECT_TABLE_MARKER)
+                                      ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
+                                      : msg.content;
+                                    const blob = new Blob([text], { type: "text/plain" });
                                     const url = URL.createObjectURL(blob);
                                     const a = document.createElement("a");
                                     a.href = url; a.download = "zoe-output.txt";
