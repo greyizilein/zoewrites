@@ -1,69 +1,87 @@
 
 
-## Got it — this becomes ZOE's "Architect" prompt
+## Recap of what's still outstanding from the spec
 
-Your `Superior_Prompt.docx` is not the writing prompt — it's the **structuring prompt**. ZOE uses it to transform any brief into a meticulous, table-based execution blueprint *before* a single word of the actual work is written. This guarantees nothing is overlooked (separate tables vs merged tables, exact figure counts, per-section word splits, citation density, appendices, etc.).
+From `ZOE_SPEC-2.docx`, only the Architect prompt has been wired so far. Still owed:
 
-## How this slots into the rebuild
+1. Full-screen `/zoe` page (PC + mobile) with AMOLED black-and-white theme — currently ZOE is still a sidebar/floating widget.
+2. Autonomous orchestration — manual model picker still exists in `ZoeChat.tsx` (`MODEL_OPTIONS`). Spec says ZOE picks the model, not the user.
+3. Clarification form (tickable) — currently ZOE just asks in prose.
+4. Real exports — `.docx` + `.pdf`, not just `.txt`.
+5. Auto-execute after clarification — once info is gathered, ZOE should start writing immediately.
 
-Two-phase ZOE for any writing task:
+Plus the two new requirements from this message:
 
-```text
-Brief in chat
-   ↓
-[Phase 1: ARCHITECT]  ← uses your Superior_Prompt verbatim
-   ↓ produces ONE detailed execution table
-   ↓
-[Phase 2: WRITER]     ← writes section-by-section against that table
-   ↓ pauses after each section, waits for "next"
-   ↓
-Final assembly + downloads (.docx / .pdf / .txt)
-```
+6. **Hide the architect table from the user.** The blueprint is internal scaffolding only — ZOE runs it, self-audits it, and proceeds straight to writing. The user never sees a table or a "Begin writing" button.
+7. **Use the most capable reasoning model for the architect prompt**, regardless of tier.
 
-Phase 1 is where ZOE becomes ruthless about detail.
+## What I'll change
 
-## What I'll build
+### 1. Architect runs invisibly, writing starts automatically
 
-### 1. Store the Architect Prompt in the library
-Create `supabase/functions/_shared/zoe-prompts.ts` with `SUPERIOR_STRUCTURE_PROMPT` containing your full document text exactly as written. Single source of truth — easy to update later.
+- Remove the visible architect-table message and the "Begin writing" / "Refine blueprint" CTAs from `ZoeChat.tsx`.
+- The `architect_work` tool now returns the table *into the assistant's tool-call result only* (kept in the model's context, not rendered).
+- Replace the user-facing placeholder ("🧱 Architecting…") with a single soft status line: **"Planning your work…"** which gets replaced by the first streamed section.
+- After the architect tool returns, ZOE immediately calls `write_section` for section 1 — no pause, no user input required to begin. Subsequent sections also auto-continue (no more "reply next") unless the user interrupts with feedback. The user just sees the work being written.
+- The system prompt is updated: "PHASE 1 is silent. Never present the table to the user. Immediately proceed to write section 1, then 2, then 3, etc., until complete. Pause only if the user interrupts."
 
-### 2. New tool: `architect_work`
-ZOE auto-calls this when a user asks for any structured deliverable (essay, report, dissertation, case study, business plan, etc.).
-- Input: the brief, any uploaded files, target word count, citation count, level
-- Process: runs the Superior Prompt against a high-reasoning model (`gpt-5` or `gemini-2.5-pro` with `reasoning.effort: "high"`)
-- Output: ONE markdown execution table — Role / Context / Execution Command paragraphs above, then the table from Introduction → Conclusion/Appendices, then the reference-list instruction below
-- Self-critique loop: before returning, ZOE re-checks the table against the Superior Prompt's full checklist (separate tables not merged, exact figure counts, LO descriptions not codes, 1% word ceiling, intro/conclusion ~100 words, citation style, appendices steps). If anything is missing, it rewrites from scratch — up to 2 retries — until the table is A+.
+### 2. Architect always uses the strongest reasoning model
 
-### 3. New tool: `write_section`
-After the table exists, ZOE writes one section at a time and pauses with: *"Section complete. Reply 'next' to continue, or give feedback."* Each section is written strictly against its row in the table.
+- In `zoe-architect/index.ts`, replace the tier-based picker with a fixed choice: **`openai/gpt-5.2`** (OpenAI's strongest reasoning model per the gateway list) with `reasoning.effort: "high"`. Fallback to `openai/gpt-5` if `gpt-5.2` returns a non-200, then `google/gemini-2.5-pro` as final fallback.
+- All architect cost is borne by the platform regardless of user tier — matches the spec ("All AI costs are absorbed by the platform").
 
-### 4. UI in chat
-- The execution table renders as a proper markdown table inside the AMOLED chat (already supported by react-markdown + GFM)
-- A "Begin writing" button appears under the table
-- Section outputs appear as separate assistant messages with their own download/copy actions
-- On finish, an "Assemble & download" button stitches all sections + reference list into one `.docx` / `.pdf`
+### 3. Full-screen `/zoe` page + AMOLED theme
 
-### 5. System prompt update
-ZOE's main system prompt gets a new directive: *"For any deliverable longer than a chat reply, you MUST run `architect_work` first. Never write the work and the structure in the same response. Show the table, wait for approval, then write section by section."*
+- New file `src/pages/Zoe.tsx` that renders `<ZoeChat mode="page" />` full-screen with an AMOLED wrapper (`bg-black text-white`, `#0F0F0F` cards, `#1F1F1F` borders, white user bubbles inverted, single thin terracotta accent for active states).
+- `ZoeChat.tsx` gains a `mode?: "widget" | "page"` prop. In `"page"` mode it fills the viewport, hides the FAB, hides the close button, applies the dark theme tokens.
+- `App.tsx` adds `<Route path="/zoe" element={<ProtectedRoute><Zoe/></ProtectedRoute>} />`.
+- `AuthContext` post-login redirect: paid tiers → `/zoe`, free → `/dashboard`.
+- Landing/dashboard/auth pages remain untouched (theme is scoped to `/zoe` only).
+
+### 4. Remove the manual model picker (autonomous orchestration)
+
+- Delete the `MODEL_OPTIONS` UI from `ZoeChat.tsx`. Tier-based selection in `zoe-chat/index.ts` becomes the single source of truth.
+- A small orchestrator pre-step (`gemini-2.5-flash-lite`) classifies each user turn (casual / drafting / full academic) and sets `reasoning.effort` (`none` / `low` / `high`) automatically.
+
+### 5. Clarification form
+
+- New tool `request_clarification` with schema `{ fields: [{ key, label, type: "text"|"select"|"checkbox"|"number", options?, required }] }`.
+- `ZoeChat.tsx` renders a clean black/white inline form card. On submit, the answers are posted back as a structured user message and ZOE immediately proceeds (no extra user prompt needed).
+
+### 6. Real exports — .docx + .pdf + .txt
+
+- New `src/lib/exportDocs.ts` with `exportDocx`, `exportPdf`, `exportTxt`.
+- Buttons under each long ZOE message: **Copy · Download .docx · Download .pdf · Download .txt**.
+- After the final section completes, ZOE automatically offers an "Assemble & download full document" action that stitches all written sections (+ references) into one `.docx` / `.pdf`.
+- Add `jspdf` to dependencies (`docx` is already present).
 
 ## Files
 
 | File | Action |
 |---|---|
-| `supabase/functions/_shared/zoe-prompts.ts` | NEW — stores `SUPERIOR_STRUCTURE_PROMPT` verbatim |
-| `supabase/functions/zoe-chat/index.ts` | Add `architect_work` + `write_section` tools; add self-critique retry loop; update system prompt |
-| `src/components/chat/ZoeChat.tsx` | Render execution-table messages with "Begin writing" CTA; render section messages with per-section download |
-| `src/lib/exportDocs.ts` | (already in rebuild plan) — add "assemble all sections" helper |
+| `src/pages/Zoe.tsx` | NEW — full-screen AMOLED ZOE page |
+| `src/App.tsx` | Add `/zoe` route |
+| `src/contexts/AuthContext.tsx` | Redirect paid tiers to `/zoe` after login |
+| `src/components/chat/ZoeChat.tsx` | Add `mode="page"` + AMOLED tokens; remove model picker; remove architect-table render + CTAs; auto-continue writing; render `request_clarification` form; multi-format export buttons |
+| `src/lib/exportDocs.ts` | NEW — `.docx` / `.pdf` / `.txt` helpers |
+| `supabase/functions/zoe-architect/index.ts` | Use `gpt-5.2` (high reasoning) with fallback chain; output is for model context only |
+| `supabase/functions/zoe-chat/index.ts` | Update system prompt: silent architect, auto-continue sections, no user pause; add `request_clarification` tool; orchestrator pre-classification; remove honouring `userChoice` model override |
+| `package.json` | Add `jspdf` |
 
-## Critical guarantees baked in
+## Behavioural change
 
-- **Separate tables stay separate** — the architect output explicitly enumerates each required table by name and purpose
-- **Figure/table counts honoured exactly** — checklist verifies before returning
-- **Word counts split per section** with the 1% ceiling and ~100-word intro/conclusion rule encoded
-- **LOs written out in full**, not as "LO1/LO2"
-- **Numerals for all figures, "%" for percentages** — encoded as a non-negotiable
-- **Appendices get their own step-by-step rows** when relevant
-- **Reference list excluded from word count**, listed below the table
-
-This will be folded into the rebuild — Architect Phase becomes the foundation everything else writes against.
+```text
+Before                                   After
+──────────────────────────────────       ──────────────────────────────────
+User asks for an essay                   User asks for an essay
+ZOE shows "Architecting…" placeholder    ZOE shows "Planning your work…"
+ZOE prints the full execution table      Table runs invisibly with strongest
+User clicks "Begin writing"              reasoning model + self-critique
+ZOE writes section 1, waits for "next"   ZOE immediately writes section 1,
+…and so on                               then 2, then 3 — straight through
+Download = .txt only                     Copy · .docx · .pdf · .txt
+Manual model picker                      Fully autonomous (tier-routed)
+Beige sidebar widget                     Full-screen AMOLED at /zoe
+ZOE asks clarifications in prose         ZOE renders a tickable form
+```
 
