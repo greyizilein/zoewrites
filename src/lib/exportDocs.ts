@@ -24,7 +24,7 @@ const MARKERS = ["<!--ZOE_ARCHITECT_TABLE-->", "<!--ZOE_SECTION_OUTPUT-->"];
 
 function clean(text: string): string {
   let out = text;
-  for (const m of MARKERS) out = out.replaceAll(m, "");
+  for (const m of MARKERS) out = out.split(m).join("");
   return out.trim();
 }
 
