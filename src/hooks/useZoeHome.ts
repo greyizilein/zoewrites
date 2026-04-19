@@ -192,11 +192,11 @@ export function useZoeHome() {
 
       case "create_assessment":
         if (isAuthenticated) {
-          navigate("/assessment/new");
+          navigate("/dashboard");
           setMessages(prev => [...prev, {
             role: "assistant",
-            content: "Taking you to create a new assessment! 🚀",
-            toolResult: { type: "navigate", data: { path: "/assessment/new" } },
+            content: "Open ZOE chat (bottom-right) and just tell me what you need — I'll handle the rest. ✨",
+            toolResult: { type: "navigate", data: { path: "/dashboard" } },
           }]);
         } else {
           navigate("/auth");
