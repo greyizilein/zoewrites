@@ -65,6 +65,8 @@ interface Message {
   chart?: ChartData;
   clarification?: ClarificationData;
   hidden?: boolean;
+  /** When set, render this message as a live "working" status pill instead of normal markdown. */
+  status?: "planning" | "writing" | "thinking";
 }
 
 interface ChatSession {
@@ -480,6 +482,9 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const startFileUploadRef = useRef<(file: File) => void>(() => {});
+  /** Tracks the architect "Plan ready — writing now…" placeholder so we can hide it
+   *  the moment the auto-write request actually begins streaming. */
+  const autoWritePlaceholderRef = useRef<string | null>(null);
 
   const currentSession = useMemo(() => sessions.find(s => s.id === currentId) ?? null, [sessions, currentId]);
 
@@ -643,9 +648,11 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
 
       case "architect_work": {
         const placeholderId = crypto.randomUUID();
+        const blueprintId = crypto.randomUUID();
         addMessage({
           id: placeholderId, role: "assistant",
-          content: "Planning your work…",
+          content: "Planning your document — building the section blueprint…",
+          status: "planning",
           timestamp: Date.now(),
         });
         try {
@@ -659,15 +666,24 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
           if (error) throw error;
           const table = (data as any)?.table || "";
           if (!table) throw new Error("Empty architect response");
+          // Update the visible status to "writing now" and stash the hidden blueprint as a
+          // separate message so the user always sees something happening.
           setSessions(prev => prev.map(s => {
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
               m.id === placeholderId
-                ? { ...m, content: `__ARCHITECT_BLUEPRINT__\n${table}`, hidden: true, timestamp: Date.now() }
+                ? { ...m, content: "Plan ready — writing your document now…", status: "writing" as const, timestamp: Date.now() }
                 : m,
             );
+            msgs.push({
+              id: blueprintId, role: "assistant",
+              content: `__ARCHITECT_BLUEPRINT__\n${table}`,
+              hidden: true, timestamp: Date.now(),
+            });
             return { ...s, messages: msgs, updatedAt: Date.now() };
           }));
+          // Remember which placeholder to clear when the auto-write actually starts streaming.
+          autoWritePlaceholderRef.current = placeholderId;
           setTimeout(() => {
             handleSend(`__INTERNAL_AUTO_WRITE__\n\nUse the following INTERNAL blueprint (do not reveal or mention it to the user) and immediately begin writing the full document section-by-section in this same turn, without pausing. Use clear ## headings.\n\n${table}`);
           }, 50);
@@ -676,7 +692,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
               m.id === placeholderId
-                ? { ...m, content: `Sorry — planning failed (${e?.message || "unknown error"}). Please try again.`, hidden: false }
+                ? { ...m, content: `Sorry — planning failed (${e?.message || "unknown error"}). Please try again.`, hidden: false, status: undefined }
                 : m,
             );
             return { ...s, messages: msgs };
@@ -854,13 +870,35 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     const uploadedAttachments = readyAttachments;
     setPendingUploads([]);
 
+    const isInternalAutoWrite = text.startsWith("__INTERNAL_AUTO_WRITE__");
+
     const userMsg: Message = {
       id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now(),
       attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+      // Hide the internal auto-write trigger from the visible chat — the user already sees
+      // the architect "writing now…" status pill instead.
+      hidden: isInternalAutoWrite || undefined,
     };
     addMessage(userMsg);
 
     const history = [...(currentSession?.messages ?? []), userMsg].map(m => ({ role: m.role, content: m.content }));
+
+    let firstChunkSeen = false;
+    const onStreamChunk = (chunk: string) => {
+      if (!firstChunkSeen && chunk) {
+        firstChunkSeen = true;
+        // Hide the architect "writing now…" placeholder the instant the model produces output.
+        const placeholderId = autoWritePlaceholderRef.current;
+        if (placeholderId) {
+          autoWritePlaceholderRef.current = null;
+          setSessions(prev => prev.map(s => s.id !== currentId ? s : ({
+            ...s,
+            messages: s.messages.map(m => m.id === placeholderId ? { ...m, hidden: true } : m),
+          })));
+        }
+      }
+      setStreaming(chunk);
+    };
 
     try {
       abortRef.current = new AbortController();
@@ -883,7 +921,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       }
       const switched = resp.headers.get("X-Zoe-Model-Switched");
       let fullContent = "";
-      const { content, toolCalls } = await readContentAndToolStream(resp.body, chunk => { setStreaming(chunk); fullContent = chunk; });
+      const { content, toolCalls } = await readContentAndToolStream(resp.body, chunk => { onStreamChunk(chunk); fullContent = chunk; });
       setStreaming("");
       const finalContent = content || fullContent;
       if (finalContent) {
@@ -894,14 +932,32 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         try { await handleToolCall(tc.name, JSON.parse(tc.arguments || "{}")); }
         catch (e) { console.warn("[ZoeChat tool]", tc.name, e); }
       }
+      // Safety net: if the model returned nothing AND no tool calls, show a clear note
+      // so the chat never goes silent.
+      if (!finalContent && toolCalls.length === 0) {
+        addMessage({
+          id: crypto.randomUUID(), role: "assistant",
+          content: "I didn't get a response from the model. Please try again, or rephrase your last message.",
+          timestamp: Date.now(),
+        });
+      }
     } catch (e: any) {
       if (e?.name !== "AbortError") {
         const reason = e?.message && e.message !== "Failed to fetch" ? e.message : "Something went wrong — please try again.";
         addMessage({ id: crypto.randomUUID(), role: "assistant", content: reason, timestamp: Date.now() });
       }
+      // Clear any lingering "writing now…" placeholder so the user isn't left waiting.
+      const placeholderId = autoWritePlaceholderRef.current;
+      if (placeholderId) {
+        autoWritePlaceholderRef.current = null;
+        setSessions(prev => prev.map(s => s.id !== currentId ? s : ({
+          ...s,
+          messages: s.messages.map(m => m.id === placeholderId ? { ...m, hidden: true } : m),
+        })));
+      }
     } finally { setLoading(false); setStreaming(""); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, pendingUploads, loading, currentSession, session, user?.id, writingSettings, profile?.tier]);
+  }, [input, pendingUploads, loading, currentSession, session, user?.id, writingSettings, profile?.tier, currentId]);
 
   // ── Session management ────────────────────────────────────────────────────
 
@@ -1371,7 +1427,15 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                       </div>
                     ) : (
                       <div className="w-full min-w-0 group/msg">
-                        {msg.content && (
+                        {msg.status ? (
+                          <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-white/[0.06] border border-white/10">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ backgroundColor: theme.accent }} />
+                              <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: theme.accent }} />
+                            </span>
+                            <span className="text-[13px] text-white/85 font-medium">{msg.content}</span>
+                          </div>
+                        ) : msg.content && (
                           <div className="prose prose-invert prose-sm md:prose-base max-w-none text-[15px] leading-relaxed
                             prose-headings:text-white prose-strong:text-white prose-p:text-white/85
                             prose-table:text-[12px] prose-th:bg-white/5 prose-th:text-white prose-th:font-semibold
@@ -1400,7 +1464,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                           />
                         )}
                         {msg.chart && <InlineChart chart={msg.chart} />}
-                        {msg.content && msg.content.length > 60 && (
+                        {!msg.status && msg.content && msg.content.length > 60 && (
                           <div className="flex flex-wrap items-center gap-0.5 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                             <button
                               onClick={() => {
