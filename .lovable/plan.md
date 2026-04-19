@@ -1,54 +1,69 @@
 
 
-# Fix Build Errors and Missing Writer Engine
+## Got it — this becomes ZOE's "Architect" prompt
 
-## Problems Identified
+Your `Superior_Prompt.docx` is not the writing prompt — it's the **structuring prompt**. ZOE uses it to transform any brief into a meticulous, table-based execution blueprint *before* a single word of the actual work is written. This guarantees nothing is overlooked (separate tables vs merged tables, exact figure counts, per-section word splits, citation density, appendices, etc.).
 
-1. **404 on `/assessment/*` routes** — `App.tsx` has no route for `/assessment/:id` or `/assessment/new`. The `WriterEngine.tsx` page and entire `src/components/writer/` directory are missing (deleted or never saved from previous edits). ZoeChat and useZoeHome navigate to `/assessment/*` which hits the 404 catch-all.
+## How this slots into the rebuild
 
-2. **Build error: `useWriterChat.ts` imports missing module** — `@/components/writer/types` doesn't exist, causing `TS2307`.
+Two-phase ZOE for any writing task:
 
-3. **Build error: `zoe-chat/index.ts` TS7053** — `zip.files[sf]` has implicit `any` type. The `JSZip.files` property needs explicit typing when accessed by string key.
-
-4. **`ZoeFloatingChat.tsx` was never created** — The plan called for it but the file doesn't exist. Dashboard doesn't have the floating widget.
-
-## Fix Plan
-
-### Fix 1: Edge function type error (zoe-chat)
-**File**: `supabase/functions/zoe-chat/index.ts` (lines 639-645)
-
-Cast `zip.files` access to resolve the implicit `any`:
-```typescript
-const filesMap = zip.files as Record<string, any>;
-// then use filesMap[sf].async("string")
+```text
+Brief in chat
+   ↓
+[Phase 1: ARCHITECT]  ← uses your Superior_Prompt verbatim
+   ↓ produces ONE detailed execution table
+   ↓
+[Phase 2: WRITER]     ← writes section-by-section against that table
+   ↓ pauses after each section, waits for "next"
+   ↓
+Final assembly + downloads (.docx / .pdf / .txt)
 ```
 
-### Fix 2: Create `src/components/writer/types.ts`
-Recreate the types file with the `Section`, `WriterSettings`, and related types that `useWriterChat.ts` imports. Include the 6-stage labels and all assessment types/tones/settings from the approved plan.
+Phase 1 is where ZOE becomes ruthless about detail.
 
-### Fix 3: Create `src/pages/WriterEngine.tsx`
-Recreate the Writer Engine page with the 6-stage pipeline (Brief → Plan → Write → Review → Revise → Export). This is the largest piece — it needs to:
-- Accept an assessment ID from the URL (`/assessment/:id`)
-- Handle `/assessment/new` for creating new assessments
-- Load assessment data, sections, and settings from the database
-- Render stage components (simplified inline initially since the `src/components/writer/` subdirectory components are all missing)
-- Wire the `useWriterChat` hook for in-page chat
+## What I'll build
 
-### Fix 4: Add `/assessment` routes to `App.tsx`
-Add:
-```tsx
-<Route path="/assessment/new" element={<ProtectedRoute><WriterEngine /></ProtectedRoute>} />
-<Route path="/assessment/:id" element={<ProtectedRoute><WriterEngine /></ProtectedRoute>} />
-```
+### 1. Store the Architect Prompt in the library
+Create `supabase/functions/_shared/zoe-prompts.ts` with `SUPERIOR_STRUCTURE_PROMPT` containing your full document text exactly as written. Single source of truth — easy to update later.
 
-### Fix 5: Create `src/components/chat/ZoeFloatingChat.tsx`
-Build the floating chat widget as planned (FAB + panel) and add it to `Dashboard.tsx`.
+### 2. New tool: `architect_work`
+ZOE auto-calls this when a user asks for any structured deliverable (essay, report, dissertation, case study, business plan, etc.).
+- Input: the brief, any uploaded files, target word count, citation count, level
+- Process: runs the Superior Prompt against a high-reasoning model (`gpt-5` or `gemini-2.5-pro` with `reasoning.effort: "high"`)
+- Output: ONE markdown execution table — Role / Context / Execution Command paragraphs above, then the table from Introduction → Conclusion/Appendices, then the reference-list instruction below
+- Self-critique loop: before returning, ZOE re-checks the table against the Superior Prompt's full checklist (separate tables not merged, exact figure counts, LO descriptions not codes, 1% word ceiling, intro/conclusion ~100 words, citation style, appendices steps). If anything is missing, it rewrites from scratch — up to 2 retries — until the table is A+.
 
-## Execution Order
+### 3. New tool: `write_section`
+After the table exists, ZOE writes one section at a time and pauses with: *"Section complete. Reply 'next' to continue, or give feedback."* Each section is written strictly against its row in the table.
 
-1. Fix `zoe-chat/index.ts` type error (small, unblocks edge function deployment)
-2. Create `src/components/writer/types.ts` (unblocks `useWriterChat.ts` import)
-3. Create `src/pages/WriterEngine.tsx` (full 6-stage writer page)
-4. Add routes to `App.tsx`
-5. Create `ZoeFloatingChat.tsx` and wire into Dashboard
+### 4. UI in chat
+- The execution table renders as a proper markdown table inside the AMOLED chat (already supported by react-markdown + GFM)
+- A "Begin writing" button appears under the table
+- Section outputs appear as separate assistant messages with their own download/copy actions
+- On finish, an "Assemble & download" button stitches all sections + reference list into one `.docx` / `.pdf`
+
+### 5. System prompt update
+ZOE's main system prompt gets a new directive: *"For any deliverable longer than a chat reply, you MUST run `architect_work` first. Never write the work and the structure in the same response. Show the table, wait for approval, then write section by section."*
+
+## Files
+
+| File | Action |
+|---|---|
+| `supabase/functions/_shared/zoe-prompts.ts` | NEW — stores `SUPERIOR_STRUCTURE_PROMPT` verbatim |
+| `supabase/functions/zoe-chat/index.ts` | Add `architect_work` + `write_section` tools; add self-critique retry loop; update system prompt |
+| `src/components/chat/ZoeChat.tsx` | Render execution-table messages with "Begin writing" CTA; render section messages with per-section download |
+| `src/lib/exportDocs.ts` | (already in rebuild plan) — add "assemble all sections" helper |
+
+## Critical guarantees baked in
+
+- **Separate tables stay separate** — the architect output explicitly enumerates each required table by name and purpose
+- **Figure/table counts honoured exactly** — checklist verifies before returning
+- **Word counts split per section** with the 1% ceiling and ~100-word intro/conclusion rule encoded
+- **LOs written out in full**, not as "LO1/LO2"
+- **Numerals for all figures, "%" for percentages** — encoded as a non-negotiable
+- **Appendices get their own step-by-step rows** when relevant
+- **Reference list excluded from word count**, listed below the table
+
+This will be folded into the rebuild — Architect Phase becomes the foundation everything else writes against.
 
