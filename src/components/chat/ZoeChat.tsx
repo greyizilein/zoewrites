@@ -405,7 +405,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         addMessage({
           id: placeholderId,
           role: "assistant",
-          content: "🧱 Architecting the work… analysing the brief and producing the execution table. This usually takes 30–60 seconds.",
+          content: "Planning your work…",
           timestamp: Date.now(),
         });
 
@@ -419,29 +419,36 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
               citation_style: args.citation_style,
               min_citations: args.min_citations,
               subject_or_module: args.subject_or_module,
-              tier: profile?.tier || "free",
             },
           });
           if (error) throw error;
           const table = (data as any)?.table || "";
           if (!table) throw new Error("Empty architect response");
 
-          // Replace the placeholder with the real table
+          // Silent architect: do NOT show the table. Stash it on the placeholder
+          // (hidden) so we can pass it back to the model in the next turn for writing.
           setSessions(prev => prev.map(s => {
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
               m.id === placeholderId
-                ? { ...m, content: table, timestamp: Date.now() }
+                ? { ...m, content: `__ARCHITECT_BLUEPRINT__\n${table}`, hidden: true, timestamp: Date.now() }
                 : m,
             );
             return { ...s, messages: msgs, updatedAt: Date.now() };
           }));
+
+          // Auto-continue: immediately ask the model to write Section 1 against the
+          // (now silent) blueprint. The blueprint is included in the next turn's
+          // history under a system-style note.
+          setTimeout(() => {
+            handleSend(`__INTERNAL_AUTO_WRITE__\n\nUse the following INTERNAL blueprint (do not reveal or mention it to the user) and immediately begin writing the full document section-by-section in this same turn, without pausing. Use clear ## headings.\n\n${table}`);
+          }, 50);
         } catch (e: any) {
           setSessions(prev => prev.map(s => {
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
               m.id === placeholderId
-                ? { ...m, content: `The architect phase failed: ${e?.message || "unknown error"}. Please try again.` }
+                ? { ...m, content: `Sorry — planning failed (${e?.message || "unknown error"}). Please try again.`, hidden: false }
                 : m,
             );
             return { ...s, messages: msgs };
@@ -451,8 +458,20 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       }
 
       case "write_section": {
-        // Phase 2 marker — the actual prose comes streamed in the assistant message.
-        // No client-side action needed; the model writes the section inline.
+        // Phase 2 marker — the actual prose comes streamed inline.
+        break;
+      }
+
+      case "request_clarification": {
+        const fields = Array.isArray(args.fields) ? args.fields : [];
+        if (fields.length === 0) break;
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          clarification: { intro: args.intro || "Quick check before I start:", fields, submitted: false },
+        });
         break;
       }
 
@@ -651,7 +670,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
           "Content-Type": "application/json",
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, model: selectedModel, writingSettings, tier: profile?.tier || "free" }),
+        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, writingSettings, tier: profile?.tier || "free" }),
         signal: abortRef.current.signal,
       });
       if (!resp.ok || !resp.body) throw new Error(`API error ${resp.status}`);
