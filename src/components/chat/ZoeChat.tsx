@@ -132,8 +132,30 @@ const THEMES: ZoeTheme[] = [
   { key: "pink",       label: "Pink",       accent: "#ec4899", accentHover: "#db2777", accentFg: "#ffffff" },
 ];
 
+// ─────────────────────────── Interface themes (full canvas) ──────────────────
+
+interface InterfaceTheme {
+  key: string;
+  label: string;
+  className: string;     // CSS class applied to root (drives index.css overrides)
+  bg: string;            // canvas bg (also used as swatch preview)
+  fg: string;            // primary text on canvas
+  sidebar: string;       // sidebar bg
+  border: string;        // hairline border
+  swatchBorder: string;  // contrasting border for the picker swatch
+}
+
+const INTERFACE_THEMES: InterfaceTheme[] = [
+  { key: "amoled",   label: "AMOLED",   className: "zoe-amoled",   bg: "#000000", fg: "#ffffff", sidebar: "#0A0A0A", border: "#1F1F1F", swatchBorder: "#333" },
+  { key: "white",    label: "White",    className: "zoe-light",    bg: "#ffffff", fg: "#0a0a0a", sidebar: "#F7F7F7", border: "#E5E5E5", swatchBorder: "#cfcfcf" },
+  { key: "cream",    label: "Cream",    className: "zoe-cream",    bg: "#FAF8F4", fg: "#1a1a1a", sidebar: "#F2EEE7", border: "#E4DED3", swatchBorder: "#d6cfc1" },
+  { key: "navy",     label: "Navy",     className: "zoe-navy",     bg: "#0B1220", fg: "#ffffff", sidebar: "#0F1828", border: "#1B2A44", swatchBorder: "#1B2A44" },
+  { key: "graphite", label: "Graphite", className: "zoe-graphite", bg: "#1A1A1A", fg: "#ffffff", sidebar: "#222222", border: "#2E2E2E", swatchBorder: "#3a3a3a" },
+];
+
 const SK = (uid: string) => `zoe_sessions_${uid}`;
 const TK = (uid: string) => `zoe_theme_${uid}`;
+const IK = (uid: string) => `zoe_interface_${uid}`;
 
 // ─────────────────────────── Storage helpers ─────────────────────────────────
 
