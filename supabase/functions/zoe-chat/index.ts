@@ -728,37 +728,78 @@ serve(async (req) => {
       }
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: resolvedModel,
-        messages: [
-          { role: "system", content: ZOE_SYSTEM + contextNote },
-          ...processedMessages,
-        ],
-        tools,
-        stream: true,
-      }),
-    });
+    // ── Gateway call with auto model fallback on 402/429 ────────────────────
+    let activeModel = resolvedModel;
+    let response: Response | null = null;
+    let lastErrorBody = "";
+    let lastErrorStatus = 0;
+    const triedModels: string[] = [];
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limited. Please wait a moment." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      triedModels.push(activeModel);
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: activeModel,
+          messages: [
+            { role: "system", content: ZOE_SYSTEM + contextNote },
+            ...processedMessages,
+          ],
+          tools,
+          stream: true,
+        }),
+      });
+
+      if (response.ok) break;
+
+      lastErrorStatus = response.status;
+      lastErrorBody = await response.text().catch(() => "");
+      console.warn(`[zoe-chat] gateway ${response.status} on ${activeModel}: ${lastErrorBody.slice(0, 300)}`);
+
+      if (response.status === 402 || response.status === 429 || response.status === 503) {
+        const next = nextFallback(activeModel);
+        if (next) {
+          activeModel = next;
+          continue;
+        }
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Credits exhausted. Please top up." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      break;
+    }
+
+    if (!response || !response.ok) {
+      console.error("AI gateway error:", lastErrorStatus, lastErrorBody, "tried:", triedModels);
+      let userMsg = "ZOE couldn't reach the AI service. Please try again in a moment.";
+      let status = lastErrorStatus || 500;
+      if (lastErrorStatus === 402) {
+        userMsg = "All AI models are out of credits — please top up your workspace usage.";
+      } else if (lastErrorStatus === 429) {
+        userMsg = "ZOE is being rate-limited across all fallback models. Try again in 30 seconds.";
+      } else if (lastErrorStatus === 400) {
+        const isMimeIssue = /invalid.*mime|invalid_image_format|only image/i.test(lastErrorBody);
+        userMsg = isMimeIssue
+          ? "One of your attachments couldn't be read by the AI (likely a scanned PDF or unsupported format). Try the .docx version or paste the text."
+          : `The AI rejected the request: ${lastErrorBody.slice(0, 200) || "bad request"}`;
+        status = 400;
+      } else if (lastErrorStatus >= 500) {
+        userMsg = "The AI service is temporarily unavailable. Please try again shortly.";
       }
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      return new Response(JSON.stringify({ error: "AI gateway error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: userMsg, status: lastErrorStatus, triedModels }), {
+        status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const extraHeaders: Record<string, string> = {};
+    if (activeModel !== resolvedModel) {
+      extraHeaders["X-Zoe-Model-Switched"] = activeModel;
     }
 
     return new Response(response.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+      headers: { ...corsHeaders, ...extraHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (e) {
     console.error("zoe-chat error:", e);
