@@ -585,16 +585,15 @@ serve(async (req) => {
             contextNote += `\n${text.slice(0, 10000)}`;
           } catch { contextNote += "\n[Could not retrieve file content]"; }
 
-        } else if (isPDF || isImage) {
-          // ── PDF / Image: fetch as binary, base64-encode, pass as multimodal ─
+        } else if (isImage) {
+          // ── Image: fetch as binary, base64-encode, pass as multimodal ─────
           try {
             const fileResp = await fetch(att.url);
             const buffer = await fileResp.arrayBuffer();
             const limitBytes = 20 * 1024 * 1024; // 20 MB cap
             if (buffer.byteLength > limitBytes) {
-              contextNote += `\n[File too large for inline processing — ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB. Limit: 20 MB]`;
+              contextNote += `\n[Image too large for inline processing — ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB. Limit: 20 MB]`;
             } else {
-              // Chunk-safe base64 encoding
               const uint8 = new Uint8Array(buffer);
               let binary = "";
               const chunkSize = 32768;
@@ -602,20 +601,49 @@ serve(async (req) => {
                 binary += String.fromCharCode(...uint8.slice(i, i + chunkSize));
               }
               const b64 = btoa(binary);
-              // Determine MIME type — fall back to extension when browser didn't set att.type
-              const mimeType = isImage
-                ? (att.type || (nameLower.endsWith(".png") ? "image/png" : nameLower.endsWith(".gif") ? "image/gif" : nameLower.endsWith(".webp") ? "image/webp" : "image/jpeg"))
-                : "application/pdf";
+              const mimeType = att.type ||
+                (nameLower.endsWith(".png") ? "image/png" :
+                 nameLower.endsWith(".gif") ? "image/gif" :
+                 nameLower.endsWith(".webp") ? "image/webp" : "image/jpeg");
               multimodalParts.push({
                 type: "image_url",
                 image_url: { url: `data:${mimeType};base64,${b64}` },
               });
-              contextNote += isPDF
-                ? "\n[PDF content transmitted as multimodal — read it directly]"
-                : "\n[Image transmitted as multimodal — analyse it visually]";
+              contextNote += "\n[Image transmitted as multimodal — analyse it visually]";
             }
           } catch (e) {
-            contextNote += `\n[Could not load file: ${(e as Error).message}]`;
+            contextNote += `\n[Could not load image: ${(e as Error).message}]`;
+          }
+
+        } else if (isPDF) {
+          // ── PDF: extract text server-side via unpdf ───────────────────────
+          // The Lovable AI gateway only accepts true image MIME types in
+          // image_url parts; PDFs must be turned into text first.
+          try {
+            const fileResp = await fetch(att.url);
+            const buffer = await fileResp.arrayBuffer();
+            const sizeMb = buffer.byteLength / 1024 / 1024;
+            if (sizeMb > 20) {
+              contextNote += `\n[PDF too large — ${sizeMb.toFixed(1)} MB. Limit: 20 MB. Please upload a smaller file or paste key sections.]`;
+            } else {
+              let extracted = "";
+              try {
+                const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
+                extracted = (Array.isArray(text) ? text.join("\n\n") : text || "").trim();
+              } catch (parseErr) {
+                console.warn(`[zoe-chat] unpdf failed for ${att.name}:`, (parseErr as Error).message);
+              }
+              if (extracted.length > 0) {
+                contextNote += `\n${extracted.slice(0, 15000)}`;
+                if (extracted.length > 15000) {
+                  contextNote += `\n[…PDF truncated at 15k chars (${extracted.length} total)…]`;
+                }
+              } else {
+                contextNote += `\n[PDF "${att.name}" appears to be scanned/image-only — text extraction returned nothing. Ask the user to paste the key passages.]`;
+              }
+            }
+          } catch (e) {
+            contextNote += `\n[Could not read PDF "${att.name}": ${(e as Error).message}. Try uploading a .docx version.]`;
           }
 
         } else if (isDocx || isXlsx || isPptx) {
