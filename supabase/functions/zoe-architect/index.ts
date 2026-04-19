@@ -12,13 +12,13 @@ const corsHeaders = {
 
 const ARCHITECT_TABLE_MARKER = "<!--ZOE_ARCHITECT_TABLE-->";
 
-function pickModel(tier: string): string {
-  // Always use a high-reasoning model for the architect phase.
-  if (tier === "professional" || tier === "unlimited" || tier === "custom") {
-    return "openai/gpt-5";
-  }
-  return "google/gemini-2.5-pro";
-}
+// Strongest reasoning models, in order of preference.
+// All architect cost is borne by the platform regardless of user tier.
+const ARCHITECT_MODEL_CHAIN = [
+  "openai/gpt-5.2",
+  "openai/gpt-5",
+  "google/gemini-2.5-pro",
+];
 
 async function runArchitect(opts: {
   apiKey: string;
@@ -90,18 +90,15 @@ ${ARCHITECT_CRITIQUE_CHECKLIST}`;
   return content.trim();
 }
 
-// Lightweight server-side audit of the produced table. Returns true if OK.
 function quickAudit(output: string, target: number): { ok: boolean; reason?: string } {
   if (!output) return { ok: false, reason: "empty output" };
   if (!output.includes("|")) return { ok: false, reason: "no markdown table" };
   if (!/section by section and pause until I say next/i.test(output)) {
     return { ok: false, reason: "missing 'write section by section and pause' phrase" };
   }
-  // Must NOT use bare LO1/LO2/LO3 codes
   if (/\bLO\s?[0-9]\b/.test(output)) {
     return { ok: false, reason: "uses LO codes instead of full LO descriptions" };
   }
-  // Must not be a tiny output for a real deliverable
   if (target >= 1000 && output.length < 1500) {
     return { ok: false, reason: "table too short for the target word count" };
   }
@@ -122,16 +119,14 @@ serve(async (req) => {
       citation_style,
       min_citations,
       subject_or_module,
-      tier,
     } = await req.json();
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
     const wc = Number(word_count) || 1500;
-    const opts = {
+    const baseOpts = {
       apiKey: LOVABLE_API_KEY,
-      model: pickModel(tier || "free"),
       brief: String(brief || "").trim(),
       deliverableType: String(deliverable_type || "Essay"),
       wordCount: wc,
@@ -141,7 +136,7 @@ serve(async (req) => {
       subject: String(subject_or_module || ""),
     };
 
-    if (!opts.brief) {
+    if (!baseOpts.brief) {
       return new Response(
         JSON.stringify({ error: "brief is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -150,17 +145,26 @@ serve(async (req) => {
 
     let table = "";
     let lastReason = "";
-    // Up to 3 attempts: initial + 2 retries (full rewrite from scratch).
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        table = await runArchitect(opts);
-        const audit = quickAudit(table, opts.wordCount);
-        if (audit.ok) break;
-        lastReason = audit.reason || "audit failed";
-        console.warn(`[zoe-architect] attempt ${attempt + 1} failed audit: ${lastReason}`);
-      } catch (e) {
-        lastReason = e instanceof Error ? e.message : "unknown error";
-        console.warn(`[zoe-architect] attempt ${attempt + 1} error: ${lastReason}`);
+    let modelUsed = "";
+
+    // Walk the model chain. For each model, try up to 2 times before falling back.
+    outer: for (const model of ARCHITECT_MODEL_CHAIN) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          table = await runArchitect({ ...baseOpts, model });
+          const audit = quickAudit(table, baseOpts.wordCount);
+          if (audit.ok) {
+            modelUsed = model;
+            break outer;
+          }
+          lastReason = audit.reason || "audit failed";
+          console.warn(`[zoe-architect] ${model} attempt ${attempt + 1} failed audit: ${lastReason}`);
+        } catch (e) {
+          lastReason = e instanceof Error ? e.message : "unknown error";
+          console.warn(`[zoe-architect] ${model} attempt ${attempt + 1} error: ${lastReason}`);
+          // If this is a hard error (4xx/5xx), break to fall back to the next model immediately.
+          if (lastReason.includes("AI gateway 4") || lastReason.includes("AI gateway 5")) break;
+        }
       }
     }
 
@@ -171,13 +175,12 @@ serve(async (req) => {
       );
     }
 
-    // Ensure the marker is present so the UI can detect this as an architect output.
     if (!table.includes(ARCHITECT_TABLE_MARKER)) {
       table = `${ARCHITECT_TABLE_MARKER}\n\n${table}`;
     }
 
     return new Response(
-      JSON.stringify({ table, model: opts.model }),
+      JSON.stringify({ table, model: modelUsed }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {

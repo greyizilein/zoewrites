@@ -12,9 +12,18 @@ import Analytics from "./pages/Analytics";
 import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
+import ZoePage from "./pages/Zoe";
 import ZoeChat from "./components/chat/ZoeChat";
+import { useLocation } from "react-router-dom";
 
 const queryClient = new QueryClient();
+
+// Hide the floating ZOE widget on the dedicated /zoe page (it renders inline there).
+function GlobalZoeWidget() {
+  const { pathname } = useLocation();
+  if (pathname.startsWith("/zoe")) return null;
+  return <ZoeChat mode="widget" />;
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -23,7 +32,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <ZoeChat />
+          <GlobalZoeWidget />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
@@ -31,6 +40,7 @@ const App = () => (
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+            <Route path="/zoe" element={<ProtectedRoute><ZoePage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

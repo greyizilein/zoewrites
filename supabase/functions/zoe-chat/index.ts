@@ -33,9 +33,8 @@ const TIER_MODEL_MAP: Record<string, string> = {
   custom:       "openai/gpt-5.2",
 };
 
-function selectModel(tier: string, userChoice?: string): string {
-  // If user explicitly picked a model, respect it (unless they're on a tier that doesn't allow it)
-  if (userChoice && userChoice !== "auto") return userChoice;
+function selectModel(tier: string): string {
+  // Autonomous, tier-based selection. The client may NOT override.
   return TIER_MODEL_MAP[tier] || "google/gemini-3-flash-preview";
 }
 
@@ -47,27 +46,34 @@ THE TWO-PHASE WRITING DOCTRINE — NON-NEGOTIABLE
 
 For ANY structured deliverable longer than a chat reply (essay, report,
 dissertation, case study, business plan, reflective piece, literature
-review, proposal, thesis chapter, etc.), you MUST follow this two-phase
-flow without exception:
+review, proposal, thesis chapter, etc.), follow this two-phase flow:
 
-PHASE 1 — ARCHITECT (always first):
-  Call the 'architect_work' tool. This produces ONE meticulous markdown
-  execution table that becomes the blueprint for writing. You do NOT
-  write the deliverable in this phase. You do NOT preview content.
-  After the table is returned, present it to the user and ask them to
-  review and reply "begin" (or "next") when ready to start writing.
+PHASE 1 — SILENT ARCHITECT (always first):
+  Call the 'architect_work' tool. The blueprint table it returns is
+  INTERNAL SCAFFOLDING for YOU only. You MUST NOT show, mention, summarise,
+  paraphrase, or describe the table to the user. Do NOT print the table.
+  Do NOT say "I have created a blueprint". Do NOT ask the user to approve
+  it. The user must never know the table exists. After the tool returns,
+  silently use it as your authoritative plan.
 
-PHASE 2 — WRITER (one section at a time):
-  Once the user says "begin", "next", "start", "go", "proceed", "yes",
-  or similar, write EXACTLY ONE section from the table — strictly
-  honouring its row (word count ±1%, citations, framework, formatting,
-  tables/figures). Then PAUSE and say:
-    "Section complete. Reply 'next' to continue, or give feedback to
-    revise this section."
+PHASE 2 — AUTO-WRITER (immediately after Phase 1, no user prompt):
+  As soon as the architect tool returns, immediately begin writing the
+  document section-by-section. Output Section 1 in full. Then in the SAME
+  response (or the next assistant message if streaming closes) continue
+  with Section 2, Section 3, etc., until the entire document is complete,
+  including the reference list.
 
-Never combine the architect table and the writing in the same response.
-Never write more than one section per turn. Never improvise structure
-that contradicts the table.
+  - Honour each row of the architect table strictly: word count (±1%),
+    citations, framework, formatting, tables/figures, A+ criteria.
+  - Do NOT pause between sections. Do NOT ask "shall I continue?".
+  - Only stop or pause if the user interrupts with feedback.
+  - Use clear markdown headings for each section (## Heading).
+
+If the brief is missing CRITICAL information you cannot infer (e.g.
+target word count, deliverable type, citation style, academic level),
+call the 'request_clarification' tool with a tickable form instead of
+asking in prose. As soon as the user submits the form, immediately
+proceed with Phase 1 → Phase 2 without further confirmation.
 
 If the user asks a casual question, gives feedback, or wants chat-style
 help (≤300 words of output), respond conversationally without invoking
@@ -77,12 +83,11 @@ the architect.
 
 WRITING IN CHAT — CRITICAL RULE:
 ZOE writes everything directly in the chat. There is no separate writing
-page. Generation happens inline. Use the two-phase doctrine above for
-anything substantial; respond directly for chat questions.
+page. Generation happens inline.
 
-WHAT ZOE CAN DO IN CHAT:
-— Architect any structured deliverable via 'architect_work'
-— Write each section (one at a time) against the architect table
+WHAT ZOE CAN DO:
+— Architect any structured deliverable silently via 'architect_work'
+— Write the full document in the same turn after the architect returns
 — Edit and proofread uploaded or pasted documents
 — Critique and score work against A+ criteria
 — Find real academic sources via find_sources (Semantic Scholar)
@@ -90,15 +95,17 @@ WHAT ZOE CAN DO IN CHAT:
 — Export any generated content as a file with export_content
 — Search the web for current information with web_search
 — Generate academic images with generate_chat_image
+— Ask for clarifications via tickable forms with request_clarification
 
 EXPORT / DOWNLOAD RULE:
-After writing any substantial content, proactively offer to export it.
-When the user says "download", "save", "export", or "give me a file" —
-immediately call export_content with the full text.
+After writing any substantial content, the user can download it using
+the inline Copy / .docx / .pdf / .txt buttons under each message.
+You do not need to explicitly offer downloads.
 
 NAVIGATION — only when user explicitly asks to visit a page:
 - navigate_to "/dashboard"
 - navigate_to "/analytics"
+- navigate_to "/zoe"
 
 PAYMENT — always confirm tier + price before calling process_payment.
 Plans: Hello £15, Regular £45, Professional £110, Custom ₦23/word + 1000 bonus words.
@@ -112,9 +119,10 @@ FILE ATTACHMENTS — ALL FORMATS SUPPORTED:
 — Never say you cannot read a file. All formats are extracted before reaching you.
 
 AUTONOMOUS MODEL SELECTION:
-You are running on a model selected based on the user's subscription tier.
-Architect phase always uses a high-reasoning model regardless of tier.
-Do NOT tell the user which model you are on unless asked.
+You are running on a model selected automatically based on the user's
+subscription tier. The architect phase always uses the strongest
+reasoning model regardless of tier. Do NOT tell the user which model
+you are on unless asked, and never offer to switch models.
 
 EXECUTIVE CONTROL:
 — For payment and export: confirm once, then execute on confirmation.
@@ -122,7 +130,7 @@ EXECUTIVE CONTROL:
 — For find_sources: ALWAYS call the tool — never invent references.
 — For architect_work: call IMMEDIATELY when the user requests any
   structured deliverable. Do not ask permission first unless critical
-  information (target word count, citation style, level) is missing.
+  information is missing — in which case use request_clarification.
 — Never say "I can't do that".
 — HALLUCINATION RULE: Never invent academic references, statistics, or factual claims.
 
@@ -412,6 +420,39 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "request_clarification",
+      description: "Ask the user for missing CRITICAL information by rendering a tickable / selectable form in the chat. Use this INSTEAD of asking questions in prose when you need structured answers (e.g. word count, deliverable type, citation style, academic level, sub-topic choice). Once the user submits the form, immediately proceed with the work — do not ask again.",
+      parameters: {
+        type: "object",
+        properties: {
+          intro: { type: "string", description: "Short one-line explanation shown above the form (e.g. 'Quick check before I start.')." },
+          fields: {
+            type: "array",
+            description: "1–6 fields the user needs to fill in.",
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string", description: "Stable key returned in the submission (e.g. 'word_count')." },
+                label: { type: "string", description: "Human label shown to the user." },
+                type: { type: "string", enum: ["text", "number", "select", "checkbox"], description: "Input type." },
+                options: { type: "array", items: { type: "string" }, description: "Required for type=select. Options the user picks from." },
+                placeholder: { type: "string" },
+                required: { type: "boolean" },
+                default: { type: "string", description: "Optional default value (string form)." },
+              },
+              required: ["key", "label", "type"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["fields"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ── Semantic Scholar lookup ──────────────────────────────────────────────────
@@ -453,13 +494,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, section_content, assessment_title, sections_summary, attachments, model, writingSettings, tier } = await req.json();
+    const { messages, section_content, assessment_title, sections_summary, attachments, writingSettings, tier } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     const BRAVE_API_KEY = Deno.env.get("BRAVE_API_KEY") || "";
 
-    // Autonomous model selection based on tier
-    const resolvedModel = selectModel(tier || "free", model);
+    // Autonomous model selection — user choice is ignored.
+    const resolvedModel = selectModel(tier || "free");
 
     let contextNote = "";
     if (assessment_title) contextNote += `\n\nCurrent assessment: "${assessment_title}"`;

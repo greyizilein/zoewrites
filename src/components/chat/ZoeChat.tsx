@@ -7,12 +7,13 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2, ChevronDown, Lock, ArrowUpRight, Settings, ChevronRight, Copy, Download, Check } from "lucide-react";
+import { Plus, Trash2, Minus, X, Send, Paperclip, History, Search, MessageSquare, Loader2, ArrowUpRight, Settings, ChevronRight, Copy, Download, Check, FileText, FileType } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { readContentAndToolStream } from "@/lib/sseStream";
 import { loadPaystackScript, openPaystackPopup } from "@/lib/paystack";
+import { exportTxt, exportDocx, exportPdf } from "@/lib/exportDocs";
 
 // ─────────────────────────── Types ───────────────────────────────────────────
 
@@ -36,6 +37,21 @@ interface ChartData {
   y_label?: string;
 }
 
+interface ClarificationField {
+  key: string;
+  label: string;
+  type: "text" | "number" | "select" | "checkbox";
+  options?: string[];
+  placeholder?: string;
+  required?: boolean;
+  default?: string;
+}
+interface ClarificationData {
+  intro?: string;
+  fields: ClarificationField[];
+  submitted?: boolean;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -43,6 +59,8 @@ interface Message {
   timestamp: number;
   attachments?: Attachment[];
   chart?: ChartData;
+  clarification?: ClarificationData;
+  hidden?: boolean; // internal status messages (e.g. "Planning your work…") — replaced by streamed output
 }
 
 interface ChatSession {
@@ -59,23 +77,9 @@ const PAYSTACK_PUBLIC_KEY = "pk_live_e1d5c33f8f38484c592eaad87382adab502a8c1e";
 const GBP_TO_NGN = 2083;
 const TIER_PRICES_GBP: Record<string, number> = { hello: 15, regular: 45, professional: 110 };
 
-// ─────────────────────────── Model options ───────────────────────────────────
+// (Model selection is fully autonomous and tier-based on the server.
+//  No client-side model picker.)
 
-interface ModelOption {
-  id: string;
-  label: string;
-  badge: string;
-  minTier: string[];
-}
-
-const MODEL_OPTIONS: ModelOption[] = [
-  { id: "google/gemini-3-flash-preview",  label: "Gemini 3 Flash",    badge: "Flash",    minTier: ["hello","regular","professional","unlimited","custom"] },
-  { id: "google/gemini-2.5-flash",        label: "Gemini 2.5 Flash",  badge: "Flash 2.5",minTier: ["regular","professional","unlimited","custom"] },
-  { id: "google/gemini-2.5-pro",          label: "Gemini 2.5 Pro",    badge: "2.5 Pro",  minTier: ["regular","professional","unlimited","custom"] },
-  { id: "google/gemini-2.5-flash-lite",   label: "Flash Lite",        badge: "Lite",     minTier: ["professional","unlimited","custom"] },
-  { id: "openai/gpt-5",                   label: "GPT-5",             badge: "GPT-5",    minTier: ["professional","unlimited","custom"] },
-  { id: "openai/gpt-5.2",                label: "GPT-5.2",           badge: "GPT-5.2",  minTier: ["professional","unlimited","custom"] },
-];
 
 // ─────────────────────────── Writing settings ────────────────────────────────
 
@@ -216,6 +220,74 @@ function InlineChart({ chart }: { chart: ChartData }) {
         </BarChart>
       </ResponsiveContainer>
       {chart.x_label && <p className="text-[10px] text-foreground/40 text-center mt-1">{chart.x_label}</p>}
+    </div>
+  );
+}
+
+// ─────────────────────────── Clarification Form ──────────────────────────────
+
+function ClarificationForm({ data, onSubmit }: { data: ClarificationData; onSubmit: (a: Record<string, any>) => void }) {
+  const [values, setValues] = useState<Record<string, any>>(() => {
+    const init: Record<string, any> = {};
+    for (const f of data.fields) {
+      init[f.key] = f.type === "checkbox" ? [] : (f.default ?? (f.type === "select" ? (f.options?.[0] ?? "") : ""));
+    }
+    return init;
+  });
+
+  const update = (k: string, v: any) => setValues(prev => ({ ...prev, [k]: v }));
+
+  const canSubmit = data.fields.every(f => {
+    if (!f.required) return true;
+    const v = values[f.key];
+    if (Array.isArray(v)) return v.length > 0;
+    return v !== "" && v != null;
+  });
+
+  return (
+    <div className="mt-2 rounded-xl border border-black/10 bg-white/70 p-3 shadow-sm space-y-3">
+      {data.intro && <p className="text-[12px] text-foreground/65">{data.intro}</p>}
+      {data.fields.map(f => (
+        <div key={f.key} className="space-y-1">
+          <label className="text-[11px] font-semibold text-foreground/70">
+            {f.label}{f.required && <span className="text-terracotta"> *</span>}
+          </label>
+          {f.type === "text" && (
+            <input type="text" placeholder={f.placeholder} value={values[f.key]} onChange={e => update(f.key, e.target.value)}
+              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none focus:border-terracotta/50" />
+          )}
+          {f.type === "number" && (
+            <input type="number" placeholder={f.placeholder} value={values[f.key]} onChange={e => update(f.key, e.target.value)}
+              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none focus:border-terracotta/50" />
+          )}
+          {f.type === "select" && (
+            <select value={values[f.key]} onChange={e => update(f.key, e.target.value)}
+              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer">
+              {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+          {f.type === "checkbox" && (
+            <div className="flex flex-wrap gap-1.5">
+              {(f.options ?? []).map(o => {
+                const checked = (values[f.key] as string[]).includes(o);
+                return (
+                  <button key={o} type="button"
+                    onClick={() => update(f.key, checked ? (values[f.key] as string[]).filter(x => x !== o) : [...(values[f.key] as string[]), o])}
+                    className={cn("text-[11px] px-2.5 py-1 rounded-full border transition-colors",
+                      checked ? "bg-terracotta text-white border-terracotta" : "bg-white text-foreground/65 border-black/15 hover:border-terracotta/40")}>
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+      <button type="button" disabled={!canSubmit} onClick={() => onSubmit(values)}
+        className={cn("mt-1 w-full px-3 py-2 rounded-xl text-[12px] font-semibold transition-all",
+          canSubmit ? "bg-terracotta text-white hover:brightness-110 active:scale-[0.98]" : "bg-black/8 text-foreground/30 cursor-not-allowed")}>
+        Submit & continue
+      </button>
     </div>
   );
 }
@@ -401,7 +473,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         addMessage({
           id: placeholderId,
           role: "assistant",
-          content: "🧱 Architecting the work… analysing the brief and producing the execution table. This usually takes 30–60 seconds.",
+          content: "Planning your work…",
           timestamp: Date.now(),
         });
 
@@ -415,29 +487,36 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
               citation_style: args.citation_style,
               min_citations: args.min_citations,
               subject_or_module: args.subject_or_module,
-              tier: profile?.tier || "free",
             },
           });
           if (error) throw error;
           const table = (data as any)?.table || "";
           if (!table) throw new Error("Empty architect response");
 
-          // Replace the placeholder with the real table
+          // Silent architect: do NOT show the table. Stash it on the placeholder
+          // (hidden) so we can pass it back to the model in the next turn for writing.
           setSessions(prev => prev.map(s => {
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
               m.id === placeholderId
-                ? { ...m, content: table, timestamp: Date.now() }
+                ? { ...m, content: `__ARCHITECT_BLUEPRINT__\n${table}`, hidden: true, timestamp: Date.now() }
                 : m,
             );
             return { ...s, messages: msgs, updatedAt: Date.now() };
           }));
+
+          // Auto-continue: immediately ask the model to write Section 1 against the
+          // (now silent) blueprint. The blueprint is included in the next turn's
+          // history under a system-style note.
+          setTimeout(() => {
+            handleSend(`__INTERNAL_AUTO_WRITE__\n\nUse the following INTERNAL blueprint (do not reveal or mention it to the user) and immediately begin writing the full document section-by-section in this same turn, without pausing. Use clear ## headings.\n\n${table}`);
+          }, 50);
         } catch (e: any) {
           setSessions(prev => prev.map(s => {
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
               m.id === placeholderId
-                ? { ...m, content: `The architect phase failed: ${e?.message || "unknown error"}. Please try again.` }
+                ? { ...m, content: `Sorry — planning failed (${e?.message || "unknown error"}). Please try again.`, hidden: false }
                 : m,
             );
             return { ...s, messages: msgs };
@@ -447,8 +526,20 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       }
 
       case "write_section": {
-        // Phase 2 marker — the actual prose comes streamed in the assistant message.
-        // No client-side action needed; the model writes the section inline.
+        // Phase 2 marker — the actual prose comes streamed inline.
+        break;
+      }
+
+      case "request_clarification": {
+        const fields = Array.isArray(args.fields) ? args.fields : [];
+        if (fields.length === 0) break;
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          clarification: { intro: args.intro || "Quick check before I start:", fields, submitted: false },
+        });
         break;
       }
 
@@ -647,7 +738,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
           "Content-Type": "application/json",
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, model: selectedModel, writingSettings, tier: profile?.tier || "free" }),
+        body: JSON.stringify({ messages: history, attachments: uploadedAttachments, writingSettings, tier: profile?.tier || "free" }),
         signal: abortRef.current.signal,
       });
       if (!resp.ok || !resp.body) throw new Error(`API error ${resp.status}`);
@@ -685,7 +776,9 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     ? sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
     : sessions;
 
-  const messages = currentSession?.messages ?? [];
+  const allMessages = currentSession?.messages ?? [];
+  // Hide internal status / blueprint stash messages from the UI.
+  const messages = allMessages.filter(m => !m.hidden && !m.content.startsWith("__ARCHITECT_BLUEPRINT__") && !m.content.startsWith("__INTERNAL_AUTO_WRITE__"));
   const hasMessages = messages.length > 0 || !!streaming;
 
   // Only render for subscribed users (free tier does not get ZoeChat)
@@ -717,8 +810,8 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     });
   }
 
-  const currentModelBadge = MODEL_OPTIONS.find(m => m.id === selectedModel)?.badge ?? "Flash";
-  const tierAllowed = (minTier: string[]) => profile ? minTier.includes(profile.tier) : false;
+  // Model selection is fully autonomous — no UI helpers required.
+
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1033,30 +1126,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                       >
                         <Paperclip size={15} />
                       </button>
-                      {/* Model picker */}
-                      <div className="relative">
-                        <button type="button" onClick={() => setShowModelPicker(v => !v)}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-foreground/45 hover:bg-black/6 hover:text-foreground/70 transition-colors">
-                          {currentModelBadge} <ChevronDown size={10} />
-                        </button>
-                        {showModelPicker && (
-                          <div className="absolute bottom-full mb-1 right-0 z-50 w-48 bg-white rounded-xl shadow-xl border border-black/10 py-1 overflow-hidden">
-                            {MODEL_OPTIONS.map(m => {
-                              const allowed = tierAllowed(m.minTier);
-                              return (
-                                <button key={m.id} type="button"
-                                  onClick={() => allowed && changeModel(m.id)}
-                                  className={cn("w-full flex items-center justify-between px-3 py-2 text-[12px] transition-colors text-left",
-                                    selectedModel === m.id ? "bg-terracotta/10 text-terracotta font-semibold" : allowed ? "text-foreground/80 hover:bg-black/5" : "text-foreground/30 cursor-not-allowed")}>
-                                  <span>{m.label}</span>
-                                  {!allowed && <Lock size={10} className="text-foreground/25" />}
-                                  {allowed && selectedModel === m.id && <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      {/* Model selection is fully autonomous — no picker shown. */}
                       <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
                         className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
@@ -1102,58 +1172,37 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                               </div>
                               <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
                             </div>
-                            {msg.content && (() => {
-                              const isArchitect = msg.content.startsWith(ARCHITECT_TABLE_MARKER);
-                              const display = isArchitect
-                                ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
-                                : msg.content;
-                              return (
-                                <>
-                                  {isArchitect && (
-                                    <div className="mb-2 flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-terracotta">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />
-                                      Execution Blueprint
-                                    </div>
-                                  )}
-                                  <div className={cn(
-                                    "prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed",
-                                    "prose-table:text-[12px] prose-th:bg-terracotta/10 prose-th:text-foreground prose-th:font-semibold prose-th:px-2 prose-th:py-1.5 prose-td:px-2 prose-td:py-1.5 prose-td:align-top prose-th:border prose-td:border prose-th:border-black/10 prose-td:border-black/10",
-                                    isArchitect && "rounded-xl border border-terracotta/25 bg-white/60 p-3 shadow-sm",
-                                  )}>
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{display}</ReactMarkdown>
-                                  </div>
-                                  {isArchitect && (
-                                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                                      <button
-                                        onClick={() => handleSend("Begin writing. Start with the first section, write it section by section, and pause until I say next.")}
-                                        disabled={loading}
-                                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-terracotta text-white text-[12px] font-semibold hover:brightness-110 active:scale-95 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                                      >
-                                        <ChevronRight size={14} />
-                                        Begin writing
-                                      </button>
-                                      <button
-                                        onClick={() => handleSend("Revise the execution blueprint — keep the structure but tighten anything that is generic or under-specified.")}
-                                        disabled={loading}
-                                        className="px-3 py-2 rounded-xl bg-white border border-black/10 text-foreground/70 text-[12px] font-medium hover:bg-black/5 transition-colors disabled:opacity-40"
-                                      >
-                                        Refine blueprint
-                                      </button>
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })()}
+                            {msg.content && (
+                              <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed prose-table:text-[12px] prose-th:bg-terracotta/10 prose-th:text-foreground prose-th:font-semibold prose-th:px-2 prose-th:py-1.5 prose-td:px-2 prose-td:py-1.5 prose-td:align-top prose-th:border prose-td:border prose-th:border-black/10 prose-td:border-black/10">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                              </div>
+                            )}
+                            {msg.clarification && !msg.clarification.submitted && (
+                              <ClarificationForm
+                                data={msg.clarification}
+                                onSubmit={(answers) => {
+                                  // Mark form as submitted
+                                  setSessions(prev => prev.map(s => s.id !== currentId ? s : ({
+                                    ...s,
+                                    messages: s.messages.map(mm => mm.id === msg.id
+                                      ? { ...mm, clarification: { ...msg.clarification!, submitted: true } }
+                                      : mm),
+                                  })));
+                                  // Send the structured answers as a user reply
+                                  const summary = Object.entries(answers)
+                                    .map(([k, v]) => `- ${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+                                    .join("\n");
+                                  handleSend(`Here are my answers — proceed immediately:\n${summary}`);
+                                }}
+                              />
+                            )}
                             {msg.chart && <InlineChart chart={msg.chart} />}
-                            {/* Copy / Download actions */}
-                            {msg.content && msg.content.length > 20 && (
-                              <div className="flex items-center gap-1 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                            {/* Multi-format export actions */}
+                            {msg.content && msg.content.length > 60 && (
+                              <div className="flex flex-wrap items-center gap-1 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                                 <button
                                   onClick={() => {
-                                    const text = msg.content.startsWith(ARCHITECT_TABLE_MARKER)
-                                      ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
-                                      : msg.content;
-                                    navigator.clipboard.writeText(text);
+                                    navigator.clipboard.writeText(msg.content);
                                     setCopiedId(msg.id);
                                     setTimeout(() => setCopiedId(null), 2000);
                                   }}
@@ -1164,21 +1213,25 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                                   {copiedId === msg.id ? "Copied" : "Copy"}
                                 </button>
                                 <button
-                                  onClick={() => {
-                                    const text = msg.content.startsWith(ARCHITECT_TABLE_MARKER)
-                                      ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
-                                      : msg.content;
-                                    const blob = new Blob([text], { type: "text/plain" });
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement("a");
-                                    a.href = url; a.download = "zoe-output.txt";
-                                    document.body.appendChild(a); a.click();
-                                    document.body.removeChild(a); URL.revokeObjectURL(url);
-                                  }}
+                                  onClick={() => exportDocx(msg.content, "zoe-output.docx")}
                                   className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
-                                  title="Download"
+                                  title="Download .docx"
                                 >
-                                  <Download size={11} /> Download
+                                  <FileText size={11} /> .docx
+                                </button>
+                                <button
+                                  onClick={() => exportPdf(msg.content, "zoe-output.pdf")}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
+                                  title="Download .pdf"
+                                >
+                                  <FileType size={11} /> .pdf
+                                </button>
+                                <button
+                                  onClick={() => exportTxt(msg.content, "zoe-output.txt")}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-foreground/40 hover:bg-black/6 hover:text-foreground/70 transition-colors"
+                                  title="Download .txt"
+                                >
+                                  <Download size={11} /> .txt
                                 </button>
                               </div>
                             )}
@@ -1284,30 +1337,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                       >
                         <Paperclip size={15} />
                       </button>
-                      {/* Model picker */}
-                      <div className="relative">
-                        <button type="button" onClick={() => setShowModelPicker(v => !v)}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-foreground/45 hover:bg-black/6 hover:text-foreground/70 transition-colors">
-                          {currentModelBadge} <ChevronDown size={10} />
-                        </button>
-                        {showModelPicker && (
-                          <div className="absolute bottom-full mb-1 right-0 z-50 w-48 bg-white rounded-xl shadow-xl border border-black/10 py-1 overflow-hidden">
-                            {MODEL_OPTIONS.map(m => {
-                              const allowed = tierAllowed(m.minTier);
-                              return (
-                                <button key={m.id} type="button"
-                                  onClick={() => allowed && changeModel(m.id)}
-                                  className={cn("w-full flex items-center justify-between px-3 py-2 text-[12px] transition-colors text-left",
-                                    selectedModel === m.id ? "bg-terracotta/10 text-terracotta font-semibold" : allowed ? "text-foreground/80 hover:bg-black/5" : "text-foreground/30 cursor-not-allowed")}>
-                                  <span>{m.label}</span>
-                                  {!allowed && <Lock size={10} className="text-foreground/25" />}
-                                  {allowed && selectedModel === m.id && <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      {/* Model selection is fully autonomous — no picker shown. */}
                       <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
                         className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}

@@ -23,22 +23,31 @@ const Auth = () => {
   const [signupForm, setSignupForm] = useState({ name: "", email: "", password: "" });
 
   if (!authLoading && session) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/zoe" replace />;
   }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: loginForm.email,
       password: loginForm.password,
     });
     setLoading(false);
     if (error) {
       toast({ title: "Login failed", description: error.message, variant: "destructive" });
-    } else {
-      navigate("/dashboard");
+      return;
     }
+    // Route paid tiers straight into the ZOE workspace; free users see the dashboard upgrade flow.
+    let target = "/zoe";
+    try {
+      const uid = data.session?.user.id;
+      if (uid) {
+        const { data: prof } = await supabase.from("profiles").select("tier").eq("user_id", uid).single();
+        if (!prof || prof.tier === "free") target = "/dashboard";
+      }
+    } catch { /* fall through to /zoe */ }
+    navigate(target);
   };
 
   const handleSignup = async (e: React.FormEvent) => {
