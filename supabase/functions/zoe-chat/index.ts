@@ -1,7 +1,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { JSZip } from "https://deno.land/x/jszip@0.11.0/mod.ts";
+import { extractText } from "https://esm.sh/unpdf@0.12.1";
 import { getZoeBrain } from "../_shared/zoe-brain.ts";
 import { SUPERIOR_STRUCTURE_PROMPT, ARCHITECT_CRITIQUE_CHECKLIST } from "../_shared/zoe-prompts.ts";
+
+// ── Auto model fallback chain ────────────────────────────────────────────────
+// If a model returns 402 (out of credits) or 429 (rate-limited), we walk down
+// this chain so the user keeps getting a response.
+const MODEL_FALLBACK_CHAIN: Record<string, string[]> = {
+  "openai/gpt-5.2":            ["openai/gpt-5", "google/gemini-2.5-pro", "google/gemini-3-flash-preview"],
+  "openai/gpt-5":              ["google/gemini-2.5-pro", "google/gemini-3-flash-preview"],
+  "openai/gpt-5-mini":         ["google/gemini-2.5-flash", "google/gemini-3-flash-preview"],
+  "google/gemini-2.5-pro":     ["google/gemini-2.5-flash", "google/gemini-3-flash-preview"],
+  "google/gemini-2.5-flash":   ["google/gemini-3-flash-preview"],
+  "google/gemini-3-flash-preview": [],
+};
+
+function nextFallback(model: string): string | null {
+  const chain = MODEL_FALLBACK_CHAIN[model];
+  if (!chain || chain.length === 0) return null;
+  return chain[0];
+}
 
 // ── Architect model selection (always high-reasoning) ────────────────────────
 function selectArchitectModel(tier: string): string {
@@ -566,16 +585,15 @@ serve(async (req) => {
             contextNote += `\n${text.slice(0, 10000)}`;
           } catch { contextNote += "\n[Could not retrieve file content]"; }
 
-        } else if (isPDF || isImage) {
-          // ── PDF / Image: fetch as binary, base64-encode, pass as multimodal ─
+        } else if (isImage) {
+          // ── Image: fetch as binary, base64-encode, pass as multimodal ─────
           try {
             const fileResp = await fetch(att.url);
             const buffer = await fileResp.arrayBuffer();
             const limitBytes = 20 * 1024 * 1024; // 20 MB cap
             if (buffer.byteLength > limitBytes) {
-              contextNote += `\n[File too large for inline processing — ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB. Limit: 20 MB]`;
+              contextNote += `\n[Image too large for inline processing — ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB. Limit: 20 MB]`;
             } else {
-              // Chunk-safe base64 encoding
               const uint8 = new Uint8Array(buffer);
               let binary = "";
               const chunkSize = 32768;
@@ -583,20 +601,49 @@ serve(async (req) => {
                 binary += String.fromCharCode(...uint8.slice(i, i + chunkSize));
               }
               const b64 = btoa(binary);
-              // Determine MIME type — fall back to extension when browser didn't set att.type
-              const mimeType = isImage
-                ? (att.type || (nameLower.endsWith(".png") ? "image/png" : nameLower.endsWith(".gif") ? "image/gif" : nameLower.endsWith(".webp") ? "image/webp" : "image/jpeg"))
-                : "application/pdf";
+              const mimeType = att.type ||
+                (nameLower.endsWith(".png") ? "image/png" :
+                 nameLower.endsWith(".gif") ? "image/gif" :
+                 nameLower.endsWith(".webp") ? "image/webp" : "image/jpeg");
               multimodalParts.push({
                 type: "image_url",
                 image_url: { url: `data:${mimeType};base64,${b64}` },
               });
-              contextNote += isPDF
-                ? "\n[PDF content transmitted as multimodal — read it directly]"
-                : "\n[Image transmitted as multimodal — analyse it visually]";
+              contextNote += "\n[Image transmitted as multimodal — analyse it visually]";
             }
           } catch (e) {
-            contextNote += `\n[Could not load file: ${(e as Error).message}]`;
+            contextNote += `\n[Could not load image: ${(e as Error).message}]`;
+          }
+
+        } else if (isPDF) {
+          // ── PDF: extract text server-side via unpdf ───────────────────────
+          // The Lovable AI gateway only accepts true image MIME types in
+          // image_url parts; PDFs must be turned into text first.
+          try {
+            const fileResp = await fetch(att.url);
+            const buffer = await fileResp.arrayBuffer();
+            const sizeMb = buffer.byteLength / 1024 / 1024;
+            if (sizeMb > 20) {
+              contextNote += `\n[PDF too large — ${sizeMb.toFixed(1)} MB. Limit: 20 MB. Please upload a smaller file or paste key sections.]`;
+            } else {
+              let extracted = "";
+              try {
+                const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
+                extracted = (Array.isArray(text) ? text.join("\n\n") : text || "").trim();
+              } catch (parseErr) {
+                console.warn(`[zoe-chat] unpdf failed for ${att.name}:`, (parseErr as Error).message);
+              }
+              if (extracted.length > 0) {
+                contextNote += `\n${extracted.slice(0, 15000)}`;
+                if (extracted.length > 15000) {
+                  contextNote += `\n[…PDF truncated at 15k chars (${extracted.length} total)…]`;
+                }
+              } else {
+                contextNote += `\n[PDF "${att.name}" appears to be scanned/image-only — text extraction returned nothing. Ask the user to paste the key passages.]`;
+              }
+            }
+          } catch (e) {
+            contextNote += `\n[Could not read PDF "${att.name}": ${(e as Error).message}. Try uploading a .docx version.]`;
           }
 
         } else if (isDocx || isXlsx || isPptx) {
@@ -681,37 +728,78 @@ serve(async (req) => {
       }
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: resolvedModel,
-        messages: [
-          { role: "system", content: ZOE_SYSTEM + contextNote },
-          ...processedMessages,
-        ],
-        tools,
-        stream: true,
-      }),
-    });
+    // ── Gateway call with auto model fallback on 402/429 ────────────────────
+    let activeModel = resolvedModel;
+    let response: Response | null = null;
+    let lastErrorBody = "";
+    let lastErrorStatus = 0;
+    const triedModels: string[] = [];
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limited. Please wait a moment." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      triedModels.push(activeModel);
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: activeModel,
+          messages: [
+            { role: "system", content: ZOE_SYSTEM + contextNote },
+            ...processedMessages,
+          ],
+          tools,
+          stream: true,
+        }),
+      });
+
+      if (response.ok) break;
+
+      lastErrorStatus = response.status;
+      lastErrorBody = await response.text().catch(() => "");
+      console.warn(`[zoe-chat] gateway ${response.status} on ${activeModel}: ${lastErrorBody.slice(0, 300)}`);
+
+      if (response.status === 402 || response.status === 429 || response.status === 503) {
+        const next = nextFallback(activeModel);
+        if (next) {
+          activeModel = next;
+          continue;
+        }
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Credits exhausted. Please top up." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      break;
+    }
+
+    if (!response || !response.ok) {
+      console.error("AI gateway error:", lastErrorStatus, lastErrorBody, "tried:", triedModels);
+      let userMsg = "ZOE couldn't reach the AI service. Please try again in a moment.";
+      let status = lastErrorStatus || 500;
+      if (lastErrorStatus === 402) {
+        userMsg = "All AI models are out of credits — please top up your workspace usage.";
+      } else if (lastErrorStatus === 429) {
+        userMsg = "ZOE is being rate-limited across all fallback models. Try again in 30 seconds.";
+      } else if (lastErrorStatus === 400) {
+        const isMimeIssue = /invalid.*mime|invalid_image_format|only image/i.test(lastErrorBody);
+        userMsg = isMimeIssue
+          ? "One of your attachments couldn't be read by the AI (likely a scanned PDF or unsupported format). Try the .docx version or paste the text."
+          : `The AI rejected the request: ${lastErrorBody.slice(0, 200) || "bad request"}`;
+        status = 400;
+      } else if (lastErrorStatus >= 500) {
+        userMsg = "The AI service is temporarily unavailable. Please try again shortly.";
       }
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      return new Response(JSON.stringify({ error: "AI gateway error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: userMsg, status: lastErrorStatus, triedModels }), {
+        status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const extraHeaders: Record<string, string> = {};
+    if (activeModel !== resolvedModel) {
+      extraHeaders["X-Zoe-Model-Switched"] = activeModel;
     }
 
     return new Response(response.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+      headers: { ...corsHeaders, ...extraHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (e) {
     console.error("zoe-chat error:", e);

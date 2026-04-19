@@ -812,12 +812,22 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         body: JSON.stringify({ messages: history, attachments: uploadedAttachments, writingSettings, tier: profile?.tier || "free" }),
         signal: abortRef.current.signal,
       });
-      if (!resp.ok || !resp.body) throw new Error(`API error ${resp.status}`);
+      if (!resp.ok || !resp.body) {
+        let serverMsg = `API error ${resp.status}`;
+        try {
+          const errJson = await resp.json();
+          if (errJson?.error) serverMsg = errJson.error;
+        } catch { /* not JSON */ }
+        throw new Error(serverMsg);
+      }
+      const switched = resp.headers.get("X-Zoe-Model-Switched");
       let fullContent = "";
       const { content, toolCalls } = await readContentAndToolStream(resp.body, chunk => { setStreaming(chunk); fullContent = chunk; });
       setStreaming("");
-      if (content || fullContent) {
-        addMessage({ id: crypto.randomUUID(), role: "assistant", content: content || fullContent, timestamp: Date.now() });
+      const finalContent = content || fullContent;
+      if (finalContent) {
+        const prefix = switched ? `_(Switched to ${switched} due to capacity.)_\n\n` : "";
+        addMessage({ id: crypto.randomUUID(), role: "assistant", content: prefix + finalContent, timestamp: Date.now() });
       }
       for (const tc of toolCalls) {
         try { await handleToolCall(tc.name, JSON.parse(tc.arguments || "{}")); }
@@ -825,7 +835,8 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       }
     } catch (e: any) {
       if (e?.name !== "AbortError") {
-        addMessage({ id: crypto.randomUUID(), role: "assistant", content: "Something went wrong — please try again.", timestamp: Date.now() });
+        const reason = e?.message && e.message !== "Failed to fetch" ? e.message : "Something went wrong — please try again.";
+        addMessage({ id: crypto.randomUUID(), role: "assistant", content: reason, timestamp: Date.now() });
       }
     } finally { setLoading(false); setStreaming(""); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
