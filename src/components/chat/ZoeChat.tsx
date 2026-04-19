@@ -65,6 +65,8 @@ interface Message {
   chart?: ChartData;
   clarification?: ClarificationData;
   hidden?: boolean;
+  /** When set, render this message as a live "working" status pill instead of normal markdown. */
+  status?: "planning" | "writing" | "thinking";
 }
 
 interface ChatSession {
