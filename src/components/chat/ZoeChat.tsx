@@ -1091,34 +1091,76 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
               <ChevronRight size={11} className={cn("transition-transform", settingsGroupOpen.appearance ? "rotate-90" : "")} />
             </button>
             {settingsGroupOpen.appearance && (
-              <div className="pb-3">
-                <p className="text-[10px] text-white/45 mb-2">Chat theme</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {THEMES.map(t => {
-                    const active = t.key === themeKey;
-                    return (
-                      <button
-                        key={t.key}
-                        onClick={() => changeTheme(t.key)}
-                        title={t.label}
-                        className={cn(
-                          "relative w-full aspect-square rounded-full transition-transform hover:scale-110 active:scale-95",
-                          active && "ring-2 ring-offset-2 ring-offset-[#0A0A0A]",
-                        )}
-                        style={{
-                          backgroundColor: t.accent,
-                          boxShadow: active ? `0 0 0 2px ${t.accent}` : undefined,
-                          ["--tw-ring-color" as any]: t.accent,
-                        }}
-                      >
-                        {active && <Check size={11} className="absolute inset-0 m-auto" style={{ color: t.accentFg }} />}
-                      </button>
-                    );
-                  })}
+              <div className="pb-3 space-y-3">
+                {/* Interface theme — full canvas */}
+                <div>
+                  <p className="text-[10px] text-white/45 mb-2">Interface theme</p>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {INTERFACE_THEMES.map(it => {
+                      const active = it.key === interfaceKey;
+                      return (
+                        <button
+                          key={it.key}
+                          onClick={() => changeInterface(it.key)}
+                          title={it.label}
+                          className="group flex flex-col items-center gap-1"
+                        >
+                          <span
+                            className="relative w-full aspect-square rounded-md transition-transform group-hover:scale-105 group-active:scale-95 border overflow-hidden"
+                            style={{
+                              backgroundColor: it.bg,
+                              borderColor: active ? theme.accent : it.swatchBorder,
+                              boxShadow: active ? `0 0 0 2px ${theme.accent}` : undefined,
+                            }}
+                          >
+                            <span
+                              className="absolute inset-y-1 left-1 w-[28%] rounded-sm"
+                              style={{ backgroundColor: it.sidebar, opacity: 0.9 }}
+                            />
+                            {active && (
+                              <Check size={10} className="absolute right-1 bottom-1" style={{ color: it.fg }} />
+                            )}
+                          </span>
+                          <span
+                            className="text-[9px] leading-none"
+                            style={{ color: active ? theme.accent : undefined, opacity: active ? 1 : 0.55 }}
+                          >
+                            {it.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Accent colour — bubble + send button */}
+                <div>
+                  <p className="text-[10px] text-white/45 mb-2">Accent colour</p>
+                  <div className="grid grid-cols-5 gap-2">
+                    {THEMES.map(t => {
+                      const active = t.key === themeKey;
+                      return (
+                        <button
+                          key={t.key}
+                          onClick={() => changeTheme(t.key)}
+                          title={t.label}
+                          className="relative w-full aspect-square rounded-full transition-transform hover:scale-110 active:scale-95"
+                          style={{
+                            backgroundColor: t.accent,
+                            boxShadow: active ? `0 0 0 2px ${t.accent}` : undefined,
+                            ["--tw-ring-color" as any]: t.accent,
+                          }}
+                        >
+                          {active && <Check size={11} className="absolute inset-0 m-auto" style={{ color: t.accentFg }} />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
           </div>
+
 
           {/* Writing */}
           <div className="px-3 pb-1 border-t border-white/[0.05]">
