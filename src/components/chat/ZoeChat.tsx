@@ -704,8 +704,8 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     });
   }
 
-  const currentModelBadge = MODEL_OPTIONS.find(m => m.id === selectedModel)?.badge ?? "Flash";
-  const tierAllowed = (minTier: string[]) => profile ? minTier.includes(profile.tier) : false;
+  // Model selection is fully autonomous — no UI helpers required.
+
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1020,30 +1020,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                       >
                         <Paperclip size={15} />
                       </button>
-                      {/* Model picker */}
-                      <div className="relative">
-                        <button type="button" onClick={() => setShowModelPicker(v => !v)}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-foreground/45 hover:bg-black/6 hover:text-foreground/70 transition-colors">
-                          {currentModelBadge} <ChevronDown size={10} />
-                        </button>
-                        {showModelPicker && (
-                          <div className="absolute bottom-full mb-1 right-0 z-50 w-48 bg-white rounded-xl shadow-xl border border-black/10 py-1 overflow-hidden">
-                            {MODEL_OPTIONS.map(m => {
-                              const allowed = tierAllowed(m.minTier);
-                              return (
-                                <button key={m.id} type="button"
-                                  onClick={() => allowed && changeModel(m.id)}
-                                  className={cn("w-full flex items-center justify-between px-3 py-2 text-[12px] transition-colors text-left",
-                                    selectedModel === m.id ? "bg-terracotta/10 text-terracotta font-semibold" : allowed ? "text-foreground/80 hover:bg-black/5" : "text-foreground/30 cursor-not-allowed")}>
-                                  <span>{m.label}</span>
-                                  {!allowed && <Lock size={10} className="text-foreground/25" />}
-                                  {allowed && selectedModel === m.id && <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      {/* Model selection is fully autonomous — no picker shown. */}
                       <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
                         className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
@@ -1271,30 +1248,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                       >
                         <Paperclip size={15} />
                       </button>
-                      {/* Model picker */}
-                      <div className="relative">
-                        <button type="button" onClick={() => setShowModelPicker(v => !v)}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-foreground/45 hover:bg-black/6 hover:text-foreground/70 transition-colors">
-                          {currentModelBadge} <ChevronDown size={10} />
-                        </button>
-                        {showModelPicker && (
-                          <div className="absolute bottom-full mb-1 right-0 z-50 w-48 bg-white rounded-xl shadow-xl border border-black/10 py-1 overflow-hidden">
-                            {MODEL_OPTIONS.map(m => {
-                              const allowed = tierAllowed(m.minTier);
-                              return (
-                                <button key={m.id} type="button"
-                                  onClick={() => allowed && changeModel(m.id)}
-                                  className={cn("w-full flex items-center justify-between px-3 py-2 text-[12px] transition-colors text-left",
-                                    selectedModel === m.id ? "bg-terracotta/10 text-terracotta font-semibold" : allowed ? "text-foreground/80 hover:bg-black/5" : "text-foreground/30 cursor-not-allowed")}>
-                                  <span>{m.label}</span>
-                                  {!allowed && <Lock size={10} className="text-foreground/25" />}
-                                  {allowed && selectedModel === m.id && <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      {/* Model selection is fully autonomous — no picker shown. */}
                       <button type="button" onClick={() => handleSend()} disabled={(!input.trim() && readyAttachments.length === 0) || loading || anyUploading}
                         className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", (input.trim() || readyAttachments.length > 0) && !loading && !anyUploading ? "bg-terracotta text-white hover:brightness-110 active:scale-95 shadow-sm" : "bg-black/8 text-foreground/25 cursor-not-allowed")}>
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
