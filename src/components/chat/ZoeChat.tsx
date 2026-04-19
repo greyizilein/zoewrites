@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, useMotionValue } from "framer-motion";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -108,6 +109,10 @@ const QUICK_ACTIONS = [
 ];
 
 const SK = (uid: string) => `zoe_sessions_${uid}`;
+
+// Marker prefix used by the zoe-architect edge function. Messages whose content
+// begins with this token are rendered as architect-table cards with a CTA.
+const ARCHITECT_TABLE_MARKER = "<!--ZOE_ARCHITECT_TABLE-->";
 
 // ─────────────────────────── Storage helpers ─────────────────────────────────
 
@@ -388,6 +393,64 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
 
   async function handleToolCall(name: string, args: Record<string, any>) {
     switch (name) {
+
+      case "architect_work": {
+        // Phase 1 of the writing doctrine.
+        // Show a placeholder while the architect runs (it can take 30–60 s).
+        const placeholderId = crypto.randomUUID();
+        addMessage({
+          id: placeholderId,
+          role: "assistant",
+          content: "🧱 Architecting the work… analysing the brief and producing the execution table. This usually takes 30–60 seconds.",
+          timestamp: Date.now(),
+        });
+
+        try {
+          const { data, error } = await supabase.functions.invoke("zoe-architect", {
+            body: {
+              brief: args.brief,
+              deliverable_type: args.deliverable_type,
+              word_count: args.word_count,
+              academic_level: args.academic_level,
+              citation_style: args.citation_style,
+              min_citations: args.min_citations,
+              subject_or_module: args.subject_or_module,
+              tier: profile?.tier || "free",
+            },
+          });
+          if (error) throw error;
+          const table = (data as any)?.table || "";
+          if (!table) throw new Error("Empty architect response");
+
+          // Replace the placeholder with the real table
+          setSessions(prev => prev.map(s => {
+            if (s.id !== currentId) return s;
+            const msgs = s.messages.map(m =>
+              m.id === placeholderId
+                ? { ...m, content: table, timestamp: Date.now() }
+                : m,
+            );
+            return { ...s, messages: msgs, updatedAt: Date.now() };
+          }));
+        } catch (e: any) {
+          setSessions(prev => prev.map(s => {
+            if (s.id !== currentId) return s;
+            const msgs = s.messages.map(m =>
+              m.id === placeholderId
+                ? { ...m, content: `The architect phase failed: ${e?.message || "unknown error"}. Please try again.` }
+                : m,
+            );
+            return { ...s, messages: msgs };
+          }));
+        }
+        break;
+      }
+
+      case "write_section": {
+        // Phase 2 marker — the actual prose comes streamed in the assistant message.
+        // No client-side action needed; the model writes the section inline.
+        break;
+      }
 
       case "navigate_to": {
         const allowed = ["/dashboard", "/analytics"];
@@ -1039,18 +1102,58 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                               </div>
                               <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
                             </div>
-                            {msg.content && (
-                              <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed">
-                                <ReactMarkdown>{msg.content}</ReactMarkdown>
-                              </div>
-                            )}
+                            {msg.content && (() => {
+                              const isArchitect = msg.content.startsWith(ARCHITECT_TABLE_MARKER);
+                              const display = isArchitect
+                                ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
+                                : msg.content;
+                              return (
+                                <>
+                                  {isArchitect && (
+                                    <div className="mb-2 flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-terracotta">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-terracotta" />
+                                      Execution Blueprint
+                                    </div>
+                                  )}
+                                  <div className={cn(
+                                    "prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed",
+                                    "prose-table:text-[12px] prose-th:bg-terracotta/10 prose-th:text-foreground prose-th:font-semibold prose-th:px-2 prose-th:py-1.5 prose-td:px-2 prose-td:py-1.5 prose-td:align-top prose-th:border prose-td:border prose-th:border-black/10 prose-td:border-black/10",
+                                    isArchitect && "rounded-xl border border-terracotta/25 bg-white/60 p-3 shadow-sm",
+                                  )}>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{display}</ReactMarkdown>
+                                  </div>
+                                  {isArchitect && (
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                      <button
+                                        onClick={() => handleSend("Begin writing. Start with the first section, write it section by section, and pause until I say next.")}
+                                        disabled={loading}
+                                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-terracotta text-white text-[12px] font-semibold hover:brightness-110 active:scale-95 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                                      >
+                                        <ChevronRight size={14} />
+                                        Begin writing
+                                      </button>
+                                      <button
+                                        onClick={() => handleSend("Revise the execution blueprint — keep the structure but tighten anything that is generic or under-specified.")}
+                                        disabled={loading}
+                                        className="px-3 py-2 rounded-xl bg-white border border-black/10 text-foreground/70 text-[12px] font-medium hover:bg-black/5 transition-colors disabled:opacity-40"
+                                      >
+                                        Refine blueprint
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                             {msg.chart && <InlineChart chart={msg.chart} />}
                             {/* Copy / Download actions */}
                             {msg.content && msg.content.length > 20 && (
                               <div className="flex items-center gap-1 mt-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                                 <button
                                   onClick={() => {
-                                    navigator.clipboard.writeText(msg.content);
+                                    const text = msg.content.startsWith(ARCHITECT_TABLE_MARKER)
+                                      ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
+                                      : msg.content;
+                                    navigator.clipboard.writeText(text);
                                     setCopiedId(msg.id);
                                     setTimeout(() => setCopiedId(null), 2000);
                                   }}
@@ -1062,7 +1165,10 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                                 </button>
                                 <button
                                   onClick={() => {
-                                    const blob = new Blob([msg.content], { type: "text/plain" });
+                                    const text = msg.content.startsWith(ARCHITECT_TABLE_MARKER)
+                                      ? msg.content.slice(ARCHITECT_TABLE_MARKER.length).trimStart()
+                                      : msg.content;
+                                    const blob = new Blob([text], { type: "text/plain" });
                                     const url = URL.createObjectURL(blob);
                                     const a = document.createElement("a");
                                     a.href = url; a.download = "zoe-output.txt";
@@ -1091,7 +1197,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                           <span className="text-[11px] font-semibold text-foreground/45 tracking-wide">ZOE</span>
                         </div>
                         <div className="prose prose-sm prose-stone max-w-none text-[15px] leading-relaxed">
-                          <ReactMarkdown>{streaming}</ReactMarkdown>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{streaming}</ReactMarkdown>
                         </div>
                       </div>
                     )}

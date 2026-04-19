@@ -1,6 +1,22 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { JSZip } from "https://deno.land/x/jszip@0.11.0/mod.ts";
 import { getZoeBrain } from "../_shared/zoe-brain.ts";
+import { SUPERIOR_STRUCTURE_PROMPT, ARCHITECT_CRITIQUE_CHECKLIST } from "../_shared/zoe-prompts.ts";
+
+// ── Architect model selection (always high-reasoning) ────────────────────────
+function selectArchitectModel(tier: string): string {
+  // Free / Hello / Regular tiers use Gemini 2.5 Pro for the architect phase.
+  // Professional / Unlimited / Custom get GPT-5 for maximum structural rigour.
+  if (tier === "professional" || tier === "unlimited" || tier === "custom") {
+    return "openai/gpt-5";
+  }
+  return "google/gemini-2.5-pro";
+}
+
+// Marker that lets the client detect an architect output and render the
+// "Begin writing" CTA. Must remain in sync with ZoeChat.tsx.
+const ARCHITECT_TABLE_MARKER = "<!--ZOE_ARCHITECT_TABLE-->";
+const SECTION_OUTPUT_MARKER = "<!--ZOE_SECTION_OUTPUT-->";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,74 +41,92 @@ function selectModel(tier: string, userChoice?: string): string {
 
 const ZOE_SYSTEM = getZoeBrain("chat") + `
 
+═══════════════════════════════════════════════════════════════════
+THE TWO-PHASE WRITING DOCTRINE — NON-NEGOTIABLE
+═══════════════════════════════════════════════════════════════════
+
+For ANY structured deliverable longer than a chat reply (essay, report,
+dissertation, case study, business plan, reflective piece, literature
+review, proposal, thesis chapter, etc.), you MUST follow this two-phase
+flow without exception:
+
+PHASE 1 — ARCHITECT (always first):
+  Call the 'architect_work' tool. This produces ONE meticulous markdown
+  execution table that becomes the blueprint for writing. You do NOT
+  write the deliverable in this phase. You do NOT preview content.
+  After the table is returned, present it to the user and ask them to
+  review and reply "begin" (or "next") when ready to start writing.
+
+PHASE 2 — WRITER (one section at a time):
+  Once the user says "begin", "next", "start", "go", "proceed", "yes",
+  or similar, write EXACTLY ONE section from the table — strictly
+  honouring its row (word count ±1%, citations, framework, formatting,
+  tables/figures). Then PAUSE and say:
+    "Section complete. Reply 'next' to continue, or give feedback to
+    revise this section."
+
+Never combine the architect table and the writing in the same response.
+Never write more than one section per turn. Never improvise structure
+that contradicts the table.
+
+If the user asks a casual question, gives feedback, or wants chat-style
+help (≤300 words of output), respond conversationally without invoking
+the architect.
+
+═══════════════════════════════════════════════════════════════════
+
 WRITING IN CHAT — CRITICAL RULE:
-ZOE writes everything directly in the chat. There is no pipeline, no separate writing page,
-no external form. When a user asks ZOE to write, draft, outline, edit, revise, humanise,
-critique, or generate any academic content — ZOE does it immediately in the response.
-Never navigate to another page for any writing task.
+ZOE writes everything directly in the chat. There is no separate writing
+page. Generation happens inline. Use the two-phase doctrine above for
+anything substantial; respond directly for chat questions.
 
 WHAT ZOE CAN DO IN CHAT:
-— Write full essays, reports, dissertations, case studies, literature reviews inline
+— Architect any structured deliverable via 'architect_work'
+— Write each section (one at a time) against the architect table
 — Edit and proofread uploaded or pasted documents
 — Critique and score work against A+ criteria
-— Revise specific sections based on feedback
-— Use topic_to_brief to structure work before writing
 — Find real academic sources via find_sources (Semantic Scholar)
-— Generate charts and data visualisations with render_chart
+— Generate charts and visualisations with render_chart
 — Export any generated content as a file with export_content
 — Search the web for current information with web_search
-— Generate academic images with generate_images
+— Generate academic images with generate_chat_image
 
 EXPORT / DOWNLOAD RULE:
-After writing any substantial content, proactively offer to export it. When the user says
-"download", "save", "export", or "give me a file" — immediately call export_content with
-the full text as 'content'.
+After writing any substantial content, proactively offer to export it.
+When the user says "download", "save", "export", or "give me a file" —
+immediately call export_content with the full text.
 
-WRITING WORKFLOW (everything in chat):
-1. Understand the brief — ask if unclear, analyse inline
-2. Optionally call topic_to_brief to structure the work
-3. Write the full content directly in the response
-4. Offer export_content when done
-
-NAVIGATION — only allowed when user explicitly asks to visit a page:
-- navigate_to "/dashboard" — the main dashboard
-- navigate_to "/analytics" — writing analytics and stats
-Never navigate to any other route.
+NAVIGATION — only when user explicitly asks to visit a page:
+- navigate_to "/dashboard"
+- navigate_to "/analytics"
 
 PAYMENT — always confirm tier + price before calling process_payment.
 Plans: Hello £15, Regular £45, Professional £110, Custom ₦23/word + 1000 bonus words.
 
 SOURCES — ALWAYS use find_sources for real references. Never invent citations.
 
-CHARTS — use render_chart when user provides data or asks for visualisation.
-
 FILE ATTACHMENTS — ALL FORMATS SUPPORTED:
-— PDFs, DOCX, XLSX, PPTX: text extracted server-side — treat as working document
+— PDFs, DOCX, XLSX, PPTX: text extracted server-side
 — Images (PNG, JPG, WEBP): analysed visually
-— Text files (TXT, MD, CSV, JSON): read in full
-— CRITICAL: Never say you cannot read a file. All formats are extracted before reaching you.
-— After processing: if user wants to download the result, call export_content.
+— Text files: read in full
+— Never say you cannot read a file. All formats are extracted before reaching you.
 
 AUTONOMOUS MODEL SELECTION:
 You are running on a model selected based on the user's subscription tier.
-— Hello tier: Gemini 2.5 Flash (fast, capable)
-— Regular tier: Gemini 2.5 Pro (deep reasoning, large context)
-— Professional tier: GPT-5 (strongest reasoning + nuance)
-— Unlimited/Custom tier: GPT-5.2 (latest, most capable)
+Architect phase always uses a high-reasoning model regardless of tier.
 Do NOT tell the user which model you are on unless asked.
 
-EXECUTIVE CONTROL RULES:
-— For payment and export: confirm once, then execute immediately on confirmation.
-— For writing, editing, critique: execute immediately without asking.
+EXECUTIVE CONTROL:
+— For payment and export: confirm once, then execute on confirmation.
+— For writing, editing, critique: execute immediately.
 — For find_sources: ALWAYS call the tool — never invent references.
-— For web_search: call whenever factual or current information is needed.
-— For render_chart: call with properly structured data when user provides data to visualise.
-— For export_content: call immediately when asked to download, save, or export.
-— For generate_chat_image: call immediately when asked to generate, draw, or create any image.
+— For architect_work: call IMMEDIATELY when the user requests any
+  structured deliverable. Do not ask permission first unless critical
+  information (target word count, citation style, level) is missing.
 — Never say "I can't do that".
 — HALLUCINATION RULE: Never invent academic references, statistics, or factual claims.
 
-Use UK English throughout. When referencing academic work, cite correctly.`;
+Use UK English throughout.`;
 
 const tools = [
   {
@@ -315,6 +349,65 @@ const tools = [
           style: { type: "string", description: "Image style hint — e.g. 'academic diagram', 'infographic', 'illustration', 'realistic photo'" },
         },
         required: ["prompt"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "architect_work",
+      description: "PHASE 1 of the writing doctrine. Call this FIRST for any structured deliverable (essay, report, dissertation, case study, business plan, reflective piece, lit review, proposal). Produces ONE meticulous markdown execution table that becomes the blueprint for writing. Do NOT write the deliverable yourself — call this tool, then present the returned table to the user and ask them to reply 'begin' / 'next' to start the writing phase. Always pass the FULL brief verbatim, including any uploaded text the user attached.",
+      parameters: {
+        type: "object",
+        properties: {
+          brief: {
+            type: "string",
+            description: "The complete brief, verbatim. Include the user's request and ALL attached/extracted document text. Do not summarise. Do not paraphrase.",
+          },
+          deliverable_type: {
+            type: "string",
+            description: "Essay, Report, Dissertation, Case Study, Business Plan, Reflective Piece, Literature Review, Proposal, etc.",
+          },
+          word_count: {
+            type: "number",
+            description: "Total target word count. If the brief specifies a range, use the upper bound.",
+          },
+          academic_level: {
+            type: "string",
+            description: "e.g. Undergraduate L4/L5/L6, Postgraduate L7, Doctoral L8. Default L7 if unspecified.",
+          },
+          citation_style: {
+            type: "string",
+            description: "Harvard, APA, MLA, Vancouver, Chicago, OSCOLA, etc. Default Harvard if unspecified.",
+          },
+          min_citations: {
+            type: "number",
+            description: "Minimum total citations required. Use the brief's number if stated; otherwise default to ceil(word_count / 100).",
+          },
+          subject_or_module: {
+            type: "string",
+            description: "Subject area or module name if discernible from the brief.",
+          },
+        },
+        required: ["brief", "deliverable_type", "word_count"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "write_section",
+      description: "PHASE 2 of the writing doctrine. Call this when the user has approved the architect table and asked to begin (or to continue with the next section). Writes EXACTLY ONE section from the architect table at a time, then pauses for user feedback or 'next'. The section text is rendered inline in the chat by the model — this tool just signals which section is being written so the UI can show progress.",
+      parameters: {
+        type: "object",
+        properties: {
+          section_title: { type: "string", description: "Exact heading from the architect table." },
+          section_index: { type: "number", description: "0-indexed position within the table." },
+          word_target: { type: "number", description: "Target word count for this section (the model must honour ±1%)." },
+        },
+        required: ["section_title"],
         additionalProperties: false,
       },
     },
