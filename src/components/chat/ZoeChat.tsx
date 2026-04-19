@@ -569,6 +569,19 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   async function startFileUpload(file: File) {
     if (!user?.id) return;
     const id = crypto.randomUUID();
+    // Pre-validate size — server rejects > 8 MB per file. Tell user immediately.
+    const MAX_SIZE = 8 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setPendingUploads(prev => [...prev, {
+        id, name: file.name, type: file.type, progress: 0, status: "error",
+      }]);
+      addMessage({
+        id: crypto.randomUUID(), role: "assistant",
+        content: `"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB — over the 8 MB per-file limit. Please compress it, paste the key text, or split it.`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
     setPendingUploads(prev => [...prev, { id, name: file.name, type: file.type, progress: 0, status: "uploading" }]);
     try {
       const path = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
