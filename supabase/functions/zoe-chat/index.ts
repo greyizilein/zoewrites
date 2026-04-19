@@ -1,6 +1,22 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { JSZip } from "https://deno.land/x/jszip@0.11.0/mod.ts";
 import { getZoeBrain } from "../_shared/zoe-brain.ts";
+import { SUPERIOR_STRUCTURE_PROMPT, ARCHITECT_CRITIQUE_CHECKLIST } from "../_shared/zoe-prompts.ts";
+
+// ── Architect model selection (always high-reasoning) ────────────────────────
+function selectArchitectModel(tier: string): string {
+  // Free / Hello / Regular tiers use Gemini 2.5 Pro for the architect phase.
+  // Professional / Unlimited / Custom get GPT-5 for maximum structural rigour.
+  if (tier === "professional" || tier === "unlimited" || tier === "custom") {
+    return "openai/gpt-5";
+  }
+  return "google/gemini-2.5-pro";
+}
+
+// Marker that lets the client detect an architect output and render the
+// "Begin writing" CTA. Must remain in sync with ZoeChat.tsx.
+const ARCHITECT_TABLE_MARKER = "<!--ZOE_ARCHITECT_TABLE-->";
+const SECTION_OUTPUT_MARKER = "<!--ZOE_SECTION_OUTPUT-->";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
