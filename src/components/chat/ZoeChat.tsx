@@ -470,6 +470,12 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   const [themeKey, setThemeKey] = useState<string>("emerald");
   const theme = useMemo(() => THEMES.find(t => t.key === themeKey) ?? THEMES[0], [themeKey]);
 
+  const [interfaceKey, setInterfaceKey] = useState<string>("amoled");
+  const interfaceTheme = useMemo(
+    () => INTERFACE_THEMES.find(t => t.key === interfaceKey) ?? INTERFACE_THEMES[0],
+    [interfaceKey],
+  );
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
