@@ -52,11 +52,18 @@ const Navbar = () => {
           ))}
           <div className="flex items-center gap-3">
             {session ? (
-              <Link to="/dashboard">
-                <Button size="sm" className="bg-terracotta hover:bg-terracotta-600 text-white font-semibold active:scale-[0.97] transition-transform">
-                  Dashboard
-                </Button>
-              </Link>
+              <>
+                <Link to="/dashboard">
+                  <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10">
+                    Dashboard
+                  </Button>
+                </Link>
+                <Link to="/zoe">
+                  <Button size="sm" className="bg-terracotta hover:bg-terracotta-600 text-white font-semibold active:scale-[0.97] transition-transform">
+                    Open ZOE
+                  </Button>
+                </Link>
+              </>
             ) : (
               <>
                 <Link to="/auth">
@@ -105,11 +112,18 @@ const Navbar = () => {
             ))}
             <div className="flex flex-col gap-2 mt-4">
               {session ? (
-                <Link to="/dashboard" onClick={() => setMobileOpen(false)}>
-                  <Button className="w-full bg-terracotta hover:bg-terracotta-600 text-white font-semibold">
-                    Dashboard
-                  </Button>
-                </Link>
+                <>
+                  <Link to="/dashboard" onClick={() => setMobileOpen(false)}>
+                    <Button variant="ghost" className="w-full text-white/70 hover:text-white hover:bg-white/10">
+                      Dashboard
+                    </Button>
+                  </Link>
+                  <Link to="/zoe" onClick={() => setMobileOpen(false)}>
+                    <Button className="w-full bg-terracotta hover:bg-terracotta-600 text-white font-semibold">
+                      Open ZOE
+                    </Button>
+                  </Link>
+                </>
               ) : (
                 <>
                   <Link to="/auth" onClick={() => setMobileOpen(false)}>
