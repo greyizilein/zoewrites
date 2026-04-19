@@ -1,73 +1,61 @@
 
 
-## Diagnosis (verified from edge function logs)
+## Goal
 
-The "Something went wrong" reply on the user's "Company to use is Apple" message is **not** a credit/model issue. The Lovable AI Gateway returned a hard 400:
+Extend the existing 10-colour accent picker so the user can also switch the **whole canvas** between AMOLED black, pure white, and a few full-interface themes — not just the bubble/send-button colour.
 
+## What changes
+
+### 1. Two independent controls in Settings → Appearance
+
+**Control A — "Interface theme"** (new): switches the whole canvas
+- AMOLED Black (current default — `#000` bg, white text, `#0A0A0A` sidebar)
+- Pure White (white bg, black text, `#F7F7F7` sidebar, `#E5E5E5` borders)
+- Soft Cream (matches the rest of the app — `#FAF8F4` bg, charcoal text)
+- Midnight Navy (`#0B1220` bg, white text, blue-tinted sidebar)
+- Graphite (`#1A1A1A` bg, white text — softer than AMOLED)
+
+**Control B — "Accent colour"** (existing 10 swatches, kept as-is): only changes user bubble + send button + active-row highlight.
+
+The two are orthogonal — e.g. user can have Pure White interface + Emerald accent, or AMOLED + Rose accent.
+
+### 2. Implementation
+
+In `src/components/chat/ZoeChat.tsx` (`mode === "page"` only):
+
+- Add `INTERFACE_THEMES` map → each entry defines: `bg`, `fg`, `sidebar`, `sidebarFg`, `border`, `mutedFg`, `bubbleAssistantBg` (a faint surface for assistant prose hover, etc.)
+- Persist to `localStorage` key `zoe_interface_${uid}`, default `"amoled"`
+- Apply via CSS variables on the root `<div>`: `--zoe-bg`, `--zoe-fg`, `--zoe-sidebar`, `--zoe-sidebar-fg`, `--zoe-border`, `--zoe-muted-fg`
+- Replace hardcoded `bg-black`, `text-white`, `bg-[#0A0A0A]`, `border-[#1F1F1F]` etc. inside the page-mode tree with `bg-[var(--zoe-bg)]`, `text-[var(--zoe-fg)]`, etc.
+- Keep the `zoe-amoled` class **only when** the active interface theme is AMOLED — so the existing CSS overrides in `src/index.css` still apply for that mode and don't bleed into Pure White / Cream
+
+In `src/index.css`:
+- No new rules needed; the AMOLED block already keys off `.zoe-amoled` so simply not adding that class for light themes will deactivate it
+- Add a tiny prose colour adjustment for Pure White/Cream (`.zoe-light .prose { color: #1a1a1a }`) so markdown stays readable on light backgrounds
+
+### 3. Settings panel UI
+
+Inside the existing Settings drawer (sidebar), add an **"Appearance"** section above the existing accent picker:
+
+```text
+Appearance
+├── Interface theme
+│   [AMOLED] [White] [Cream] [Navy] [Graphite]   ← row of labelled swatches
+└── Accent colour
+    [10 circular swatches in 5×2 grid]            ← already exists, untouched
 ```
-AI gateway error: 400
-"Invalid MIME type. Only image types are supported."
-code: invalid_image_format
-```
 
-In `supabase/functions/zoe-chat/index.ts` (lines 569-600), PDFs and images are both packed into `image_url` parts. The gateway only accepts actual image MIME types there — it rejects `application/pdf`. So **any time a PDF is attached, ZOE crashes**. The user attached 3 PDFs + 2 DOCX, hence the failure. DOCX works because we already unzip+extract those to text.
+Each interface-theme swatch shows the actual bg colour with a contrasting border + label below; active one gets a ring in the current accent colour.
 
-There is no auto-fallback to catch this — the function returns a generic 500 to the client, which renders "Something went wrong — please try again." with no detail. There's also no model-credit fallback if a model returns 402.
+### 4. Out of scope
 
-## Fix plan
+- No DB changes — both prefs stay in `localStorage` like the existing accent
+- The widget mode (unmounted everywhere now) is left alone
+- The marketing site / dashboard themes are not affected — this is `/zoe`-only
+- No new dependencies
 
-### 1. Server-side PDF text extraction (root cause)
+### 5. Files touched
 
-In `supabase/functions/zoe-chat/index.ts`, replace the PDF branch in the attachment loop. Instead of base64-streaming PDFs as `image_url`:
-
-- Use `unpdf` (`https://esm.sh/unpdf@0.12.1`) to extract text from the PDF buffer server-side.
-- Inject the extracted text into `contextNote` (capped at ~15k chars per file, like DOCX).
-- Keep the `image_url` path for **actual images only** (png/jpg/webp/gif).
-- If extraction fails or returns empty (scanned/image-only PDF), fall back to sending the PDF as **inline base64 with the `file` part shape** that Gemini supports — and only when the resolved model is a Gemini model. For non-Gemini models, just tell the model "[PDF could not be parsed — likely scanned. Ask user to paste key text.]"
-
-### 2. Surface the real error to the user (no more silent "Something went wrong")
-
-- In the edge function, return the gateway's status code + a human-readable reason (`"Couldn't read PDF X — try uploading the .docx version"`, `"Rate-limited, retrying in a moment"`, etc.) in the JSON body.
-- In `ZoeChat.tsx` `handleSend` catch block, render `error.message` from the JSON instead of a generic fallback.
-
-### 3. Auto model-credit fallback (the user's explicit ask)
-
-Add a `MODEL_FALLBACK_CHAIN` constant at the top of `zoe-chat/index.ts`:
-
-```
-openai/gpt-5.2  →  openai/gpt-5  →  google/gemini-2.5-pro  →  google/gemini-3-flash-preview
-openai/gpt-5    →  google/gemini-2.5-pro  →  google/gemini-3-flash-preview
-google/gemini-2.5-pro  →  google/gemini-2.5-flash  →  google/gemini-3-flash-preview
-google/gemini-2.5-flash  →  google/gemini-3-flash-preview
-```
-
-Wrap the gateway `fetch` in a small loop:
-- If `429` or `402`: log it, swap to the next model in the chain, retry once.
-- On success, prepend a tiny system note `"(Switched to <model> due to capacity.)"` so behaviour stays transparent.
-- Stop after the chain is exhausted; only then return an error to the client.
-
-This gives the user's `unlimited` tier (currently routed to `gpt-5.2`) a graceful drop to `gpt-5` → Gemini Pro → Flash if any upstream provider is out of credits or rate-limited.
-
-### 4. Client-side defence
-
-In `ZoeChat.tsx`, before sending: if any pending upload's MIME is `application/pdf` AND the file is > 15 MB, show a soft warning chip ("Large PDFs may be slow — uploading anyway"). Tiny UX touch only; the real fix is server-side.
-
-## Files touched
-
-- `supabase/functions/zoe-chat/index.ts` — PDF text extraction via `unpdf`, model fallback chain, richer error responses.
-- `src/components/chat/ZoeChat.tsx` — surface the real error message from the function in the failure bubble.
-
-## Out of scope
-
-- No DB migrations.
-- No tier/billing changes.
-- The architect → auto-write doctrine, theme system, sidebar — all untouched.
-- I won't move `mode === "widget"` since it's not mounted.
-
-## Verification after the fix
-
-I'll re-run the same scenario in `/zoe`: paste "Company to use is Apple", attach the same PDFs + DOCX, and confirm:
-1. The function logs no `invalid_image_format`.
-2. ZOE responds with the silent-architect → auto-write flow.
-3. If a model returns 402 mid-chain, the assistant continues on the fallback model with the small "(Switched to …)" note.
+- `src/components/chat/ZoeChat.tsx` — add `INTERFACE_THEMES`, the second picker, swap hardcoded colours for CSS vars, conditionally apply `zoe-amoled` class
+- `src/index.css` — small `.zoe-light .prose` colour rule so markdown reads correctly on light interfaces
 
