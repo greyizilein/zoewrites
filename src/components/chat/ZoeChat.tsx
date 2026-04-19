@@ -393,6 +393,64 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   async function handleToolCall(name: string, args: Record<string, any>) {
     switch (name) {
 
+      case "architect_work": {
+        // Phase 1 of the writing doctrine.
+        // Show a placeholder while the architect runs (it can take 30–60 s).
+        const placeholderId = crypto.randomUUID();
+        addMessage({
+          id: placeholderId,
+          role: "assistant",
+          content: "🧱 Architecting the work… analysing the brief and producing the execution table. This usually takes 30–60 seconds.",
+          timestamp: Date.now(),
+        });
+
+        try {
+          const { data, error } = await supabase.functions.invoke("zoe-architect", {
+            body: {
+              brief: args.brief,
+              deliverable_type: args.deliverable_type,
+              word_count: args.word_count,
+              academic_level: args.academic_level,
+              citation_style: args.citation_style,
+              min_citations: args.min_citations,
+              subject_or_module: args.subject_or_module,
+              tier: profile?.tier || "free",
+            },
+          });
+          if (error) throw error;
+          const table = (data as any)?.table || "";
+          if (!table) throw new Error("Empty architect response");
+
+          // Replace the placeholder with the real table
+          setSessions(prev => prev.map(s => {
+            if (s.id !== currentId) return s;
+            const msgs = s.messages.map(m =>
+              m.id === placeholderId
+                ? { ...m, content: table, timestamp: Date.now() }
+                : m,
+            );
+            return { ...s, messages: msgs, updatedAt: Date.now() };
+          }));
+        } catch (e: any) {
+          setSessions(prev => prev.map(s => {
+            if (s.id !== currentId) return s;
+            const msgs = s.messages.map(m =>
+              m.id === placeholderId
+                ? { ...m, content: `The architect phase failed: ${e?.message || "unknown error"}. Please try again.` }
+                : m,
+            );
+            return { ...s, messages: msgs };
+          }));
+        }
+        break;
+      }
+
+      case "write_section": {
+        // Phase 2 marker — the actual prose comes streamed in the assistant message.
+        // No client-side action needed; the model writes the section inline.
+        break;
+      }
+
       case "navigate_to": {
         const allowed = ["/dashboard", "/analytics"];
         const route = (args.route as string) || "";
