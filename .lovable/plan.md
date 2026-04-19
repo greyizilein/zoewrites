@@ -1,87 +1,63 @@
 
+## Goal
 
-## Recap of what's still outstanding from the spec
+Redesign `/zoe` to look and feel like the ChatGPT interface in the reference screenshot, and add a "Chat theme" picker (10 colour options) in Settings.
 
-From `ZOE_SPEC-2.docx`, only the Architect prompt has been wired so far. Still owed:
+## What changes
 
-1. Full-screen `/zoe` page (PC + mobile) with AMOLED black-and-white theme — currently ZOE is still a sidebar/floating widget.
-2. Autonomous orchestration — manual model picker still exists in `ZoeChat.tsx` (`MODEL_OPTIONS`). Spec says ZOE picks the model, not the user.
-3. Clarification form (tickable) — currently ZOE just asks in prose.
-4. Real exports — `.docx` + `.pdf`, not just `.txt`.
-5. Auto-execute after clarification — once info is gathered, ZOE should start writing immediately.
+### 1. Layout overhaul — ChatGPT style (in `ZoeChat.tsx`, `mode === "page"` only)
 
-Plus the two new requirements from this message:
+**Persistent left sidebar** (always visible on desktop ≥ md, slide-over on mobile):
+- Top: ZOE logo + "collapse" toggle
+- "+ New chat" button
+- "Search chats" row (icon + label, opens search input)
+- Chat list grouped under a "Chats" label, each row = single line title, hover reveals delete
+- Bottom: user avatar + email + "Upgrade" pill (existing footer, restyled)
 
-6. **Hide the architect table from the user.** The blueprint is internal scaffolding only — ZOE runs it, self-audits it, and proceeds straight to writing. The user never sees a table or a "Begin writing" button.
-7. **Use the most capable reasoning model for the architect prompt**, regardless of tier.
+**Main pane**:
+- Slim top bar: workspace title ("ZOE") on the left, "Dashboard" link on the right (no separate header strip with "+" / trash — those move into the sidebar)
+- Messages area centred with `max-w-3xl` column, generous vertical spacing
+- **User message**: pill-shaped bubble in the active theme colour, right-aligned, no avatar (matches the green "testing" pill in the reference)
+- **Assistant message**: full-width plain text, no avatar, no "ZOE" label above each turn, no bubble — just clean prose with markdown
+- Hover row of small icons under each assistant message: copy, thumbs-up, thumbs-down, share, regenerate (we already have copy/.docx/.pdf/.txt — keep those, restyle as ghost icons)
+- **Bottom composer**: fully rounded pill (`rounded-full`), centred, max-w-3xl, with "+" attach on the left and a coloured circular send button on the right. Placeholder: "Ask anything"
+- Empty-state: large centred "Hi, I'm ZOE." + the same pill composer + quick-action chips below (already exists, restyle)
 
-## What I'll change
+### 2. Chat theme system (10 colours)
 
-### 1. Architect runs invisibly, writing starts automatically
+**Storage**: `localStorage` key `zoe_theme_${uid}`, default `"emerald"`.
 
-- Remove the visible architect-table message and the "Begin writing" / "Refine blueprint" CTAs from `ZoeChat.tsx`.
-- The `architect_work` tool now returns the table *into the assistant's tool-call result only* (kept in the model's context, not rendered).
-- Replace the user-facing placeholder ("🧱 Architecting…") with a single soft status line: **"Planning your work…"** which gets replaced by the first streamed section.
-- After the architect tool returns, ZOE immediately calls `write_section` for section 1 — no pause, no user input required to begin. Subsequent sections also auto-continue (no more "reply next") unless the user interrupts with feedback. The user just sees the work being written.
-- The system prompt is updated: "PHASE 1 is silent. Never present the table to the user. Immediately proceed to write section 1, then 2, then 3, etc., until complete. Pause only if the user interrupts."
+**Palette** (each defines: bubble bg, bubble text, send-button bg, accent for active sidebar item):
+1. Emerald (default — matches reference green)
+2. Terracotta (current brand)
+3. Sky blue
+4. Violet
+5. Rose
+6. Amber
+7. Slate
+8. Teal
+9. Indigo
+10. Pink
 
-### 2. Architect always uses the strongest reasoning model
+Implemented as a `THEMES` constant map → CSS variables `--zoe-accent`, `--zoe-accent-fg`, `--zoe-bubble`, `--zoe-bubble-fg` set on the root `<div data-zoe-mode="page">` via inline style. All themed elements use `bg-[var(--zoe-bubble)]` etc.
 
-- In `zoe-architect/index.ts`, replace the tier-based picker with a fixed choice: **`openai/gpt-5.2`** (OpenAI's strongest reasoning model per the gateway list) with `reasoning.effort: "high"`. Fallback to `openai/gpt-5` if `gpt-5.2` returns a non-200, then `google/gemini-2.5-pro` as final fallback.
-- All architect cost is borne by the platform regardless of user tier — matches the spec ("All AI costs are absorbed by the platform").
+**Settings UI**: in the existing sidebar settings panel, add a new "Appearance" group above "Writing":
+- Label: "Chat theme"
+- 10 circular swatches in a 5×2 grid; clicking sets the theme; active swatch shows a ring
 
-### 3. Full-screen `/zoe` page + AMOLED theme
+### 3. AMOLED stays
 
-- New file `src/pages/Zoe.tsx` that renders `<ZoeChat mode="page" />` full-screen with an AMOLED wrapper (`bg-black text-white`, `#0F0F0F` cards, `#1F1F1F` borders, white user bubbles inverted, single thin terracotta accent for active states).
-- `ZoeChat.tsx` gains a `mode?: "widget" | "page"` prop. In `"page"` mode it fills the viewport, hides the FAB, hides the close button, applies the dark theme tokens.
-- `App.tsx` adds `<Route path="/zoe" element={<ProtectedRoute><Zoe/></ProtectedRoute>} />`.
-- `AuthContext` post-login redirect: paid tiers → `/zoe`, free → `/dashboard`.
-- Landing/dashboard/auth pages remain untouched (theme is scoped to `/zoe` only).
+Background stays true black; sidebar uses `#0A0A0A`; borders `#1F1F1F`. Theme colour only affects user bubble, send button, and active-row accent — not the canvas — so the AMOLED feel is preserved.
 
-### 4. Remove the manual model picker (autonomous orchestration)
+### 4. Files touched
 
-- Delete the `MODEL_OPTIONS` UI from `ZoeChat.tsx`. Tier-based selection in `zoe-chat/index.ts` becomes the single source of truth.
-- A small orchestrator pre-step (`gemini-2.5-flash-lite`) classifies each user turn (casual / drafting / full academic) and sets `reasoning.effort` (`none` / `low` / `high`) automatically.
+- `src/components/chat/ZoeChat.tsx` — layout restructure for `mode === "page"`, theme variables, swatch picker, message rendering tweaks
+- `src/index.css` — small additions: `.zoe-amoled` user-bubble override removed (themed via CSS vars now), composer pill styles
 
-### 5. Clarification form
+`mode === "widget"` rendering is left untouched (it's no longer mounted anywhere after the previous change).
 
-- New tool `request_clarification` with schema `{ fields: [{ key, label, type: "text"|"select"|"checkbox"|"number", options?, required }] }`.
-- `ZoeChat.tsx` renders a clean black/white inline form card. On submit, the answers are posted back as a structured user message and ZOE immediately proceeds (no extra user prompt needed).
+## Out of scope
 
-### 6. Real exports — .docx + .pdf + .txt
-
-- New `src/lib/exportDocs.ts` with `exportDocx`, `exportPdf`, `exportTxt`.
-- Buttons under each long ZOE message: **Copy · Download .docx · Download .pdf · Download .txt**.
-- After the final section completes, ZOE automatically offers an "Assemble & download full document" action that stitches all written sections (+ references) into one `.docx` / `.pdf`.
-- Add `jspdf` to dependencies (`docx` is already present).
-
-## Files
-
-| File | Action |
-|---|---|
-| `src/pages/Zoe.tsx` | NEW — full-screen AMOLED ZOE page |
-| `src/App.tsx` | Add `/zoe` route |
-| `src/contexts/AuthContext.tsx` | Redirect paid tiers to `/zoe` after login |
-| `src/components/chat/ZoeChat.tsx` | Add `mode="page"` + AMOLED tokens; remove model picker; remove architect-table render + CTAs; auto-continue writing; render `request_clarification` form; multi-format export buttons |
-| `src/lib/exportDocs.ts` | NEW — `.docx` / `.pdf` / `.txt` helpers |
-| `supabase/functions/zoe-architect/index.ts` | Use `gpt-5.2` (high reasoning) with fallback chain; output is for model context only |
-| `supabase/functions/zoe-chat/index.ts` | Update system prompt: silent architect, auto-continue sections, no user pause; add `request_clarification` tool; orchestrator pre-classification; remove honouring `userChoice` model override |
-| `package.json` | Add `jspdf` |
-
-## Behavioural change
-
-```text
-Before                                   After
-──────────────────────────────────       ──────────────────────────────────
-User asks for an essay                   User asks for an essay
-ZOE shows "Architecting…" placeholder    ZOE shows "Planning your work…"
-ZOE prints the full execution table      Table runs invisibly with strongest
-User clicks "Begin writing"              reasoning model + self-critique
-ZOE writes section 1, waits for "next"   ZOE immediately writes section 1,
-…and so on                               then 2, then 3 — straight through
-Download = .txt only                     Copy · .docx · .pdf · .txt
-Manual model picker                      Fully autonomous (tier-routed)
-Beige sidebar widget                     Full-screen AMOLED at /zoe
-ZOE asks clarifications in prose         ZOE renders a tickable form
-```
-
+- No new database tables (theme is a local preference, like the existing model/writing settings)
+- No changes to edge functions or the silent-architect flow
+- Mobile keeps a slide-over sidebar (toggled by a hamburger in the top bar) — not a permanent rail, since viewport is narrow
