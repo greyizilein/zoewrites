@@ -524,6 +524,8 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       if (s) setWritingSettings(prev => ({ ...prev, ...JSON.parse(s) }));
       const t = localStorage.getItem(TK(user.id));
       if (t && THEMES.some(x => x.key === t)) setThemeKey(t);
+      const i = localStorage.getItem(IK(user.id));
+      if (i && INTERFACE_THEMES.some(x => x.key === i)) setInterfaceKey(i);
     } catch {}
   }, [user?.id]);
 
