@@ -109,6 +109,10 @@ const QUICK_ACTIONS = [
 
 const SK = (uid: string) => `zoe_sessions_${uid}`;
 
+// Marker prefix used by the zoe-architect edge function. Messages whose content
+// begins with this token are rendered as architect-table cards with a CTA.
+const ARCHITECT_TABLE_MARKER = "<!--ZOE_ARCHITECT_TABLE-->";
+
 // ─────────────────────────── Storage helpers ─────────────────────────────────
 
 function loadSessions(uid: string): ChatSession[] {
