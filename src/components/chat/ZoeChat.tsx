@@ -1427,7 +1427,15 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
                       </div>
                     ) : (
                       <div className="w-full min-w-0 group/msg">
-                        {msg.content && (
+                        {msg.status ? (
+                          <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-white/[0.06] border border-white/10">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ backgroundColor: theme.accent }} />
+                              <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: theme.accent }} />
+                            </span>
+                            <span className="text-[13px] text-white/85 font-medium">{msg.content}</span>
+                          </div>
+                        ) : msg.content && (
                           <div className="prose prose-invert prose-sm md:prose-base max-w-none text-[15px] leading-relaxed
                             prose-headings:text-white prose-strong:text-white prose-p:text-white/85
                             prose-table:text-[12px] prose-th:bg-white/5 prose-th:text-white prose-th:font-semibold
