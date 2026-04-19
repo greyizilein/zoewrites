@@ -254,3 +254,67 @@
 .zoe-amoled .shadow-xl,
 .zoe-amoled .shadow-2xl { box-shadow: 0 4px 20px rgba(0,0,0,0.6) !important; }
 .zoe-amoled .shadow-black\/5 { box-shadow: 0 2px 10px rgba(0,0,0,0.5) !important; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ZOE non-AMOLED themes (white / cream / navy / graphite)
+   Surfaces, borders, and text driven by CSS vars set inline on the root.
+   ───────────────────────────────────────────────────────────────────────── */
+.zoe-light, .zoe-cream, .zoe-navy, .zoe-graphite { color: var(--zoe-fg); background: var(--zoe-bg); }
+
+/* Surfaces — collapse the dark hard-coded backgrounds onto themed vars */
+.zoe-light .bg-black, .zoe-cream .bg-black, .zoe-navy .bg-black, .zoe-graphite .bg-black { background-color: var(--zoe-bg) !important; }
+.zoe-light .bg-\[\#0A0A0A\], .zoe-cream .bg-\[\#0A0A0A\], .zoe-navy .bg-\[\#0A0A0A\], .zoe-graphite .bg-\[\#0A0A0A\] { background-color: var(--zoe-sidebar) !important; }
+.zoe-light .bg-\[\#1a1a1a\], .zoe-cream .bg-\[\#1a1a1a\], .zoe-navy .bg-\[\#1a1a1a\], .zoe-graphite .bg-\[\#1a1a1a\] { background-color: var(--zoe-sidebar) !important; }
+.zoe-light .bg-black\/40, .zoe-cream .bg-black\/40, .zoe-navy .bg-black\/40, .zoe-graphite .bg-black\/40 { background-color: var(--zoe-sidebar) !important; }
+.zoe-light .bg-black\/70, .zoe-cream .bg-black\/70, .zoe-navy .bg-black\/70, .zoe-graphite .bg-black\/70 { background-color: rgba(0,0,0,0.4) !important; }
+
+/* Light themes — invert white text + overlays to dark */
+.zoe-light .text-white, .zoe-cream .text-white { color: var(--zoe-fg) !important; }
+.zoe-light .text-white\/85, .zoe-cream .text-white\/85 { color: rgba(0,0,0,0.85) !important; }
+.zoe-light .text-white\/80, .zoe-cream .text-white\/80 { color: rgba(0,0,0,0.80) !important; }
+.zoe-light .text-white\/75, .zoe-cream .text-white\/75 { color: rgba(0,0,0,0.75) !important; }
+.zoe-light .text-white\/70, .zoe-cream .text-white\/70 { color: rgba(0,0,0,0.70) !important; }
+.zoe-light .text-white\/65, .zoe-cream .text-white\/65 { color: rgba(0,0,0,0.65) !important; }
+.zoe-light .text-white\/55, .zoe-cream .text-white\/55 { color: rgba(0,0,0,0.55) !important; }
+.zoe-light .text-white\/45, .zoe-cream .text-white\/45 { color: rgba(0,0,0,0.50) !important; }
+.zoe-light .text-white\/40, .zoe-cream .text-white\/40 { color: rgba(0,0,0,0.45) !important; }
+.zoe-light .text-white\/35, .zoe-cream .text-white\/35 { color: rgba(0,0,0,0.40) !important; }
+.zoe-light .text-white\/30, .zoe-cream .text-white\/30 { color: rgba(0,0,0,0.35) !important; }
+.zoe-light .text-white\/25, .zoe-cream .text-white\/25 { color: rgba(0,0,0,0.30) !important; }
+.zoe-light .placeholder\:text-white\/40::placeholder, .zoe-cream .placeholder\:text-white\/40::placeholder { color: rgba(0,0,0,0.45) !important; }
+.zoe-light .placeholder\:text-white\/30::placeholder, .zoe-cream .placeholder\:text-white\/30::placeholder { color: rgba(0,0,0,0.35) !important; }
+
+/* Borders → themed border var (for all 4 themes) */
+.zoe-light .border-white\/\[0\.05\], .zoe-light .border-white\/\[0\.06\], .zoe-light .border-white\/\[0\.08\], .zoe-light .border-white\/10, .zoe-light .border-white\/15, .zoe-light .border-white\/25, .zoe-light .border-white\/30,
+.zoe-cream .border-white\/\[0\.05\], .zoe-cream .border-white\/\[0\.06\], .zoe-cream .border-white\/\[0\.08\], .zoe-cream .border-white\/10, .zoe-cream .border-white\/15, .zoe-cream .border-white\/25, .zoe-cream .border-white\/30,
+.zoe-navy  .border-white\/\[0\.05\], .zoe-navy  .border-white\/\[0\.06\], .zoe-navy  .border-white\/\[0\.08\], .zoe-navy  .border-white\/10, .zoe-navy  .border-white\/15, .zoe-navy  .border-white\/25, .zoe-navy  .border-white\/30,
+.zoe-graphite .border-white\/\[0\.05\], .zoe-graphite .border-white\/\[0\.06\], .zoe-graphite .border-white\/\[0\.08\], .zoe-graphite .border-white\/10, .zoe-graphite .border-white\/15, .zoe-graphite .border-white\/25, .zoe-graphite .border-white\/30 { border-color: var(--zoe-border) !important; }
+
+/* Hover/active surfaces — light themes use dark tint, dark themes use white tint */
+.zoe-light .hover\:bg-white\/\[0\.04\]:hover, .zoe-light .hover\:bg-white\/\[0\.06\]:hover, .zoe-light .hover\:bg-white\/\[0\.08\]:hover, .zoe-light .hover\:bg-white\/10:hover,
+.zoe-cream .hover\:bg-white\/\[0\.04\]:hover, .zoe-cream .hover\:bg-white\/\[0\.06\]:hover, .zoe-cream .hover\:bg-white\/\[0\.08\]:hover, .zoe-cream .hover\:bg-white\/10:hover { background-color: rgba(0,0,0,0.05) !important; }
+.zoe-light .bg-white\/\[0\.04\], .zoe-light .bg-white\/\[0\.06\], .zoe-light .bg-white\/\[0\.08\], .zoe-light .bg-white\/5, .zoe-light .bg-white\/10,
+.zoe-cream .bg-white\/\[0\.04\], .zoe-cream .bg-white\/\[0\.06\], .zoe-cream .bg-white\/\[0\.08\], .zoe-cream .bg-white\/5, .zoe-cream .bg-white\/10 { background-color: rgba(0,0,0,0.04) !important; }
+
+.zoe-navy .hover\:bg-white\/\[0\.04\]:hover, .zoe-navy .hover\:bg-white\/\[0\.06\]:hover, .zoe-navy .hover\:bg-white\/\[0\.08\]:hover, .zoe-navy .hover\:bg-white\/10:hover,
+.zoe-graphite .hover\:bg-white\/\[0\.04\]:hover, .zoe-graphite .hover\:bg-white\/\[0\.06\]:hover, .zoe-graphite .hover\:bg-white\/\[0\.08\]:hover, .zoe-graphite .hover\:bg-white\/10:hover { background-color: rgba(255,255,255,0.06) !important; }
+
+/* Markdown prose colours for light themes */
+.zoe-light .prose, .zoe-cream .prose { color: #1a1a1a !important; }
+.zoe-light .prose strong, .zoe-light .prose h1, .zoe-light .prose h2, .zoe-light .prose h3, .zoe-light .prose h4,
+.zoe-cream .prose strong, .zoe-cream .prose h1, .zoe-cream .prose h2, .zoe-cream .prose h3, .zoe-cream .prose h4 { color: #000 !important; }
+.zoe-light .prose code, .zoe-cream .prose code { background: rgba(0,0,0,0.06) !important; color: #000 !important; padding: 1px 5px; border-radius: 4px; }
+.zoe-light .prose pre, .zoe-cream .prose pre { background: rgba(0,0,0,0.04) !important; border: 1px solid var(--zoe-border); }
+.zoe-light .prose blockquote, .zoe-cream .prose blockquote { border-left-color: rgba(0,0,0,0.2) !important; color: #333 !important; }
+
+/* Form controls */
+.zoe-light select, .zoe-light input[type="number"], .zoe-light input[type="text"], .zoe-light textarea,
+.zoe-cream select, .zoe-cream input[type="number"], .zoe-cream input[type="text"], .zoe-cream textarea { background-color: rgba(0,0,0,0.04) !important; color: var(--zoe-fg) !important; border-color: var(--zoe-border) !important; }
+.zoe-navy select, .zoe-navy input[type="number"], .zoe-navy input[type="text"], .zoe-navy textarea,
+.zoe-graphite select, .zoe-graphite input[type="number"], .zoe-graphite input[type="text"], .zoe-graphite textarea { background-color: rgba(255,255,255,0.04) !important; color: var(--zoe-fg) !important; border-color: var(--zoe-border) !important; }
+
+/* Shadows — soften on light, deepen on dark */
+.zoe-light .shadow-\[0_8px_30px_rgba\(0\,0\,0\,0\.6\)\],
+.zoe-cream .shadow-\[0_8px_30px_rgba\(0\,0\,0\,0\.6\)\] { box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important; }
+.zoe-navy .shadow-\[0_8px_30px_rgba\(0\,0\,0\,0\.6\)\],
+.zoe-graphite .shadow-\[0_8px_30px_rgba\(0\,0\,0\,0\.6\)\] { box-shadow: 0 8px 30px rgba(0,0,0,0.5) !important; }
