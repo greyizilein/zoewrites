@@ -870,13 +870,35 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
     const uploadedAttachments = readyAttachments;
     setPendingUploads([]);
 
+    const isInternalAutoWrite = text.startsWith("__INTERNAL_AUTO_WRITE__");
+
     const userMsg: Message = {
       id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now(),
       attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+      // Hide the internal auto-write trigger from the visible chat — the user already sees
+      // the architect "writing now…" status pill instead.
+      hidden: isInternalAutoWrite || undefined,
     };
     addMessage(userMsg);
 
     const history = [...(currentSession?.messages ?? []), userMsg].map(m => ({ role: m.role, content: m.content }));
+
+    let firstChunkSeen = false;
+    const onStreamChunk = (chunk: string) => {
+      if (!firstChunkSeen && chunk) {
+        firstChunkSeen = true;
+        // Hide the architect "writing now…" placeholder the instant the model produces output.
+        const placeholderId = autoWritePlaceholderRef.current;
+        if (placeholderId) {
+          autoWritePlaceholderRef.current = null;
+          setSessions(prev => prev.map(s => s.id !== currentId ? s : ({
+            ...s,
+            messages: s.messages.map(m => m.id === placeholderId ? { ...m, hidden: true } : m),
+          })));
+        }
+      }
+      setStreaming(chunk);
+    };
 
     try {
       abortRef.current = new AbortController();
@@ -899,7 +921,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       }
       const switched = resp.headers.get("X-Zoe-Model-Switched");
       let fullContent = "";
-      const { content, toolCalls } = await readContentAndToolStream(resp.body, chunk => { setStreaming(chunk); fullContent = chunk; });
+      const { content, toolCalls } = await readContentAndToolStream(resp.body, chunk => { onStreamChunk(chunk); fullContent = chunk; });
       setStreaming("");
       const finalContent = content || fullContent;
       if (finalContent) {
@@ -910,14 +932,32 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
         try { await handleToolCall(tc.name, JSON.parse(tc.arguments || "{}")); }
         catch (e) { console.warn("[ZoeChat tool]", tc.name, e); }
       }
+      // Safety net: if the model returned nothing AND no tool calls, show a clear note
+      // so the chat never goes silent.
+      if (!finalContent && toolCalls.length === 0) {
+        addMessage({
+          id: crypto.randomUUID(), role: "assistant",
+          content: "I didn't get a response from the model. Please try again, or rephrase your last message.",
+          timestamp: Date.now(),
+        });
+      }
     } catch (e: any) {
       if (e?.name !== "AbortError") {
         const reason = e?.message && e.message !== "Failed to fetch" ? e.message : "Something went wrong — please try again.";
         addMessage({ id: crypto.randomUUID(), role: "assistant", content: reason, timestamp: Date.now() });
       }
+      // Clear any lingering "writing now…" placeholder so the user isn't left waiting.
+      const placeholderId = autoWritePlaceholderRef.current;
+      if (placeholderId) {
+        autoWritePlaceholderRef.current = null;
+        setSessions(prev => prev.map(s => s.id !== currentId ? s : ({
+          ...s,
+          messages: s.messages.map(m => m.id === placeholderId ? { ...m, hidden: true } : m),
+        })));
+      }
     } finally { setLoading(false); setStreaming(""); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, pendingUploads, loading, currentSession, session, user?.id, writingSettings, profile?.tier]);
+  }, [input, pendingUploads, loading, currentSession, session, user?.id, writingSettings, profile?.tier, currentId]);
 
   // ── Session management ────────────────────────────────────────────────────
 
