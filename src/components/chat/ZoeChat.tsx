@@ -963,8 +963,18 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
   return (
     <div
       data-zoe-mode="page"
-      className="zoe-amoled flex w-full h-screen bg-black text-white overflow-hidden"
+      data-zoe-interface={interfaceTheme.key}
+      className={cn(
+        "flex w-full h-screen overflow-hidden",
+        interfaceTheme.className,
+      )}
       style={{
+        backgroundColor: interfaceTheme.bg,
+        color: interfaceTheme.fg,
+        ["--zoe-bg" as any]: interfaceTheme.bg,
+        ["--zoe-fg" as any]: interfaceTheme.fg,
+        ["--zoe-sidebar" as any]: interfaceTheme.sidebar,
+        ["--zoe-border" as any]: interfaceTheme.border,
         ["--zoe-accent" as any]: theme.accent,
         ["--zoe-accent-fg" as any]: theme.accentFg,
         ["--zoe-accent-hover" as any]: theme.accentHover,
