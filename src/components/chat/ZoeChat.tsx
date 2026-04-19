@@ -856,18 +856,19 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
       )}
 
       {/* Chat panel */}
-      <div className={cn(
-        "flex flex-col bg-[#F5F0EB]",
-        mode === "page"
-          ? "w-full h-screen"
-          : cn(
-              "fixed z-[60] shadow-2xl transition-all duration-300 ease-in-out",
-              "inset-0 md:inset-auto md:top-0 md:right-0 md:h-screen md:w-[420px] md:border-l md:border-black/10",
-              open && !minimized
-                ? "translate-y-0 md:translate-x-0 opacity-100"
-                : "translate-y-full md:translate-y-0 md:translate-x-full opacity-0 pointer-events-none",
-            ),
-      )}>
+      <div
+        data-zoe-mode={mode}
+        className={cn(
+          "flex flex-col",
+          mode === "page" ? "zoe-amoled w-full h-screen bg-black" : "bg-[#F5F0EB]",
+          mode === "widget" && cn(
+            "fixed z-[60] shadow-2xl transition-all duration-300 ease-in-out",
+            "inset-0 md:inset-auto md:top-0 md:right-0 md:h-screen md:w-[420px] md:border-l md:border-black/10",
+            open && !minimized
+              ? "translate-y-0 md:translate-x-0 opacity-100"
+              : "translate-y-full md:translate-y-0 md:translate-x-full opacity-0 pointer-events-none",
+          ),
+        )}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-black/8 flex-shrink-0">

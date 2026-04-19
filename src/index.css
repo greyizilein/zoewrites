@@ -172,3 +172,85 @@
   100% { transform: translateX(-50%); }
 }
 .animate-slide-left { animation: slide-left 30s linear infinite; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ZOE AMOLED theme — scoped to [data-zoe-mode="page"] only.
+   Overrides the chat's beige tokens with true-black + white for the /zoe page.
+   ───────────────────────────────────────────────────────────────────────── */
+.zoe-amoled { color: #FFFFFF; background: #000; }
+
+/* Surfaces — flatten the beige palette to AMOLED layers */
+.zoe-amoled .bg-\[\#F5F0EB\],
+.zoe-amoled .bg-\[\#EDE8E2\] { background-color: #000 !important; }
+.zoe-amoled .bg-white { background-color: #0F0F0F !important; }
+.zoe-amoled .bg-white\/60 { background-color: rgba(255,255,255,0.04) !important; }
+
+/* Borders */
+.zoe-amoled .border-black\/5,
+.zoe-amoled .border-black\/6,
+.zoe-amoled .border-black\/8,
+.zoe-amoled .border-black\/10,
+.zoe-amoled .border-black\/12 { border-color: #1F1F1F !important; }
+
+/* Subtle hover/active overlays */
+.zoe-amoled .hover\:bg-black\/5:hover,
+.zoe-amoled .hover\:bg-black\/6:hover,
+.zoe-amoled .hover\:bg-black\/8:hover { background-color: rgba(255,255,255,0.06) !important; }
+.zoe-amoled .bg-black\/5,
+.zoe-amoled .bg-black\/6,
+.zoe-amoled .bg-black\/8 { background-color: rgba(255,255,255,0.05) !important; }
+
+/* Text colours — invert charcoal scale to white scale */
+.zoe-amoled .text-foreground { color: #FFFFFF !important; }
+.zoe-amoled .text-foreground\/25 { color: rgba(255,255,255,0.30) !important; }
+.zoe-amoled .text-foreground\/30 { color: rgba(255,255,255,0.35) !important; }
+.zoe-amoled .text-foreground\/35 { color: rgba(255,255,255,0.40) !important; }
+.zoe-amoled .text-foreground\/40 { color: rgba(255,255,255,0.45) !important; }
+.zoe-amoled .text-foreground\/45 { color: rgba(255,255,255,0.55) !important; }
+.zoe-amoled .text-foreground\/50 { color: rgba(255,255,255,0.60) !important; }
+.zoe-amoled .text-foreground\/65 { color: rgba(255,255,255,0.72) !important; }
+.zoe-amoled .text-foreground\/70 { color: rgba(255,255,255,0.78) !important; }
+.zoe-amoled .text-foreground\/80 { color: rgba(255,255,255,0.85) !important; }
+.zoe-amoled .placeholder\:text-foreground\/35::placeholder { color: rgba(255,255,255,0.40) !important; }
+
+/* Markdown prose colour overrides */
+.zoe-amoled .prose { color: #E8E8E8 !important; }
+.zoe-amoled .prose strong,
+.zoe-amoled .prose h1,
+.zoe-amoled .prose h2,
+.zoe-amoled .prose h3,
+.zoe-amoled .prose h4 { color: #FFFFFF !important; }
+.zoe-amoled .prose code { background: #1A1A1A !important; color: #FFF !important; padding: 1px 5px; border-radius: 4px; }
+.zoe-amoled .prose pre { background: #0A0A0A !important; border: 1px solid #1F1F1F; }
+.zoe-amoled .prose blockquote { border-left-color: #2A2A2A !important; color: #CCC !important; }
+.zoe-amoled .prose th { background: rgba(255,255,255,0.06) !important; color: #FFF !important; border-color: #2A2A2A !important; }
+.zoe-amoled .prose td { border-color: #1F1F1F !important; color: #E8E8E8 !important; }
+
+/* Terracotta accent — invert user bubble to white-on-black for AMOLED contrast.
+   Other terracotta surfaces become subtle white tints. */
+.zoe-amoled .bg-terracotta { background-color: #FFFFFF !important; color: #000 !important; }
+.zoe-amoled .bg-terracotta * { color: #000 !important; }
+.zoe-amoled .text-terracotta { color: #FFFFFF !important; }
+.zoe-amoled .bg-terracotta\/10,
+.zoe-amoled .bg-terracotta\/15,
+.zoe-amoled .bg-terracotta\/20 { background-color: rgba(255,255,255,0.08) !important; }
+.zoe-amoled .bg-terracotta\/5 { background-color: rgba(255,255,255,0.04) !important; }
+.zoe-amoled .border-terracotta\/40,
+.zoe-amoled .border-terracotta\/50 { border-color: rgba(255,255,255,0.35) !important; }
+.zoe-amoled .focus-within\:border-terracotta\/50:focus-within { border-color: #FFFFFF !important; }
+.zoe-amoled .hover\:bg-terracotta\/5:hover { background-color: rgba(255,255,255,0.06) !important; }
+
+/* Form controls (selects, inputs) */
+.zoe-amoled select,
+.zoe-amoled input[type="number"],
+.zoe-amoled input[type="text"],
+.zoe-amoled textarea { background-color: #0F0F0F !important; color: #FFFFFF !important; border-color: #1F1F1F !important; }
+.zoe-amoled select option { background-color: #0F0F0F; color: #FFFFFF; }
+
+/* Shadows — kill warm shadows on dark */
+.zoe-amoled .shadow-sm,
+.zoe-amoled .shadow-md,
+.zoe-amoled .shadow-lg,
+.zoe-amoled .shadow-xl,
+.zoe-amoled .shadow-2xl { box-shadow: 0 4px 20px rgba(0,0,0,0.6) !important; }
+.zoe-amoled .shadow-black\/5 { box-shadow: 0 2px 10px rgba(0,0,0,0.5) !important; }
