@@ -224,6 +224,74 @@ function InlineChart({ chart }: { chart: ChartData }) {
   );
 }
 
+// ─────────────────────────── Clarification Form ──────────────────────────────
+
+function ClarificationForm({ data, onSubmit }: { data: ClarificationData; onSubmit: (a: Record<string, any>) => void }) {
+  const [values, setValues] = useState<Record<string, any>>(() => {
+    const init: Record<string, any> = {};
+    for (const f of data.fields) {
+      init[f.key] = f.type === "checkbox" ? [] : (f.default ?? (f.type === "select" ? (f.options?.[0] ?? "") : ""));
+    }
+    return init;
+  });
+
+  const update = (k: string, v: any) => setValues(prev => ({ ...prev, [k]: v }));
+
+  const canSubmit = data.fields.every(f => {
+    if (!f.required) return true;
+    const v = values[f.key];
+    if (Array.isArray(v)) return v.length > 0;
+    return v !== "" && v != null;
+  });
+
+  return (
+    <div className="mt-2 rounded-xl border border-black/10 bg-white/70 p-3 shadow-sm space-y-3">
+      {data.intro && <p className="text-[12px] text-foreground/65">{data.intro}</p>}
+      {data.fields.map(f => (
+        <div key={f.key} className="space-y-1">
+          <label className="text-[11px] font-semibold text-foreground/70">
+            {f.label}{f.required && <span className="text-terracotta"> *</span>}
+          </label>
+          {f.type === "text" && (
+            <input type="text" placeholder={f.placeholder} value={values[f.key]} onChange={e => update(f.key, e.target.value)}
+              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none focus:border-terracotta/50" />
+          )}
+          {f.type === "number" && (
+            <input type="number" placeholder={f.placeholder} value={values[f.key]} onChange={e => update(f.key, e.target.value)}
+              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none focus:border-terracotta/50" />
+          )}
+          {f.type === "select" && (
+            <select value={values[f.key]} onChange={e => update(f.key, e.target.value)}
+              className="w-full text-[13px] bg-white border border-black/10 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer">
+              {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+          {f.type === "checkbox" && (
+            <div className="flex flex-wrap gap-1.5">
+              {(f.options ?? []).map(o => {
+                const checked = (values[f.key] as string[]).includes(o);
+                return (
+                  <button key={o} type="button"
+                    onClick={() => update(f.key, checked ? (values[f.key] as string[]).filter(x => x !== o) : [...(values[f.key] as string[]), o])}
+                    className={cn("text-[11px] px-2.5 py-1 rounded-full border transition-colors",
+                      checked ? "bg-terracotta text-white border-terracotta" : "bg-white text-foreground/65 border-black/15 hover:border-terracotta/40")}>
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+      <button type="button" disabled={!canSubmit} onClick={() => onSubmit(values)}
+        className={cn("mt-1 w-full px-3 py-2 rounded-xl text-[12px] font-semibold transition-all",
+          canSubmit ? "bg-terracotta text-white hover:brightness-110 active:scale-[0.98]" : "bg-black/8 text-foreground/30 cursor-not-allowed")}>
+        Submit & continue
+      </button>
+    </div>
+  );
+}
+
 // ─────────────────────────── Main component ──────────────────────────────────
 
 export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" }) {
