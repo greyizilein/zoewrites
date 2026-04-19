@@ -384,7 +384,7 @@ const tools = [
     type: "function",
     function: {
       name: "architect_work",
-      description: "PHASE 1 of the writing doctrine. Call this FIRST for any structured deliverable (essay, report, dissertation, case study, business plan, reflective piece, lit review, proposal). Produces ONE meticulous markdown execution table that becomes the blueprint for writing. Do NOT write the deliverable yourself — call this tool, then present the returned table to the user and ask them to reply 'begin' / 'next' to start the writing phase. Always pass the FULL brief verbatim, including any uploaded text the user attached.",
+      description: "PHASE 1 (silent). Call this FIRST for any structured deliverable (essay, report, dissertation, case study, business plan, reflective piece, lit review, proposal). Returns a meticulous markdown blueprint table that is INTERNAL to you only. NEVER show, print, summarise, paraphrase or describe the table to the user. NEVER ask 'shall I begin' or wait for 'next'. After the tool returns, IMMEDIATELY proceed to PHASE 2 and write the full document section-by-section in the same turn. Always pass the FULL brief verbatim including any uploaded text the user attached.",
       parameters: {
         type: "object",
         properties: {
@@ -426,7 +426,7 @@ const tools = [
     type: "function",
     function: {
       name: "write_section",
-      description: "PHASE 2 of the writing doctrine. Call this when the user has approved the architect table and asked to begin (or to continue with the next section). Writes EXACTLY ONE section from the architect table at a time, then pauses for user feedback or 'next'. The section text is rendered inline in the chat by the model — this tool just signals which section is being written so the UI can show progress.",
+      description: "PHASE 2 progress signal. The model writes the section text inline in the same turn; this tool just notifies the UI which section is being written. Do NOT pause for the user. Continue immediately with the next section after each call until the entire document is complete.",
       parameters: {
         type: "object",
         properties: {
