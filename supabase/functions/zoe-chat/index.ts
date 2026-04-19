@@ -1,7 +1,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { JSZip } from "https://deno.land/x/jszip@0.11.0/mod.ts";
+import { extractText } from "https://esm.sh/unpdf@0.12.1";
 import { getZoeBrain } from "../_shared/zoe-brain.ts";
 import { SUPERIOR_STRUCTURE_PROMPT, ARCHITECT_CRITIQUE_CHECKLIST } from "../_shared/zoe-prompts.ts";
+
+// ── Auto model fallback chain ────────────────────────────────────────────────
+// If a model returns 402 (out of credits) or 429 (rate-limited), we walk down
+// this chain so the user keeps getting a response.
+const MODEL_FALLBACK_CHAIN: Record<string, string[]> = {
+  "openai/gpt-5.2":            ["openai/gpt-5", "google/gemini-2.5-pro", "google/gemini-3-flash-preview"],
+  "openai/gpt-5":              ["google/gemini-2.5-pro", "google/gemini-3-flash-preview"],
+  "openai/gpt-5-mini":         ["google/gemini-2.5-flash", "google/gemini-3-flash-preview"],
+  "google/gemini-2.5-pro":     ["google/gemini-2.5-flash", "google/gemini-3-flash-preview"],
+  "google/gemini-2.5-flash":   ["google/gemini-3-flash-preview"],
+  "google/gemini-3-flash-preview": [],
+};
+
+function nextFallback(model: string): string | null {
+  const chain = MODEL_FALLBACK_CHAIN[model];
+  if (!chain || chain.length === 0) return null;
+  return chain[0];
+}
 
 // ── Architect model selection (always high-reasoning) ────────────────────────
 function selectArchitectModel(tier: string): string {
