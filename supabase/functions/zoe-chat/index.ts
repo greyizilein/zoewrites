@@ -874,7 +874,10 @@ serve(async (req) => {
       lastErrorBody = await response.text().catch(() => "");
       console.warn(`[zoe-chat] gateway ${response.status} on ${activeModel}: ${lastErrorBody.slice(0, 300)}`);
 
-      if (response.status === 402 || response.status === 429 || response.status === 503) {
+      // Fall through on capacity / overload / transient gateway errors.
+      if (response.status === 402 || response.status === 429 ||
+          response.status === 500 || response.status === 502 ||
+          response.status === 503 || response.status === 504) {
         const next = nextFallback(activeModel);
         if (next) {
           activeModel = next;
