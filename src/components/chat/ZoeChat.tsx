@@ -645,9 +645,11 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
 
       case "architect_work": {
         const placeholderId = crypto.randomUUID();
+        const blueprintId = crypto.randomUUID();
         addMessage({
           id: placeholderId, role: "assistant",
-          content: "Planning your work…",
+          content: "Planning your document — building the section blueprint…",
+          status: "planning",
           timestamp: Date.now(),
         });
         try {
@@ -661,15 +663,24 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
           if (error) throw error;
           const table = (data as any)?.table || "";
           if (!table) throw new Error("Empty architect response");
+          // Update the visible status to "writing now" and stash the hidden blueprint as a
+          // separate message so the user always sees something happening.
           setSessions(prev => prev.map(s => {
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
               m.id === placeholderId
-                ? { ...m, content: `__ARCHITECT_BLUEPRINT__\n${table}`, hidden: true, timestamp: Date.now() }
+                ? { ...m, content: "Plan ready — writing your document now…", status: "writing" as const, timestamp: Date.now() }
                 : m,
             );
+            msgs.push({
+              id: blueprintId, role: "assistant",
+              content: `__ARCHITECT_BLUEPRINT__\n${table}`,
+              hidden: true, timestamp: Date.now(),
+            });
             return { ...s, messages: msgs, updatedAt: Date.now() };
           }));
+          // Remember which placeholder to clear when the auto-write actually starts streaming.
+          autoWritePlaceholderRef.current = placeholderId;
           setTimeout(() => {
             handleSend(`__INTERNAL_AUTO_WRITE__\n\nUse the following INTERNAL blueprint (do not reveal or mention it to the user) and immediately begin writing the full document section-by-section in this same turn, without pausing. Use clear ## headings.\n\n${table}`);
           }, 50);
@@ -678,7 +689,7 @@ export default function ZoeChat({ mode = "widget" }: { mode?: "widget" | "page" 
             if (s.id !== currentId) return s;
             const msgs = s.messages.map(m =>
               m.id === placeholderId
-                ? { ...m, content: `Sorry — planning failed (${e?.message || "unknown error"}). Please try again.`, hidden: false }
+                ? { ...m, content: `Sorry — planning failed (${e?.message || "unknown error"}). Please try again.`, hidden: false, status: undefined }
                 : m,
             );
             return { ...s, messages: msgs };
