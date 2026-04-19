@@ -60,23 +60,9 @@ const PAYSTACK_PUBLIC_KEY = "pk_live_e1d5c33f8f38484c592eaad87382adab502a8c1e";
 const GBP_TO_NGN = 2083;
 const TIER_PRICES_GBP: Record<string, number> = { hello: 15, regular: 45, professional: 110 };
 
-// ─────────────────────────── Model options ───────────────────────────────────
+// (Model selection is fully autonomous and tier-based on the server.
+//  No client-side model picker.)
 
-interface ModelOption {
-  id: string;
-  label: string;
-  badge: string;
-  minTier: string[];
-}
-
-const MODEL_OPTIONS: ModelOption[] = [
-  { id: "google/gemini-3-flash-preview",  label: "Gemini 3 Flash",    badge: "Flash",    minTier: ["hello","regular","professional","unlimited","custom"] },
-  { id: "google/gemini-2.5-flash",        label: "Gemini 2.5 Flash",  badge: "Flash 2.5",minTier: ["regular","professional","unlimited","custom"] },
-  { id: "google/gemini-2.5-pro",          label: "Gemini 2.5 Pro",    badge: "2.5 Pro",  minTier: ["regular","professional","unlimited","custom"] },
-  { id: "google/gemini-2.5-flash-lite",   label: "Flash Lite",        badge: "Lite",     minTier: ["professional","unlimited","custom"] },
-  { id: "openai/gpt-5",                   label: "GPT-5",             badge: "GPT-5",    minTier: ["professional","unlimited","custom"] },
-  { id: "openai/gpt-5.2",                label: "GPT-5.2",           badge: "GPT-5.2",  minTier: ["professional","unlimited","custom"] },
-];
 
 // ─────────────────────────── Writing settings ────────────────────────────────
 
